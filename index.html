@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dangro - Custom Chat & Connected Hub</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <!-- Stylesheet -->
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app-wrapper">
+    <!-- Main Cosmic Background Canvas (for rich visuals) -->
+    <div class="bg-gradient-overlay"></div>
+    <div class="glow-orb orb-1"></div>
+    <div class="glow-orb orb-2"></div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- Core App Container -->
+    <div id="app-container" class="app-container">
+      
+      <!-- ========================================== -->
+      <!-- LEFT PANEL: INTEGRATED MULTI-CLIENT PANE    -->
+      <!-- ========================================== -->
+      <section id="left-panel" class="app-panel left-panel">
+        <header class="panel-header">
+          <div class="header-logo">
+            <span class="logo-accent">⚡</span> Hub Client
+          </div>
+          <div class="panel-tabs">
+            <button class="panel-tab-btn active" data-tab="youtube-client">
+              <svg class="tab-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M23 12s-2.005-5.5-11-5.5S1 12 1 12s2.005 5.5 11 5.5S23 12 23 12zm-11 2.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/></svg>
+              YouTube
+            </button>
+            <button class="panel-tab-btn" data-tab="instagram-client">
+              <svg class="tab-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.051.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 1 0 0 12.324 6.162 6.162 0 0 0 0-12.324zM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8zm6.406-11.845a1.44 1.44 0 1 0 0 2.881 1.44 1.44 0 0 0 0-2.881z"/></svg>
+              Instagram
+            </button>
+            <button class="panel-tab-btn" data-tab="custom-browser">
+              <svg class="tab-icon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.53c-.26-.81-1-1.4-1.9-1.4h-1v-3c0-.55-.45-1-1-1h-6v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z"/></svg>
+              Browser
+            </button>
+          </div>
+        </header>
+
+        <!-- Left Panels Tab Contents -->
+        <div class="panel-content-area">
+          
+          <!-- YouTube Simulator -->
+          <div id="youtube-client" class="tab-content active">
+            <div class="youtube-search-wrapper">
+              <input type="text" id="yt-search-input" placeholder="Search YouTube or paste URL...">
+              <button id="yt-search-btn">
+                <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg>
+              </button>
+            </div>
+
+            <!-- YouTube Video Player Container -->
+            <div class="youtube-player-container">
+              <iframe id="yt-player" src="https://www.youtube.com/embed/dQw4w9WgXcQ" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+            </div>
+
+            <div class="youtube-video-meta">
+              <h3 id="yt-active-title">Loading Video Info...</h3>
+              <div class="yt-meta-details">
+                <span id="yt-active-channel" class="yt-channel-badge">Channel</span>
+                <span id="yt-active-views">0 views</span>
+                <button id="yt-like-btn" class="yt-like-btn">
+                  <svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M1 21h4V9H1v12zm22-11c0-1.1-.9-2-2-2h-6.31l.95-4.57.03-.32c0-.41-.17-.79-.44-1.06L14.17 1 7.59 7.59C7.22 7.95 7 8.45 7 9v10c0 1.1.9 2 2 2h9c.83 0 1.54-.5 1.84-1.22l3.02-7.05c.09-.23.14-.47.14-.73v-2z"/></svg>
+                  <span>Like</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Recommended Videos Feed -->
+            <div class="youtube-feed-list">
+              <h4 class="feed-section-title">Recommended Videos</h4>
+              <div id="yt-recommendations" class="youtube-grid">
+                <!-- Dynamically loaded from JS -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Instagram Simulator -->
+          <div id="instagram-client" class="tab-content">
+            <div class="ig-profile-header">
+              <div class="ig-logo">Instagram</div>
+              <div class="ig-user-badge">
+                <div class="user-avatar-small" style="background: var(--accent-gradient);">D</div>
+                <span>dangro_user</span>
+              </div>
+            </div>
+            
+            <!-- Instagram Feed -->
+            <div id="ig-feed-container" class="ig-feed">
+              <!-- Dynamically populated from JS -->
+            </div>
+          </div>
+
+          <!-- Custom Web Browser -->
+          <div id="custom-browser" class="tab-content">
+            <div class="browser-address-bar">
+              <div class="browser-controls">
+                <button id="browser-back" title="Back">◀</button>
+                <button id="browser-forward" title="Forward">▶</button>
+                <button id="browser-refresh" title="Reload">🔄</button>
+              </div>
+              <input type="text" id="browser-url-input" value="https://wikipedia.org" placeholder="Enter URL (https://...)">
+              <button id="browser-go-btn">Go</button>
+            </div>
+            
+            <div class="browser-viewport-wrapper">
+              <iframe id="browser-iframe" src="https://wikipedia.org"></iframe>
+              
+              <!-- Glassmorphic Warning overlay if iframe doesn't load or is blocked -->
+              <div id="browser-csp-warning" class="browser-overlay-warning hidden">
+                <div class="warning-box">
+                  <div class="warning-icon">⚠️</div>
+                  <h4>Frame Embedding Restricted</h4>
+                  <p>This website prevents embed loading inside other pages for security reasons (X-Frame-Options/CSP). </p>
+                  <p class="warning-tip">Tip: Try sites like <strong>wikipedia.org</strong> or <strong>example.com</strong> which support embedding.</p>
+                  <button id="close-warning-btn">I Understand</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- ========================================== -->
+      <!-- DIVIDER 1: LEFT-MIDDLE ADJUSTER            -->
+      <!-- ========================================== -->
+      <div id="divider-left" class="resize-divider" data-side="left">
+        <button class="divider-arrow arrow-left" id="btn-collapse-left" title="Toggle Left Panel">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+        </button>
+        <div class="resize-handle-visual"></div>
+        <button class="divider-arrow arrow-right hidden" id="btn-expand-left" title="Toggle Left Panel">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+        </button>
+      </div>
+
+      <!-- ========================================== -->
+      <!-- MIDDLE PANEL: MAIN CHAT SYSTEM             -->
+      <!-- ========================================== -->
+      <main id="middle-panel" class="app-panel chat-panel">
+        <!-- Chat Header -->
+        <header class="chat-header">
+          <div class="chat-header-title">
+            <span class="chat-hash" id="chat-header-prefix">#</span>
+            <h2 id="chat-header-name">general</h2>
+            <p id="chat-header-desc" class="chat-header-desc">Main general channel for the workspace</p>
+          </div>
+          <div class="chat-header-actions">
+            <!-- Search Message Box -->
+            <div class="chat-search">
+              <input type="text" id="chat-search-input" placeholder="Search in chat...">
+              <span class="search-icon">🔍</span>
+            </div>
+            <button class="header-action-btn" id="btn-clear-chat" title="Clear Chat History">
+              <svg viewBox="0 0 24 24" width="18" height="18"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <!-- Messages Viewport -->
+        <div id="chat-messages-container" class="chat-messages">
+          <!-- Dynamically populated from JS -->
+        </div>
+
+        <!-- Chat Input Footer -->
+        <footer class="chat-footer">
+          <!-- Typing indicator bar -->
+          <div id="typing-indicator" class="typing-indicator-bar hidden">
+            <span class="typing-dots"><span></span><span></span><span></span></span>
+            <span id="typing-text" class="typing-text">Alex is typing...</span>
+          </div>
+
+          <div class="input-actions-wrapper">
+            <!-- Mock Attach file button -->
+            <button class="input-action-btn" id="btn-attach" title="Attach Media Link">
+              <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5c0-3.31 2.69-6 6-6s6 2.69 6 6v10c0 4.42-3.58 8-8 8s-8-3.58-8-8V6h2v9c0 3.31 2.69 6 6 6s6-2.69 6-6V5c0-2.21-1.79-4-4-4s-4 1.79-4 4v12.5c0 1.1.9 2 2 2s2-.9 2-2V6h2z"/></svg>
+            </button>
+
+            <!-- Input area -->
+            <div class="chat-input-box">
+              <textarea id="message-input" placeholder="Message #general..." rows="1"></textarea>
+            </div>
+
+            <!-- Emoji Toggle Button -->
+            <button class="input-action-btn" id="btn-emoji" title="Select Emoji">
+              <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm3.5-9c.83 0 1.5-.67 1.5-1.5S16.33 8 15.5 8 14 8.67 14 9.5s.67 1.5 1.5 1.5zm-7 0c.83 0 1.5-.67 1.5-1.5S9.33 8 8.5 8 7 8.67 7 9.5 7.67 11 8.5 11zm3.5 4.5c2.33 0 4.31-1.46 5.11-3.5H6.89c.8 2.04 2.78 3.5 5.11 3.5z"/></svg>
+            </button>
+
+            <!-- Emoji Picker Tray (Floating) -->
+            <div id="emoji-picker" class="emoji-picker hidden">
+              <div class="emoji-picker-grid">
+                <span class="emoji-item">😀</span><span class="emoji-item">😂</span><span class="emoji-item">🤣</span>
+                <span class="emoji-item">😍</span><span class="emoji-item">👍</span><span class="emoji-item">🔥</span>
+                <span class="emoji-item">👏</span><span class="emoji-item">🎉</span><span class="emoji-item">💡</span>
+                <span class="emoji-item">🚀</span><span class="emoji-item">💻</span><span class="emoji-item">🎨</span>
+                <span class="emoji-item">🎧</span><span class="emoji-item">🎮</span><span class="emoji-item">💖</span>
+                <span class="emoji-item">👀</span><span class="emoji-item">🍔</span><span class="emoji-item">💯</span>
+              </div>
+            </div>
+
+            <!-- Send Button -->
+            <button class="input-action-btn send-btn" id="btn-send-message" title="Send Message">
+              <svg viewBox="0 0 24 24" width="20" height="20"><path fill="currentColor" d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+            </button>
+          </div>
+        </footer>
+
+        <!-- Media Attachment Modal Dialog -->
+        <div id="media-modal" class="modal hidden">
+          <div class="modal-content glassmorphism">
+            <h3>Attach Image Link</h3>
+            <p>Paste any direct image URL (JPEG, PNG, GIF) to display it in the chat feed.</p>
+            <input type="text" id="media-url-input" placeholder="https://images.unsplash.com/photo-..." class="modal-input">
+            <div class="modal-buttons">
+              <button id="btn-media-cancel" class="modal-btn cancel">Cancel</button>
+              <button id="btn-media-submit" class="modal-btn submit">Attach</button>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <!-- ========================================== -->
+      <!-- DIVIDER 2: MIDDLE-RIGHT ADJUSTER           -->
+      <!-- ========================================== -->
+      <div id="divider-right" class="resize-divider" data-side="right">
+        <button class="divider-arrow arrow-left hidden" id="btn-expand-right" title="Toggle Right Panel">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+        </button>
+        <div class="resize-handle-visual"></div>
+        <button class="divider-arrow arrow-right" id="btn-collapse-right" title="Toggle Right Panel">
+          <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+        </button>
+      </div>
+
+      <!-- ========================================== -->
+      <!-- RIGHT PANEL: SERVERS & FRIENDS HUB          -->
+      <!-- ========================================== -->
+      <aside id="right-panel" class="app-panel right-panel">
+        
+        <!-- Top Half: Server List & Channels -->
+        <div class="right-top-section">
+          <!-- Server Navigation Row -->
+          <div class="server-navigation-container">
+            <div class="server-icons-list" id="server-icons-list">
+              <!-- Dynamically populated servers from JS -->
+            </div>
+          </div>
+
+          <!-- Channel List for current server -->
+          <div class="channels-section">
+            <div class="channels-header">
+              <span id="active-server-title">Dangro HQ</span>
+              <button class="btn-add-channel" id="btn-add-channel" title="Add Channel">+</button>
+            </div>
+            <div class="channels-list" id="channels-list">
+              <!-- Dynamically populated channels from JS -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Splitter / Separator -->
+        <div class="right-section-divider">
+          <span>Social Center</span>
+        </div>
+
+        <!-- Bottom Half: Friends Hub -->
+        <div class="right-bottom-section">
+          <div class="friends-sub-header">
+            <div class="friends-tabs">
+              <button class="friend-tab-btn active" data-subtab="online">Online</button>
+              <button class="friend-tab-btn" data-subtab="all">All</button>
+              <button class="friend-tab-btn" data-subtab="pending">Pending</button>
+              <button class="friend-tab-btn add-friend-accent" data-subtab="add-friend">Add Friend</button>
+            </div>
+          </div>
+
+          <!-- Subtab Viewports -->
+          <div class="friends-content">
+            
+            <!-- Online & All Friends List View -->
+            <div id="friends-list-view" class="subtab-content active">
+              <div class="friends-search">
+                <input type="text" id="friend-search-input" placeholder="Search friends...">
+              </div>
+              <div class="friends-scroller" id="friends-scroller-list">
+                <!-- Dynamically populated friends list from JS -->
+              </div>
+            </div>
+
+            <!-- Pending Requests View -->
+            <div id="friends-pending-view" class="subtab-content">
+              <div class="friends-scroller" id="friends-pending-list">
+                <!-- Dynamic pending list -->
+              </div>
+            </div>
+
+            <!-- Add Friend Screen -->
+            <div id="friends-add-view" class="subtab-content">
+              <div class="add-friend-box">
+                <h4>ADD FRIEND</h4>
+                <p>You can add friends with their Dangro tag (e.g. <code>username#1234</code> or simply <code>username</code>).</p>
+                <div class="add-friend-input-row">
+                  <input type="text" id="add-friend-input" placeholder="Enter username..." autocomplete="off">
+                  <button id="btn-submit-friend-req">Send Request</button>
+                </div>
+                <div id="add-friend-feedback" class="feedback-msg"></div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+        <!-- Add Channel Modal -->
+        <div id="channel-modal" class="modal hidden">
+          <div class="modal-content glassmorphism">
+            <h3>Create Text Channel</h3>
+            <p>Channel Name</p>
+            <input type="text" id="channel-name-input" placeholder="new-channel" class="modal-input">
+            <div class="modal-buttons">
+              <button id="btn-channel-cancel" class="modal-btn cancel">Cancel</button>
+              <button id="btn-channel-submit" class="modal-btn submit">Create</button>
+            </div>
+          </div>
+        </div>
+
+      </aside>
+
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="mockData.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
