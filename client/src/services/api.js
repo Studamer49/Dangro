@@ -13,7 +13,7 @@ async function request(path, options = {}) {
 export const api = {
   auth: {
     login: (username, password) => request("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }),
-    guest: () => request("/auth/guest", { method: "POST" }),
+    signup: (username, password) => request("/auth/signup", { method: "POST", body: JSON.stringify({ username, password }) }),
   },
   servers: {
     list: () => request("/servers"),

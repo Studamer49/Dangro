@@ -2,76 +2,65 @@ import React, { useState } from "react";
 import { useApp } from "../contexts/AppContext";
 
 export default function InstagramClient() {
-  const { state, dispatch } = useApp();
-  const [commentText, setCommentText] = useState({});
+  const { state: { instagramPosts }, dispatch } = useApp();
+  const [commentInputs, setCommentInputs] = useState({});
 
-  function toggleLike(postId) {
+  const handleLike = (postId) => {
     dispatch({ type: "TOGGLE_IG_LIKE", payload: postId });
-  }
+  };
 
-  function addComment(postId) {
-    const text = commentText[postId]?.trim();
-    if (!text) return;
+  const handleComment = (postId) => {
+    const text = commentInputs[postId];
+    if (!text?.trim()) return;
     dispatch({ type: "ADD_IG_COMMENT", payload: { postId, text } });
-    setCommentText(prev => ({ ...prev, [postId]: "" }));
-  }
+    setCommentInputs(p => ({ ...p, [postId]: "" }));
+  };
 
   return (
-    <>
-      <div className="ig-profile-header">
-        <div className="ig-logo">Instagram</div>
-        <div className="ig-user-badge">
-          <div className="user-avatar-small" style={{ background: "#555" }}>D</div>
-          <span>dangro_user</span>
-        </div>
+    <div className="ig-panel">
+      <div className="ig-header">
+        <h2>Instagram</h2>
+        <span className="ig-header-icon">📷</span>
       </div>
       <div className="ig-feed">
-        {state.instagramPosts.map(post => (
-          <div key={post.id} className="ig-post-card">
+        {instagramPosts.map(post => (
+          <div key={post.id} className="ig-post">
             <div className="ig-post-header">
-              <div className="user-avatar-small" style={{ backgroundColor: post.userAvatarColor }}>
-                {post.username.charAt(0).toUpperCase()}
+              <div className="ig-user-avatar" style={{ backgroundColor: post.userAvatarColor }}>
+                {post.username[0].toUpperCase()}
               </div>
-              <span className="ig-post-author">{post.username}</span>
+              <span className="ig-username">{post.username}</span>
             </div>
-            <div className="ig-post-image" style={{ backgroundImage: `url(${post.image})` }}></div>
+            <div className="ig-post-image">
+              <img src={post.image} alt="Post" />
+            </div>
             <div className="ig-post-actions">
-              <button className={"ig-action-btn" + (post.liked ? " liked" : "")} onClick={() => toggleLike(post.id)}>
-                <span>{post.liked ? "❤️" : "🤍"}</span>
+              <button className={`ig-action-btn ${post.liked ? "liked" : ""}`} onClick={() => handleLike(post.id)}>
+                {post.liked ? "❤️" : "🤍"}
               </button>
-              <button className="ig-action-btn" onClick={() => document.getElementById("ig-comment-" + post.id)?.focus()}>
-                <span>💬</span>
-              </button>
+              <span className="ig-likes">{post.likes} likes</span>
             </div>
-            <div className="ig-post-likes">{post.likes.toLocaleString()} likes</div>
             <div className="ig-post-caption">
-              <span className="author">{post.username}</span>
-              {post.caption}
+              <strong>{post.username}</strong> {post.caption}
             </div>
-            <div className="ig-comments-box">
-              <div className="ig-comments-list">
-                {post.comments.map((c, i) => (
-                  <div key={i} className="ig-comment-item">
-                    <span className="commenter">{c.username}</span>
-                    {c.text}
-                  </div>
-                ))}
-              </div>
-              <div className="ig-add-comment">
-                <input
-                  id={"ig-comment-" + post.id}
-                  type="text"
-                  placeholder="Add a comment..."
-                  value={commentText[post.id] || ""}
-                  onChange={e => setCommentText(prev => ({ ...prev, [post.id]: e.target.value }))}
-                  onKeyDown={e => { if (e.key === "Enter") addComment(post.id); }}
-                />
-                <button onClick={() => addComment(post.id)}>Post</button>
-              </div>
+            <div className="ig-post-comments">
+              {post.comments.map((c, i) => (
+                <div key={i} className="ig-comment"><strong>{c.username}</strong> {c.text}</div>
+              ))}
+            </div>
+            <div className="ig-comment-form">
+              <input
+                type="text"
+                value={commentInputs[post.id] || ""}
+                onChange={e => setCommentInputs(p => ({ ...p, [post.id]: e.target.value }))}
+                placeholder="Add a comment..."
+                onKeyDown={e => e.key === "Enter" && handleComment(post.id)}
+              />
+              <button onClick={() => handleComment(post.id)}>Post</button>
             </div>
           </div>
         ))}
       </div>
-    </>
+    </div>
   );
 }

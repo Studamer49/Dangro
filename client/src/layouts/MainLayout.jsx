@@ -65,36 +65,34 @@ export default function MainLayout() {
   }, [isDraggingLeft, isDraggingRight, saveLayout]);
 
   return (
-    <div className="main-content-area" style={style}>
-      <section id="left-panel" className={"app-panel left-panel" + (state.leftPanelCollapsed ? " collapsed" : "")}>
-        <LeftPanel />
-      </section>
+    <div className="main-layout" style={style}>
+      {!state.leftPanelCollapsed && (
+        <section className="left-panel" style={{ width: "var(--left-width)" }}>
+          <LeftPanel />
+        </section>
+      )}
+      <div className={`resize-handle resize-handle-left ${isDraggingLeft ? "dragging" : ""}`} onMouseDown={() => setIsDraggingLeft(true)} />
+      {state.leftPanelCollapsed && (
+        <button className="collapse-toggle" onClick={() => saveLayout({ leftPanelCollapsed: false })} title="Show left panel">
+          ▶
+        </button>
+      )}
 
-      <div id="divider-left" className={"resize-divider" + (isDraggingLeft ? " dragging" : "")}
-        onMouseDown={(e) => { if (!e.target.closest(".divider-arrow")) { setIsDraggingLeft(true); } }}>
-        <button className={"divider-arrow arrow-left" + (state.leftPanelCollapsed ? " hidden" : "")} id="btn-collapse-left"
-          onClick={() => saveLayout({ leftPanelCollapsed: true })}>◀</button>
-        <div className="resize-handle-visual"></div>
-        <button className={"divider-arrow arrow-right" + (!state.leftPanelCollapsed ? " hidden" : "")} id="btn-expand-left"
-          onClick={() => saveLayout({ leftPanelCollapsed: false })}>▶</button>
-      </div>
-
-      <main id="middle-panel" className="app-panel chat-panel">
+      <main className="chat-area" style={{ flex: 1, width: state.leftPanelCollapsed && state.rightPanelCollapsed ? "100%" : undefined }}>
         <ChatPanel />
       </main>
 
-      <div id="divider-right" className={"resize-divider" + (isDraggingRight ? " dragging" : "")}
-        onMouseDown={(e) => { if (!e.target.closest(".divider-arrow")) { setIsDraggingRight(true); } }}>
-        <button className={"divider-arrow arrow-left" + (!state.rightPanelCollapsed ? " hidden" : "")} id="btn-expand-right"
-          onClick={() => saveLayout({ rightPanelCollapsed: false })}>◀</button>
-        <div className="resize-handle-visual"></div>
-        <button className={"divider-arrow arrow-right" + (state.rightPanelCollapsed ? " hidden" : "")} id="btn-collapse-right"
-          onClick={() => saveLayout({ rightPanelCollapsed: true })}>▶</button>
-      </div>
-
-      <aside id="right-panel" className={"app-panel right-panel" + (state.rightPanelCollapsed ? " collapsed" : "")}>
-        <RightPanel />
-      </aside>
+      {state.rightPanelCollapsed && (
+        <button className="collapse-toggle" onClick={() => saveLayout({ rightPanelCollapsed: false })} title="Show right panel" style={{ left: "auto", right: 16 }}>
+          ◀
+        </button>
+      )}
+      <div className={`resize-handle resize-handle-right ${isDraggingRight ? "dragging" : ""}`} onMouseDown={() => setIsDraggingRight(true)} />
+      {!state.rightPanelCollapsed && (
+        <aside className="right-panel" style={{ width: "var(--right-width)" }}>
+          <RightPanel />
+        </aside>
+      )}
     </div>
   );
 }

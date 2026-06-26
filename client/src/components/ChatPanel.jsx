@@ -1,14 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useApp, getActiveChatKey } from "../contexts/AppContext";
 import socket from "../services/socket";
 import MessageItem from "./MessageItem";
-import EmojiPicker from "./EmojiPicker";
 
 export default function ChatPanel() {
   const { state, dispatch, loadMessages, sendMessage, addToast } = useApp();
   const [input, setInput] = useState("");
   const [replyTarget, setReplyTarget] = useState(null);
-  const [showEmoji, setShowEmoji] = useState(false);
   const [typingUser, setTypingUser] = useState(null);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
@@ -34,11 +32,8 @@ export default function ChatPanel() {
 
   useEffect(() => {
     socket.on("typing:update", (data) => {
-      if (data.isTyping) {
-        setTypingUser(data.username);
-      } else {
-        setTypingUser(null);
-      }
+      if (data.isTyping) setTypingUser(data.username);
+      else setTypingUser(null);
     });
     return () => { socket.off("typing:update"); };
   }, []);
@@ -50,20 +45,6 @@ export default function ChatPanel() {
     setInput("");
     setReplyTarget(null);
     socket.emit("typing:stop", { chatKey, username: state.displayName });
-    if (inputRef.current) {
-      inputRef.current.style.height = "auto";
-    }
-  }
-
-  function handleInputChange(e) {
-    setInput(e.target.value);
-    e.target.style.height = "auto";
-    e.target.style.height = e.target.scrollHeight + "px";
-    if (e.target.value.trim()) {
-      socket.emit("typing:start", { chatKey, username: state.displayName });
-    } else {
-      socket.emit("typing:stop", { chatKey, username: state.displayName });
-    }
   }
 
   function handleKeyDown(e) {
@@ -78,22 +59,12 @@ export default function ChatPanel() {
     inputRef.current?.focus();
   }
 
-  function cancelReply() {
-    setReplyTarget(null);
-  }
-
   function sendMedia() {
     const url = mediaUrl.trim();
     if (!url) return;
     sendMessage(url, true, null);
     setMediaUrl("");
     setMediaModalOpen(false);
-  }
-
-  function handleClearChat() {
-    if (window.confirm("Clear chat history?")) {
-      dispatch({ type: "SET_MESSAGES", chatKey, payload: [] });
-    }
   }
 
   function getChatInfo() {
@@ -115,29 +86,27 @@ export default function ChatPanel() {
 
   return (
     <>
-      <header className="chat-header">
-        <div className="chat-header-title">
-          <span className="chat-hash">{info.prefix}</span>
-          <h2 id="chat-header-name">{info.name}</h2>
-          {info.desc && <p className="chat-header-desc">{info.desc}</p>}
+      <div className="chat-header-bar">
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="chat-header-hash">{info.prefix}</span>
+          <h2 className="chat-header-name">{info.name}</h2>
+          {info.desc && <span className="chat-header-desc">{info.desc}</span>}
         </div>
-        <div className="chat-header-actions">
-          <div className="chat-search">
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div className="search-chat">
             <input type="text" placeholder="Search..." value={state.chatSearchQuery}
               onChange={e => dispatch({ type: "SET_CHAT_SEARCH", payload: e.target.value })} />
+            <span>🔍</span>
           </div>
-          <button className="header-action-btn" title="Clear Chat" onClick={handleClearChat}>🗑️</button>
         </div>
-      </header>
+      </div>
 
-      <div className="chat-messages" id="chat-messages-container">
+      <div className="chat-messages">
         {filtered.length === 0 ? (
-          <div style={{
-            flexGrow: 1, display: "flex", flexDirection: "column", alignItems: "center",
-            justifyContent: "center", color: "var(--text-muted)", fontSize: "0.8rem", padding: "20px"
-          }}>
-            <div style={{ fontSize: "2rem", marginBottom: "8px" }}>💬</div>
-            <p>{query ? "No messages match your search." : "No messages yet."}</p>
+          <div className="empty-state" style={{ height: "100%" }}>
+            <div className="empty-state-icon">💬</div>
+            <div className="empty-state-title">{query ? "No results" : "No messages yet"}</div>
+            <div className="empty-state-desc">{query ? "No messages match your search." : "Send a message to start the conversation."}</div>
           </div>
         ) : (
           filtered.map(msg => (
@@ -148,43 +117,46 @@ export default function ChatPanel() {
       </div>
 
       {replyTarget && (
-        <div className="reply-preview">
-          <div className="reply-preview-content">
-            <span className="reply-preview-label">Replying to <span id="reply-target-name">{replyTarget.sender}</span></span>
-            <span id="reply-target-text" className="reply-preview-text">{replyTarget.content.substring(0, 100)}</span>
+        <div style={{ padding: "6px 16px 0", background: "var(--bg-secondary)" }}>
+          <div className="reply-indicator">
+            <span>Replying to <strong>{replyTarget.sender}</strong>: {replyTarget.content.substring(0, 60)}</span>
+            <span className="cancel-reply" onClick={() => setReplyTarget(null)}>✕</span>
           </div>
-          <button className="reply-cancel-btn" onClick={cancelReply}>✕</button>
         </div>
       )}
 
-      <footer className="chat-footer">
+      <div className="chat-input-area">
         {typingUser && (
-          <div className="typing-indicator-bar">
-            <span className="typing-dots"><span></span><span></span><span></span></span>
-            <span className="typing-text">{typingUser} is typing...</span>
+          <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 4, display: "flex", alignItems: "center", gap: 4 }}>
+            <span style={{ display: "inline-flex", gap: 2 }}>
+              <span style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--text-muted)", animation: "pulse 1s infinite" }} />
+              <span style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--text-muted)", animation: "pulse 1s infinite 0.2s" }} />
+              <span style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--text-muted)", animation: "pulse 1s infinite 0.4s" }} />
+            </span>
+            {typingUser} is typing...
           </div>
         )}
-        <div className="input-actions-wrapper">
-          <button className="input-action-btn" title="Attach" onClick={() => setMediaModalOpen(true)}>📎</button>
-          <div className="chat-input-box">
-            <textarea ref={inputRef} id="message-input" placeholder={"Message " + info.prefix + info.name + "..."}
-              rows="1" value={input} onChange={handleInputChange} onKeyDown={handleKeyDown}></textarea>
-          </div>
-          <button className="input-action-btn" title="Emoji" onClick={(e) => { e.stopPropagation(); setShowEmoji(!showEmoji); }}>😀</button>
-          {showEmoji && <EmojiPicker onSelect={(emoji) => { setInput(prev => prev + emoji); inputRef.current?.focus(); }} onClose={() => setShowEmoji(false)} />}
-          <button className="input-action-btn send-btn" title="Send" onClick={handleSend}>➤</button>
+        <div className="chat-input-wrapper">
+          <button className="upload-btn" title="Attach image" onClick={() => setMediaModalOpen(true)}>📎</button>
+          <input ref={inputRef} type="text" placeholder="Type a message..."
+            value={input} onChange={e => {
+              setInput(e.target.value);
+              if (e.target.value.trim()) socket.emit("typing:start", { chatKey, username: state.displayName });
+              else socket.emit("typing:stop", { chatKey, username: state.displayName });
+            }}
+            onKeyDown={handleKeyDown} />
+          <button className="send-btn" onClick={handleSend} disabled={!input.trim()}>➤</button>
         </div>
-      </footer>
+      </div>
 
       {mediaModalOpen && (
-        <div className="modal" onClick={() => setMediaModalOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h3>Attach Image Link</h3>
-            <p>Paste a direct image URL (JPEG, PNG, GIF).</p>
-            <input type="text" placeholder="https://..." className="modal-input" value={mediaUrl} onChange={e => setMediaUrl(e.target.value)} />
-            <div className="modal-buttons">
-              <button className="modal-btn cancel" onClick={() => setMediaModalOpen(false)}>Cancel</button>
-              <button className="modal-btn submit" onClick={sendMedia}>Attach</button>
+        <div className="call-overlay" onClick={() => setMediaModalOpen(false)}>
+          <div className="call-card" onClick={e => e.stopPropagation()} style={{ minWidth: 340 }}>
+            <h3 style={{ marginBottom: 16 }}>Attach Image Link</h3>
+            <input type="text" placeholder="https://..." className="dm-friend-search" value={mediaUrl} onChange={e => setMediaUrl(e.target.value)} />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+              <button className="login-submit" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)" }} onClick={() => setMediaModalOpen(false)}>Cancel</button>
+              <button className="login-submit" style={{ width: "auto", padding: "10px 20px" }} onClick={sendMedia}>Attach</button>
             </div>
           </div>
         </div>

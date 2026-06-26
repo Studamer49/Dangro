@@ -15,23 +15,21 @@ export default function LeftPanel() {
 
   return (
     <>
-      <header className="panel-header">
-        <div className="header-logo">
-          <span className="logo-accent">D</span> Hub Client
-        </div>
-        <div className="panel-tabs">
-          {tabs.map(tab => (
-            <button
-              key={tab.id}
-              className={"panel-tab-btn" + (state.activeLeftTab === tab.id ? " active" : "")}
-              onClick={() => dispatch({ type: "SET_LEFT_TAB", payload: tab.id })}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </header>
-      <div className="panel-content-area">
+      <div className="left-panel-header">
+        <h2>Dangro Hub</h2>
+      </div>
+      <div className="left-panel-tabs">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            className={"left-panel-tab" + (state.activeLeftTab === tab.id ? " active" : "")}
+            onClick={() => dispatch({ type: "SET_LEFT_TAB", payload: tab.id })}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+      <div className="left-panel-content">
         {state.activeLeftTab === "youtube-client" && <YouTubeClient />}
         {state.activeLeftTab === "instagram-client" && <InstagramClient />}
         {state.activeLeftTab === "custom-browser" && <CustomBrowser />}

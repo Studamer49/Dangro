@@ -1,6 +1,5 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { useApp } from "../contexts/AppContext";
-import { api } from "../services/api";
 import ServerSection from "./ServerSection";
 import GroupChatSection from "./GroupChatSection";
 import DMList from "./DMList";
@@ -8,16 +7,32 @@ import DMList from "./DMList";
 export default function RightPanel() {
   const { state, dispatch } = useApp();
 
+  const navItems = [
+    { id: "servers", label: "Servers" },
+    { id: "groupchats", label: "Groups" },
+    { id: "dms", label: "DMs" },
+  ];
+
   return (
     <>
-      <div id="right-servers-view" className={"right-view" + (state.activeNavTab === "servers" ? " active" : "")}>
-        <ServerSection />
+      <div className="right-panel-header">
+        <h2>Dangro</h2>
       </div>
-      <div id="right-groupchats-view" className={"right-view" + (state.activeNavTab === "groupchats" ? " active" : "")}>
-        <GroupChatSection />
+      <div className="right-panel-nav">
+        {navItems.map(item => (
+          <button
+            key={item.id}
+            className={"right-nav-btn" + (state.activeNavTab === item.id ? " active" : "")}
+            onClick={() => dispatch({ type: "SET_NAV_TAB", payload: item.id })}
+          >
+            {item.label}
+          </button>
+        ))}
       </div>
-      <div id="right-dms-view" className={"right-view" + (state.activeNavTab === "dms" ? " active" : "")}>
-        <DMList />
+      <div className="right-panel-content">
+        {state.activeNavTab === "servers" && <ServerSection />}
+        {state.activeNavTab === "groupchats" && <GroupChatSection />}
+        {state.activeNavTab === "dms" && <DMList />}
       </div>
     </>
   );

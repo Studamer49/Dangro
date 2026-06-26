@@ -178,25 +178,7 @@ function seedIfEmpty() {
     db.run("INSERT OR IGNORE INTO channels (id, server_id, name) VALUES (?, ?, ?)", [id, serverId, name]);
   }
 
-  const friends = [
-    ["pixel_alex", "pixel_alex", "4829", "online", "Coding in JavaScript...", "#555555"],
-    ["cyber_sam", "cyber_sam", "1932", "idle", "AFK grabbing coffee", "#444444"],
-    ["neon_lisa", "neon_lisa", "7721", "dnd", "In a deep state of flow", "#666666"],
-    ["ghost_rider", "ghost_rider", "9901", "offline", "", "#333333"],
-    ["retro_gamer", "retro_gamer", "5504", "online", "Playing Retro City", "#555555"],
-    ["syntax_sage", "syntax_sage", "3342", "online", "Reviewing PRs", "#444444"],
-  ];
-  for (const [id, username, disc, status, cstatus, color] of friends) {
-    db.run("INSERT OR IGNORE INTO friends (id, username, discriminator, status, custom_status, avatar_color) VALUES (?, ?, ?, ?, ?, ?)",
-      [id, username, disc, status, cstatus, color]);
-  }
-
   db.run("INSERT OR IGNORE INTO users (username, password, display_name, bio, status, custom_status, profile_pic) VALUES ('admin', 'admin', 'You', '', 'online', '', '')");
-
-  db.run("INSERT OR IGNORE INTO messages (id, chat_key, sender, content, timestamp, is_image, system, reply_to_sender, reply_to_content) VALUES ('m1', 'dangro-hq_general', 'pixel_alex', 'Welcome to Dangro HQ! Excited to build this awesome chat interface.', 'Today at 5:12 PM', 0, 0, NULL, NULL)");
-  db.run("INSERT OR IGNORE INTO messages (id, chat_key, sender, content, timestamp, is_image, system, reply_to_sender, reply_to_content) VALUES ('m2', 'dangro-hq_general', 'cyber_sam', 'The resizable panel layout is so smooth. Love the clean design.', 'Today at 5:14 PM', 0, 0, NULL, NULL)");
-  db.run("INSERT OR IGNORE INTO messages (id, chat_key, sender, content, timestamp, is_image, system, reply_to_sender, reply_to_content) VALUES ('m3', 'dangro-hq_general', 'neon_lisa', 'Did anyone check out the YouTube/Instagram simulator on the left?', 'Today at 5:15 PM', 0, 0, NULL, NULL)");
-  db.run("INSERT OR IGNORE INTO messages (id, chat_key, sender, content, timestamp, is_image, system, reply_to_sender, reply_to_content) VALUES ('a1', 'dangro-hq_announcements', 'System', 'Welcome to Dangro! Chat, share, and connect.', 'Yesterday at 12:00 PM', 0, 1, NULL, NULL)");
 
   saveDb();
 }

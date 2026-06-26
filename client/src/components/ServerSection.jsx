@@ -52,120 +52,94 @@ export default function ServerSection() {
     }
   }
 
-  async function createServer() {
-    const name = serverName.trim();
-    if (!name) { addToast("Server name required!", "error"); return; }
-    try {
-      const server = await api.servers.create(name, serverIcon.trim() || name.charAt(0).toUpperCase());
-      dispatch({ type: "SET_SERVERS", payload: [...state.servers, server] });
-      dispatch({
-        type: "SET_ACTIVE_CHAT",
-        payload: { activeServerId: server.id, activeChatType: "channel", activeChannelId: "general" },
-      });
-      setShowServerModal(false);
-      setServerName("");
-      setServerIcon("");
-      addToast("Server " + name + " created!", "success");
-    } catch (e) {
-      addToast(e.message || "Failed to create server", "error");
-    }
-  }
-
-  function joinServer() {
-    const code = joinCode.trim().toLowerCase().replace(/\s+/g, "-");
-    const server = state.servers.find(s => s.id === code);
-    if (server) {
-      dispatch({
-        type: "SET_ACTIVE_CHAT",
-        payload: { activeServerId: code, activeChatType: "channel", activeChannelId: server.channels[0]?.id || "general" },
-      });
-      setShowJoinModal(false);
-      setJoinCode("");
-      addToast("Joined server " + server.name + "!", "success");
-    } else {
-      addToast("Server not found with that code!", "error");
-    }
-  }
+  const serverColors = ["#5b5bf0", "#3ba55d", "#ed4245", "#f0b232", "#a855f7", "#22d3ee"];
 
   return (
-    <>
-      <div className="right-top-section">
-        <div className="server-navigation-container">
-          <div className="server-section-header">
-            <span>Servers</span>
-            <div className="server-actions">
-              <button className="server-action-btn" title="Create Server" onClick={() => setShowServerModal(true)}>+</button>
-              <button className="server-action-btn" title="Join Server" onClick={() => setShowJoinModal(true)}>🔗</button>
-            </div>
-          </div>
-          <div className="server-icons-list">
-            {state.servers.map(server => (
-              <button key={server.id} className={"server-icon-btn" + (server.id === state.activeServerId ? " active" : "")}
-                title={server.name} onClick={() => handleServerClick(server)}>
-                {server.icon}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="channels-section">
-          <div className="channels-header">
-            <span id="active-server-title">{currentServer?.name || "Dangro"}</span>
-            <button className="btn-add-channel" onClick={() => setShowChannelModal(true)}>+</button>
-          </div>
-          <div className="channels-list">
-            {currentServer?.channels.map(chan => (
-              <button key={chan.id} className={"channel-btn" + (state.activeChatType === "channel" && chan.id === state.activeChannelId ? " active" : "")}
-                onClick={() => handleChannelClick(chan.id)}>
-                <span className="hash">#</span> {chan.name}
-              </button>
-            ))}
-          </div>
+    <div className="server-section">
+      <div className="dm-section-header">
+        <h3>Servers</h3>
+        <div style={{ display: "flex", gap: 4 }}>
+          <button style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 16, padding: "2px 4px" }}
+            onClick={() => setShowServerModal(true)} title="Create Server">+</button>
+          <button style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, padding: "2px 4px" }}
+            onClick={() => setShowJoinModal(true)} title="Join Server">🔗</button>
         </div>
       </div>
 
+      {state.servers.map((server, i) => (
+        <div key={server.id}>
+          <div className={"server-item" + (server.id === state.activeServerId ? " active" : "")}
+            onClick={() => handleServerClick(server)}>
+            <div className="server-icon" style={{ backgroundColor: serverColors[i % serverColors.length] }}>
+              {server.icon || server.name.charAt(0).toUpperCase()}
+            </div>
+            <div className="server-name">{server.name}</div>
+          </div>
+          {server.id === state.activeServerId && (
+            <div className="channel-list">
+              <div className="dm-section-header" style={{ padding: "4px 10px" }}>
+                <h3>Channels</h3>
+                <button style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 14, padding: 0 }}
+                  onClick={() => setShowChannelModal(true)}>+</button>
+              </div>
+              {server.channels.map(chan => (
+                <div key={chan.id} className={"channel-item" + (state.activeChatType === "channel" && chan.id === state.activeChannelId ? " active" : "")}
+                  onClick={() => handleChannelClick(chan.id)}>
+                  <span className="channel-hash">#</span> {chan.name}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+
+      {state.servers.length === 0 && (
+        <div className="empty-state">
+          <div className="empty-state-icon">💻</div>
+          <div className="empty-state-title">No servers</div>
+          <div className="empty-state-desc">Create or join a server to get started.</div>
+        </div>
+      )}
+
       {showChannelModal && (
-        <div className="modal" onClick={() => setShowChannelModal(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h3>Create Text Channel</h3>
-            <p>Channel Name</p>
-            <input type="text" placeholder="new-channel" className="modal-input" value={channelName} onChange={e => setChannelName(e.target.value)} />
-            <div className="modal-buttons">
-              <button className="modal-btn cancel" onClick={() => setShowChannelModal(false)}>Cancel</button>
-              <button className="modal-btn submit" onClick={createChannel}>Create</button>
+        <div className="call-overlay" onClick={() => setShowChannelModal(false)}>
+          <div className="call-card" onClick={e => e.stopPropagation()} style={{ minWidth: 300 }}>
+            <h3 style={{ marginBottom: 16 }}>Create Channel</h3>
+            <input type="text" placeholder="Channel name" className="dm-friend-search" value={channelName} onChange={e => setChannelName(e.target.value)} />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+              <button className="login-submit" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)" }} onClick={() => setShowChannelModal(false)}>Cancel</button>
+              <button className="login-submit" style={{ width: "auto", padding: "10px 20px" }} onClick={createChannel}>Create</button>
             </div>
           </div>
         </div>
       )}
 
       {showServerModal && (
-        <div className="modal" onClick={() => setShowServerModal(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h3>Create Server</h3>
-            <p>Give your server a name</p>
-            <input type="text" placeholder="Server Name" className="modal-input" value={serverName} onChange={e => setServerName(e.target.value)} />
-            <p>Server Icon (emoji or letter)</p>
-            <input type="text" placeholder="D" className="modal-input" maxLength="2" value={serverIcon} onChange={e => setServerIcon(e.target.value)} />
-            <div className="modal-buttons">
-              <button className="modal-btn cancel" onClick={() => setShowServerModal(false)}>Cancel</button>
-              <button className="modal-btn submit" onClick={createServer}>Create</button>
+        <div className="call-overlay" onClick={() => setShowServerModal(false)}>
+          <div className="call-card" onClick={e => e.stopPropagation()} style={{ minWidth: 300 }}>
+            <h3 style={{ marginBottom: 16 }}>Create Server</h3>
+            <input type="text" placeholder="Server Name" className="dm-friend-search" value={serverName} onChange={e => setServerName(e.target.value)} />
+            <input type="text" placeholder="Icon letter or emoji" className="dm-friend-search" value={serverIcon} onChange={e => setServerIcon(e.target.value)} style={{ marginTop: 8 }} />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+              <button className="login-submit" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)" }} onClick={() => setShowServerModal(false)}>Cancel</button>
+              <button className="login-submit" style={{ width: "auto", padding: "10px 20px" }} onClick={createServer}>Create</button>
             </div>
           </div>
         </div>
       )}
 
       {showJoinModal && (
-        <div className="modal" onClick={() => setShowJoinModal(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <h3>Join Server</h3>
-            <p>Enter invite code to join a server</p>
-            <input type="text" placeholder="Invite Code" className="modal-input" value={joinCode} onChange={e => setJoinCode(e.target.value)} />
-            <div className="modal-buttons">
-              <button className="modal-btn cancel" onClick={() => setShowJoinModal(false)}>Cancel</button>
-              <button className="modal-btn submit" onClick={joinServer}>Join</button>
+        <div className="call-overlay" onClick={() => setShowJoinModal(false)}>
+          <div className="call-card" onClick={e => e.stopPropagation()} style={{ minWidth: 300 }}>
+            <h3 style={{ marginBottom: 16 }}>Join Server</h3>
+            <input type="text" placeholder="Server ID" className="dm-friend-search" value={joinCode} onChange={e => setJoinCode(e.target.value)} />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
+              <button className="login-submit" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)" }} onClick={() => setShowJoinModal(false)}>Cancel</button>
+              <button className="login-submit" style={{ width: "auto", padding: "10px 20px" }} onClick={joinServer}>Join</button>
             </div>
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }

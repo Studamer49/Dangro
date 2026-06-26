@@ -4,14 +4,17 @@ import socket from "../services/socket";
 import { api } from "../services/api";
 
 const MOCK_YOUTUBE_VIDEOS = [
-  { id: "dQw4w9WgXcQ", title: "Rick Astley - Never Gonna Give You Up (Official Music Video)", channelName: "Rick Astley", views: "1.4B views", likes: "17M likes", thumbnail: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=400&q=80" },
   { id: "jfKfPfyJRdk", title: "lofi hip hop radio - beats to relax/study to", channelName: "Lofi Girl", views: "68M views", likes: "2.3M likes", thumbnail: "https://images.unsplash.com/photo-1518495973542-4542c06a5843?auto=format&fit=crop&w=400&q=80" },
   { id: "2g811Eo7K8U", title: "Modern Web Design Aesthetics - CSS Secrets", channelName: "AestheticCodes", views: "154K views", likes: "12K likes", thumbnail: "https://images.unsplash.com/photo-1507238691740-187a5b1d37b8?auto=format&fit=crop&w=400&q=80" },
+  { id: "3tmd-ClpJxg", title: "4K Relaxing Nature - Birds Chirping in Forest", channelName: "Nature Sounds", views: "2.1M views", likes: "89K likes", thumbnail: "https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&w=400&q=80" },
+  { id: "JGwWNGJdvx8", title: "Shape of You - Ed Sheeran (Official Music Video)", channelName: "Ed Sheeran", views: "6.2B views", likes: "28M likes", thumbnail: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=400&q=80" },
 ];
 
 const MOCK_INSTAGRAM_POSTS = [
   { id: "ig1", username: "design_inspiration", userAvatarColor: "#555555", image: "https://images.unsplash.com/photo-1541462608141-2f5287b4e93d?auto=format&fit=crop&w=500&q=80", likes: 1243, caption: "Clean dashboard concepts. Minimalist, functional. What do you think? #uidesign #minimal", liked: false, comments: [{ username: "pixel_craft", text: "Wow, the colors are amazing!" }, { username: "ux_lily", text: "Love the clean design." }] },
   { id: "ig2", username: "setup_goals", userAvatarColor: "#444444", image: "https://images.unsplash.com/photo-1547082299-de196ea013d6?auto=format&fit=crop&w=500&q=80", likes: 852, caption: "Late night coding session. Clean vibes only! Rate this setup 1-10.", liked: true, comments: [{ username: "coder_dan", text: "Solid 10/10, keyboard specs?" }, { username: "neon_vibes", text: "That setup is perfect." }] },
+  { id: "ig3", username: "travel_adventures", userAvatarColor: "#666666", image: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=500&q=80", likes: 2341, caption: "Sunset views from the summit! Best hike ever! #travel #nature", liked: false, comments: [{ username: "wanderlust_amy", text: "Where is this?" }, { username: "nature_lover", text: "Absolutely breathtaking!" }] },
+  { id: "ig4", username: "foodie_crush", userAvatarColor: "#333333", image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=500&q=80", likes: 567, caption: "Homemade pasta for dinner. Recipe in bio! #foodie #homemade", liked: false, comments: [{ username: "chef_mike", text: "Looks delicious!" }] },
 ];
 
 const MOCK_REPLIES = [
@@ -47,7 +50,7 @@ const initialState = {
   chatSearchQuery: "",
   youtubeVideos: MOCK_YOUTUBE_VIDEOS,
   instagramPosts: MOCK_INSTAGRAM_POSTS,
-  activeYtVideoId: "dQw4w9WgXcQ",
+  activeYtVideoId: "jfKfPfyJRdk",
   toasts: [],
 };
 
@@ -146,9 +149,8 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     socket.on("message:new", (msg) => {
-      const chatKey = getActiveChatKey(stateRef.current);
       if (msg.sender !== stateRef.current.displayName) {
-        dispatch({ type: "ADD_MESSAGE", chatKey: getChatKeyFromMsg(stateRef.current, msg), payload: msg });
+        dispatch({ type: "ADD_MESSAGE", chatKey: getActiveChatKey(stateRef.current), payload: msg });
         triggerMockReply(stateRef.current, msg);
       }
     });
@@ -159,13 +161,18 @@ export function AppProvider({ children }) {
     const result = await api.auth.login(username, password);
     localStorage.setItem("dangro_session", JSON.stringify({ loggedIn: true, username: result.username, timestamp: Date.now() }));
     dispatch({ type: "SET_USER", payload: { username: result.username } });
+    if (result.displayName) {
+      dispatch({ type: "SET_PROFILE", payload: { displayName: result.displayName } });
+    }
     return result;
   }, []);
 
-  const guestLogin = useCallback(async () => {
-    const result = await api.auth.guest();
-    localStorage.setItem("dangro_session", JSON.stringify({ loggedIn: true, username: "guest", timestamp: Date.now() }));
-    dispatch({ type: "SET_USER", payload: { username: "guest" } });
+  const signup = useCallback(async (username, password) => {
+    const result = await api.auth.signup(username, password);
+    localStorage.setItem("dangro_session", JSON.stringify({ loggedIn: true, username: result.username, timestamp: Date.now() }));
+    dispatch({ type: "SET_USER", payload: { username: result.username } });
+    dispatch({ type: "SET_PROFILE", payload: { displayName: username } });
+    return result;
   }, []);
 
   const logout = useCallback(() => {
@@ -223,7 +230,7 @@ export function AppProvider({ children }) {
   }, []);
 
   return (
-    <AppContext.Provider value={{ state, dispatch, login, guestLogin, logout, loadMessages, sendMessage, addToast }}>
+    <AppContext.Provider value={{ state, dispatch, login, signup, logout, loadMessages, sendMessage, addToast }}>
       {children}
     </AppContext.Provider>
   );
@@ -240,8 +247,4 @@ export function getActiveChatKey(s) {
   if (s.activeChatType === "dm") return "dm_" + s.activeDmFriendId;
   if (s.activeChatType === "group") return "group_" + s.activeGroupChatId;
   return s.activeServerId + "_" + s.activeChannelId;
-}
-
-function getChatKeyFromMsg(s, msg) {
-  return getActiveChatKey(s);
 }

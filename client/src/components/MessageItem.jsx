@@ -1,13 +1,12 @@
-import React, { useState, useEffect } from "react";
+import React from "react";
 import { useApp } from "../contexts/AppContext";
 
 export default function MessageItem({ msg, onReply }) {
   const { state } = useApp();
   const isMe = msg.sender === state.displayName;
   const avatarChar = msg.system ? "⚙️" : (isMe ? state.displayName.charAt(0).toUpperCase() : msg.sender.charAt(0).toUpperCase());
-  const avatarColor = msg.system ? "transparent" : (isMe ? "#ffffff" : "#444444");
+  const avatarColor = msg.system ? "transparent" : (isMe ? "var(--accent)" : "#555");
 
-  let contentDisplay = msg.content;
   let isImage = msg.isImage || /\.(jpeg|jpg|gif|png|webp)(\?.*)?$/i.test(msg.content) || msg.content.startsWith("https://images.unsplash.com/");
 
   function escapeHtml(text) {
@@ -19,52 +18,49 @@ export default function MessageItem({ msg, onReply }) {
   const reactions = msg.reactions || {};
 
   return (
-    <div className={"message-item" + (msg.system ? " system-msg" : "")} data-msg-id={msg.id}>
-      <div className="msg-avatar" style={{
-        backgroundColor: avatarColor,
-        ...(isMe && !msg.system ? { color: "#000" } : {})
-      }}>
+    <div className={"message" + (msg.system ? " system-msg" : "")} data-msg-id={msg.id}>
+      <div className="msg-avatar" style={{ backgroundColor: msg.system ? "transparent" : avatarColor }}>
         {avatarChar}
       </div>
-      <div className="msg-body">
+      <div className="msg-content">
         <div className="msg-header">
           <span className="msg-sender">{msg.system ? "System" : escapeHtml(msg.sender)}</span>
-          <span className="msg-time">{msg.timestamp || ""}</span>
+          <span className="msg-timestamp">{msg.timestamp || ""}</span>
         </div>
         {msg.replyTo && (
-          <div className="msg-reply-preview">
-            <span className="msg-reply-sender">{escapeHtml(msg.replyTo.sender)}</span>
-            <span className="msg-reply-text">{escapeHtml(msg.replyTo.content.substring(0, 80))}</span>
+          <div className="msg-text">
+            <div className="reply-preview">
+              <strong>{escapeHtml(msg.replyTo.sender)}</strong>: {escapeHtml(msg.replyTo.content.substring(0, 80))}
+            </div>
           </div>
         )}
-        <div className="msg-content">
+        <div className="msg-text">
           {isImage ? (
             <>
               {escapeHtml(msg.content)}
-              <div className="msg-image-attachment">
-                <img src={escapeHtml(msg.content)} alt="Attachment"
-                  onError={(e) => { e.target.style.display = "none"; e.target.parentElement.innerHTML = '<span style="color:#666;font-size:0.7rem;padding:4px;">Image failed to load</span>'; }} />
+              <div>
+                <img src={escapeHtml(msg.content)} alt="Attachment" className="msg-image"
+                  onError={(e) => { e.target.style.display = "none"; }} />
               </div>
             </>
           ) : (
-            escapeHtml(contentDisplay)
+            escapeHtml(msg.content)
           )}
         </div>
         {Object.keys(reactions).length > 0 && (
-          <div className="msg-reactions">
+          <div style={{ display: "flex", gap: 4, marginTop: 4 }}>
             {Object.entries(reactions).map(([emoji, users]) => (
-              <span key={emoji} className={"msg-reaction" + (users.includes(state.displayName) ? " active" : "")}>
-                {emoji} <span className="msg-reaction-count">{users.length}</span>
+              <span key={emoji} style={{ background: "var(--bg-tertiary)", borderRadius: 4, padding: "2px 6px", fontSize: 12, cursor: "pointer", border: "1px solid var(--border)" }}>
+                {emoji} {users.length}
               </span>
             ))}
           </div>
         )}
-        {!msg.system && (
-          <div className="msg-actions-bar">
-            <button className="msg-action-btn btn-reply" title="Reply" onClick={() => onReply(msg)}>↩️</button>
-            <button className="msg-action-btn btn-react" title="React">😀</button>
-          </div>
-        )}
+        <div className="msg-actions">
+          {!msg.system && (
+            <button onClick={() => onReply(msg)} title="Reply">↩️</button>
+          )}
+        </div>
       </div>
     </div>
   );
