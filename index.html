@@ -3,78 +3,80 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Dangro - Custom Chat & Connected Hub</title>
+  <title>Dangro - Chat & Connect</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="app-wrapper">
-    <div class="bg-gradient-overlay"></div>
+  <div class="app-wrapper" id="app-wrapper">
 
-    <!-- Login Screen -->
+    <!-- LOGIN SCREEN -->
     <div id="login-screen" class="login-screen">
       <div class="login-box">
         <div class="login-logo">D</div>
         <h1>Dangro</h1>
-        <p class="login-subtitle">Sign in to continue</p>
-        <div class="login-form">
-          <input type="text" id="login-username" placeholder="Username" class="login-input">
-          <input type="password" id="login-password" placeholder="Password" class="login-input">
-          <div id="login-error" class="login-error hidden">Invalid credentials</div>
-          <button id="btn-login" class="login-btn">Sign In</button>
-          <button id="btn-login-guest" class="login-btn-secondary">Continue as Guest</button>
+        <p class="login-subtitle" id="login-subtitle">Sign in to your account</p>
+        <div class="login-form" id="login-form">
+          <input type="text" id="auth-username" placeholder="Username" class="login-input" autocomplete="off">
+          <input type="password" id="auth-password" placeholder="Password" class="login-input">
+          <input type="text" id="auth-display-name" placeholder="Display Name" class="login-input hidden" autocomplete="off">
+          <div id="auth-error" class="auth-error hidden"></div>
+          <button id="btn-auth-submit" class="login-btn">Log In</button>
+          <p class="auth-toggle-text">
+            <span id="auth-toggle-msg">Don't have an account?</span>
+            <button id="btn-auth-toggle" class="auth-toggle-btn">Sign Up</button>
+          </p>
+        </div>
+        <div id="loading-spinner" class="hidden">
+          <div class="spinner"></div>
+          <p>Connecting...</p>
         </div>
       </div>
     </div>
 
-    <!-- Toast Notification Container -->
+    <!-- TOAST -->
     <div id="toast-container" class="toast-container"></div>
 
-    <!-- Main App Container -->
+    <!-- MAIN APP -->
     <div id="app-container" class="app-container hidden">
-      
-      <!-- ========================================== -->
-      <!-- MAIN TOP BAR                               -->
-      <!-- ========================================== -->
+
+      <!-- TOP BAR -->
       <header class="top-bar">
         <div class="top-bar-left">
           <span class="top-bar-logo">Dangro</span>
         </div>
         <div class="top-bar-center">
-          <div id="top-nav-tabs" class="top-nav-tabs">
+          <div class="top-nav-tabs" id="top-nav-tabs">
             <button class="top-nav-btn active" data-nav="servers">Servers</button>
-            <button class="top-nav-btn" data-nav="groupchats">Group Chats</button>
+            <button class="top-nav-btn" data-nav="groupchats">Groups</button>
             <button class="top-nav-btn" data-nav="dms">DMs</button>
           </div>
         </div>
         <div class="top-bar-right">
-          <button id="btn-call-start" class="top-icon-btn" title="Start a Call">📞</button>
+          <button id="btn-browse-servers" class="top-icon-btn" title="Browse Servers">🔍</button>
+          <button id="btn-call-start" class="top-icon-btn" title="Start Call">📞</button>
           <button id="btn-settings" class="top-icon-btn" title="Settings">⚙️</button>
-          <button id="btn-logout" class="top-icon-btn" title="Log Out">🚪</button>
         </div>
       </header>
 
-      <!-- Main Content Below Top Bar -->
+      <!-- MAIN CONTENT -->
       <div class="main-content-area">
-        <!-- ========================================== -->
-        <!-- LEFT PANEL: INTEGRATED MULTI-CLIENT PANE    -->
-        <!-- ========================================== -->
+        
+        <!-- LEFT PANEL: HUB CLIENT -->
         <section id="left-panel" class="app-panel left-panel">
           <header class="panel-header">
-            <div class="header-logo">
-              <span class="logo-accent">D</span> Hub Client
-            </div>
+            <div class="header-logo"><span class="logo-accent">D</span> Hub</div>
             <div class="panel-tabs">
               <button class="panel-tab-btn active" data-tab="youtube-client">YT</button>
               <button class="panel-tab-btn" data-tab="instagram-client">IG</button>
               <button class="panel-tab-btn" data-tab="custom-browser">Web</button>
             </div>
           </header>
+          <div class="panel-content-area" id="panel-content-area">
 
-          <div class="panel-content-area">
-            <!-- YouTube Simulator -->
+            <!-- YOUTUBE -->
             <div id="youtube-client" class="tab-content active">
               <div class="youtube-search-wrapper">
                 <input type="text" id="yt-search-input" placeholder="Search or paste URL...">
@@ -97,19 +99,19 @@
               </div>
             </div>
 
-            <!-- Instagram Simulator -->
+            <!-- INSTAGRAM -->
             <div id="instagram-client" class="tab-content">
               <div class="ig-profile-header">
                 <div class="ig-logo">Instagram</div>
                 <div class="ig-user-badge">
-                  <div class="user-avatar-small" style="background: #555;">D</div>
+                  <div class="user-avatar-small" style="background:#555;">D</div>
                   <span>dangro_user</span>
                 </div>
               </div>
               <div id="ig-feed-container" class="ig-feed"></div>
             </div>
 
-            <!-- Custom Web Browser -->
+            <!-- CUSTOM BROWSER (Google Search) -->
             <div id="custom-browser" class="tab-content">
               <div class="browser-address-bar">
                 <div class="browser-controls">
@@ -117,57 +119,56 @@
                   <button id="browser-forward">▶</button>
                   <button id="browser-refresh">🔄</button>
                 </div>
-                <input type="text" id="browser-url-input" value="https://wikipedia.org" placeholder="Enter URL">
+                <input type="text" id="browser-url-input" placeholder="Search Google or enter URL...">
                 <button id="browser-go-btn">Go</button>
               </div>
               <div class="browser-viewport-wrapper">
-                <iframe id="browser-iframe" src="" loading="lazy"></iframe>
+                <iframe id="browser-iframe" src="" loading="lazy" sandbox="allow-scripts allow-same-origin allow-forms allow-popups"></iframe>
                 <div id="browser-csp-warning" class="browser-overlay-warning hidden">
                   <div class="warning-box">
                     <div class="warning-icon">⚠️</div>
-                    <h4>Frame Embedding Restricted</h4>
-                    <p>This website prevents embed loading inside other pages for security reasons.</p>
-                    <p class="warning-tip">Try sites like <strong>wikipedia.org</strong> or <strong>example.com</strong>.</p>
-                    <button id="close-warning-btn">I Understand</button>
+                    <h4>Restricted</h4>
+                    <p>This site can't be embedded.</p>
+                    <p class="warning-tip">Try searching something above - it uses Google Search.</p>
+                    <button id="close-warning-btn">OK</button>
                   </div>
                 </div>
               </div>
             </div>
+
           </div>
         </section>
 
-        <!-- ========================================== -->
-        <!-- DIVIDER 1: LEFT-MIDDLE                     -->
-        <!-- ========================================== -->
+        <!-- DIVIDER LEFT -->
         <div id="divider-left" class="resize-divider" data-side="left">
-          <button class="divider-arrow arrow-left" id="btn-collapse-left" title="Toggle Left Panel">◀</button>
+          <button class="divider-arrow arrow-left" id="btn-collapse-left" title="Collapse">◀</button>
           <div class="resize-handle-visual"></div>
-          <button class="divider-arrow arrow-right hidden" id="btn-expand-left" title="Toggle Left Panel">▶</button>
+          <button class="divider-arrow arrow-right hidden" id="btn-expand-left" title="Expand">▶</button>
         </div>
 
-        <!-- ========================================== -->
-        <!-- MIDDLE PANEL: MAIN CHAT SYSTEM             -->
-        <!-- ========================================== -->
+        <!-- MIDDLE PANEL: CHAT -->
         <main id="middle-panel" class="app-panel chat-panel">
-          <!-- Chat Header -->
           <header class="chat-header">
             <div class="chat-header-title">
               <span class="chat-hash" id="chat-header-prefix">#</span>
               <h2 id="chat-header-name">general</h2>
               <p id="chat-header-desc" class="chat-header-desc">channel</p>
+              <span id="chat-online-status" class="chat-online-status hidden">●</span>
             </div>
             <div class="chat-header-actions">
               <div class="chat-search">
                 <input type="text" id="chat-search-input" placeholder="Search...">
               </div>
-              <button class="header-action-btn" id="btn-clear-chat" title="Clear Chat">🗑️</button>
+              <button class="header-action-btn" id="btn-clear-chat" title="Clear">🗑️</button>
             </div>
           </header>
-
-          <!-- Messages Viewport -->
-          <div id="chat-messages-container" class="chat-messages"></div>
-
-          <!-- Reply Preview -->
+          <div id="chat-messages-container" class="chat-messages">
+            <div class="chat-welcome">
+              <div class="chat-welcome-icon">💬</div>
+              <h3>Welcome to Dangro</h3>
+              <p>Select a chat to start messaging</p>
+            </div>
+          </div>
           <div id="reply-preview" class="reply-preview hidden">
             <div class="reply-preview-content">
               <span class="reply-preview-label">Replying to <span id="reply-target-name"></span></span>
@@ -175,16 +176,13 @@
             </div>
             <button id="btn-cancel-reply" class="reply-cancel-btn">✕</button>
           </div>
-
-          <!-- Chat Input Footer -->
           <footer class="chat-footer">
             <div id="typing-indicator" class="typing-indicator-bar hidden">
               <span class="typing-dots"><span></span><span></span><span></span></span>
               <span id="typing-text" class="typing-text">typing...</span>
             </div>
-
             <div class="input-actions-wrapper">
-              <button class="input-action-btn" id="btn-attach" title="Attach">📎</button>
+              <button class="input-action-btn" id="btn-attach" title="Attach Image">📎</button>
               <div class="chat-input-box">
                 <textarea id="message-input" placeholder="Message..." rows="1"></textarea>
               </div>
@@ -197,7 +195,6 @@
                   <button class="emoji-cat-btn" data-cat="nature">🌿</button>
                   <button class="emoji-cat-btn" data-cat="objects">💻</button>
                   <button class="emoji-cat-btn" data-cat="symbols">❤️</button>
-                  <button class="emoji-cat-btn" data-cat="flags">🚩</button>
                 </div>
                 <div class="emoji-picker-search">
                   <input type="text" id="emoji-search-input" placeholder="Search emojis...">
@@ -207,12 +204,10 @@
               <button class="input-action-btn send-btn" id="btn-send-message" title="Send">➤</button>
             </div>
           </footer>
-
-          <!-- Media Attachment Modal -->
           <div id="media-modal" class="modal hidden">
             <div class="modal-content">
               <h3>Attach Image Link</h3>
-              <p>Paste a direct image URL (JPEG, PNG, GIF).</p>
+              <p>Paste a direct image URL</p>
               <input type="text" id="media-url-input" placeholder="https://..." class="modal-input">
               <div class="modal-buttons">
                 <button id="btn-media-cancel" class="modal-btn cancel">Cancel</button>
@@ -222,18 +217,14 @@
           </div>
         </main>
 
-        <!-- ========================================== -->
-        <!-- DIVIDER 2: MIDDLE-RIGHT                    -->
-        <!-- ========================================== -->
+        <!-- DIVIDER RIGHT -->
         <div id="divider-right" class="resize-divider" data-side="right">
-          <button class="divider-arrow arrow-left hidden" id="btn-expand-right" title="Toggle Right Panel">◀</button>
+          <button class="divider-arrow arrow-left hidden" id="btn-expand-right" title="Expand">◀</button>
           <div class="resize-handle-visual"></div>
-          <button class="divider-arrow arrow-right" id="btn-collapse-right" title="Toggle Right Panel">▶</button>
+          <button class="divider-arrow arrow-right" id="btn-collapse-right" title="Collapse">▶</button>
         </div>
 
-        <!-- ========================================== -->
-        <!-- RIGHT PANEL: NAVIGATION HUB                -->
-        <!-- ========================================== -->
+        <!-- RIGHT PANEL: NAVIGATION -->
         <aside id="right-panel" class="app-panel right-panel">
           
           <!-- SERVERS VIEW -->
@@ -242,20 +233,22 @@
               <div class="server-navigation-container">
                 <div class="server-section-header">
                   <span>Servers</span>
-                  <div class="server-actions">
-                    <button id="btn-create-server" class="server-action-btn" title="Create Server">+</button>
-                    <button id="btn-join-server" class="server-action-btn" title="Join Server">🔗</button>
-                  </div>
+                  <button id="btn-create-server" class="server-action-btn" title="Create Server">+</button>
                 </div>
                 <div class="server-icons-list" id="server-icons-list"></div>
               </div>
               <div class="channels-section">
                 <div class="channels-header">
-                  <span id="active-server-title">Dangro</span>
+                  <span id="active-server-title">Server</span>
                   <button class="btn-add-channel" id="btn-add-channel">+</button>
                 </div>
                 <div class="channels-list" id="channels-list"></div>
+                <div class="server-invite-code" id="server-invite-code"></div>
               </div>
+            </div>
+            <div class="right-section-divider"><span>Members</span></div>
+            <div class="right-bottom-section">
+              <div id="server-members-list" class="friends-scroller server-members-list"></div>
             </div>
           </div>
 
@@ -265,7 +258,7 @@
               <div class="server-navigation-container">
                 <div class="server-section-header">
                   <span>Group Chats</span>
-                  <button id="btn-create-group" class="server-action-btn" title="Create Group Chat">+</button>
+                  <button id="btn-create-group" class="server-action-btn" title="Create Group">+</button>
                 </div>
               </div>
               <div class="channels-section">
@@ -291,7 +284,7 @@
             <div class="friends-content">
               <div id="friends-list-view" class="subtab-content active">
                 <div class="friends-search">
-                  <input type="text" id="friend-search-input" placeholder="Search friends...">
+                  <input type="text" id="friend-search-input" placeholder="Search...">
                 </div>
                 <div class="friends-scroller" id="friends-scroller-list"></div>
               </div>
@@ -301,10 +294,10 @@
               <div id="friends-add-view" class="subtab-content">
                 <div class="add-friend-box">
                   <h4>ADD FRIEND</h4>
-                  <p>Add friends with their Dangro tag (e.g. <code>username#1234</code>).</p>
+                  <p>Add friends by their username.</p>
                   <div class="add-friend-input-row">
                     <input type="text" id="add-friend-input" placeholder="Enter username..." autocomplete="off">
-                    <button id="btn-submit-friend-req">Send Request</button>
+                    <button id="btn-submit-friend-req">Send</button>
                   </div>
                   <div id="add-friend-feedback" class="feedback-msg"></div>
                 </div>
@@ -312,67 +305,42 @@
             </div>
           </div>
 
-          <!-- Create Channel Modal -->
+          <!-- MODALS -->
           <div id="channel-modal" class="modal hidden">
-            <div class="modal-content">
-              <h3>Create Text Channel</h3>
-              <p>Channel Name</p>
-              <input type="text" id="channel-name-input" placeholder="new-channel" class="modal-input">
-              <div class="modal-buttons">
-                <button id="btn-channel-cancel" class="modal-btn cancel">Cancel</button>
-                <button id="btn-channel-submit" class="modal-btn submit">Create</button>
-              </div>
-            </div>
+            <div class="modal-content"><h3>Create Channel</h3><p>Channel Name</p><input type="text" id="channel-name-input" placeholder="new-channel" class="modal-input"><div class="modal-buttons"><button id="btn-channel-cancel" class="modal-btn cancel">Cancel</button><button id="btn-channel-submit" class="modal-btn submit">Create</button></div></div>
           </div>
-
-          <!-- Create Server Modal -->
           <div id="server-modal" class="modal hidden">
-            <div class="modal-content">
-              <h3>Create Server</h3>
-              <p>Give your server a name</p>
-              <input type="text" id="server-name-input" placeholder="Server Name" class="modal-input">
-              <p>Server Icon (emoji or letter)</p>
-              <input type="text" id="server-icon-input" placeholder="D" class="modal-input" maxlength="2">
-              <div class="modal-buttons">
-                <button id="btn-server-cancel" class="modal-btn cancel">Cancel</button>
-                <button id="btn-server-submit" class="modal-btn submit">Create</button>
-              </div>
-            </div>
+            <div class="modal-content"><h3>Create Server</h3><p>Server Name</p><input type="text" id="server-name-input" placeholder="My Server" class="modal-input"><p>Icon (letter or emoji)</p><input type="text" id="server-icon-input" placeholder="S" class="modal-input" maxlength="2"><div class="modal-buttons"><button id="btn-server-cancel" class="modal-btn cancel">Cancel</button><button id="btn-server-submit" class="modal-btn submit">Create</button></div></div>
           </div>
-
-          <!-- Join Server Modal -->
-          <div id="join-server-modal" class="modal hidden">
-            <div class="modal-content">
-              <h3>Join Server</h3>
-              <p>Enter invite code to join a server</p>
-              <input type="text" id="join-server-input" placeholder="Invite Code" class="modal-input">
-              <div class="modal-buttons">
-                <button id="btn-join-cancel" class="modal-btn cancel">Cancel</button>
-                <button id="btn-join-submit" class="modal-btn submit">Join</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- Create Group Chat Modal -->
           <div id="group-modal" class="modal hidden">
-            <div class="modal-content">
-              <h3>Create Group Chat</h3>
-              <p>Group Chat Name</p>
-              <input type="text" id="group-name-input" placeholder="Group Name" class="modal-input">
-              <p>Select members to add:</p>
-              <div id="group-member-select" class="group-member-select"></div>
-              <div class="modal-buttons">
-                <button id="btn-group-cancel" class="modal-btn cancel">Cancel</button>
-                <button id="btn-group-submit" class="modal-btn submit">Create</button>
-              </div>
-            </div>
+            <div class="modal-content"><h3>Create Group Chat</h3><p>Group Name</p><input type="text" id="group-name-input" placeholder="Group Name" class="modal-input"><p>Select members:</p><div id="group-member-select" class="group-member-select"></div><div class="modal-buttons"><button id="btn-group-cancel" class="modal-btn cancel">Cancel</button><button id="btn-group-submit" class="modal-btn submit">Create</button></div></div>
           </div>
 
         </aside>
       </div>
     </div>
 
-    <!-- Settings Panel -->
+    <!-- SERVER BROWSER MODAL -->
+    <div id="server-browser-modal" class="modal hidden">
+      <div class="modal-content server-browser-content">
+        <div class="server-browser-header">
+          <h3>Browse Public Servers</h3>
+          <button id="btn-browser-close" class="settings-close">✕</button>
+        </div>
+        <div class="server-browser-search">
+          <input type="text" id="server-browser-search" placeholder="Search servers...">
+        </div>
+        <div id="server-browser-list" class="server-browser-list"></div>
+        <p class="server-browser-hint">Join by clicking a server or enter invite code below:</p>
+        <div class="add-friend-input-row">
+          <input type="text" id="join-server-input" placeholder="Invite Code" autocomplete="off">
+          <button id="btn-join-server">Join</button>
+        </div>
+        <div id="join-server-feedback" class="feedback-msg"></div>
+      </div>
+    </div>
+
+    <!-- SETTINGS PANEL -->
     <div id="settings-panel" class="settings-panel hidden">
       <div class="settings-header">
         <h2>Settings</h2>
@@ -409,22 +377,33 @@
           </div>
         </div>
         <div class="settings-section">
+          <h3>Appearance</h3>
+          <div class="settings-field">
+            <label>Theme</label>
+            <select id="settings-theme" class="settings-select">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </div>
+        </div>
+        <div class="settings-section">
           <h3>Account</h3>
           <div class="settings-field">
-            <label>Password</label>
-            <input type="password" id="settings-password" class="settings-input" placeholder="Enter new password">
+            <label>Change Password</label>
+            <input type="password" id="settings-password" class="settings-input" placeholder="New password">
           </div>
         </div>
         <button id="btn-settings-save" class="login-btn settings-save-btn">Save Changes</button>
+        <button id="btn-logout" class="settings-logout-btn">⨯ Log Out</button>
       </div>
     </div>
 
-    <!-- Call Container -->
+    <!-- CALL UI -->
     <div id="call-container" class="call-container hidden">
       <div class="call-header">
         <span id="call-status-text">In Call</span>
         <div class="call-timer" id="call-timer">00:00</div>
-        <button id="btn-call-end" class="call-end-btn">End Call</button>
+        <button id="btn-call-end" class="call-end-btn">End</button>
       </div>
       <div class="call-grid">
         <div class="call-video-container" id="local-video-container">
@@ -433,21 +412,21 @@
         </div>
         <div class="call-video-container" id="remote-video-container">
           <video id="remote-video" autoplay playsinline></video>
-          <div class="call-video-label" id="remote-video-label">Participant</div>
+          <div class="call-video-label" id="remote-video-label">Waiting...</div>
         </div>
       </div>
       <div class="call-controls">
-        <button id="btn-toggle-mic" class="call-control-btn active" title="Toggle Mic">🎤</button>
-        <button id="btn-toggle-video" class="call-control-btn active" title="Toggle Camera">📹</button>
+        <button id="btn-toggle-mic" class="call-control-btn active" title="Mic">🎤</button>
+        <button id="btn-toggle-video" class="call-control-btn active" title="Camera">📹</button>
         <button id="btn-toggle-screen" class="call-control-btn" title="Share Screen">🖥️</button>
-        <button id="btn-toggle-volume" class="call-control-btn active" title="Toggle Volume">🔊</button>
+        <button id="btn-toggle-volume" class="call-control-btn active" title="Volume">🔊</button>
       </div>
-      <div id="call-participants" class="call-participants">
-        <span class="call-participant-count">Participants: <span id="participant-count">1</span></span>
+      <div class="call-participants">
+        <span>Participants: <span id="participant-count">1</span></span>
       </div>
     </div>
 
-    <!-- Call Notification -->
+    <!-- CALL NOTIFICATION -->
     <div id="call-notification" class="call-notification hidden">
       <div class="call-notif-content">
         <div class="call-notif-icon">📞</div>
@@ -461,9 +440,9 @@
         <button id="btn-decline-call" class="call-notif-btn decline">Decline</button>
       </div>
     </div>
+
   </div>
 
-  <script src="mockData.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
