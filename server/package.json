@@ -3,9 +3,13 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "dev": "node --watch src/index.js",
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "postinstall": "node -e \"const fs=require('fs');const p=process.env.DATABASE_PATH||'./data/dangro.db';fs.mkdirSync(require('path').dirname(p),{recursive:true});const u=process.env.UPLOAD_DIR||'./uploads';fs.mkdirSync(u,{recursive:true});console.log('Data and upload directories ensured');\""
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
