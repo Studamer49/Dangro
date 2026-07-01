@@ -2,6 +2,7 @@ import React from "react";
 import { AppProvider, useApp } from "./contexts/AppContext";
 import LoginPage from "./pages/LoginPage";
 import MainPage from "./pages/MainPage";
+import ErrorBoundary from "./components/ErrorBoundary";
 
 function AppContent() {
   const { state } = useApp();
@@ -10,8 +11,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <AppContent />
-    </AppProvider>
+    <ErrorBoundary>
+      <AppProvider>
+        <AppContent />
+      </AppProvider>
+    </ErrorBoundary>
   );
 }

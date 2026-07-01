@@ -240,7 +240,10 @@
               <div class="channels-section">
                 <div class="channels-header">
                   <span id="active-server-title">Server</span>
-                  <button class="btn-add-channel" id="btn-add-channel">+</button>
+                  <div class="channels-header-actions">
+                    <button class="btn-server-settings hidden" id="btn-server-settings" title="Server Settings">⚙️</button>
+                    <button class="btn-add-channel" id="btn-add-channel">+</button>
+                  </div>
                 </div>
                 <div class="channels-list" id="channels-list"></div>
                 <div class="server-invite-code" id="server-invite-code"></div>
@@ -445,6 +448,73 @@
       <div class="call-notif-actions">
         <button id="btn-answer-call" class="call-notif-btn answer">Answer</button>
         <button id="btn-decline-call" class="call-notif-btn decline">Decline</button>
+      </div>
+    </div>
+
+    <!-- SERVER SETTINGS MODAL -->
+    <div id="server-settings-modal" class="modal hidden">
+      <div class="modal-content server-settings-content">
+        <div class="server-settings-header">
+          <h3>Server Settings</h3>
+          <button id="btn-server-settings-close" class="settings-close">✕</button>
+        </div>
+        <div class="server-settings-body">
+          <div class="settings-section">
+            <h3>General</h3>
+            <div class="settings-field">
+              <label>Server Name</label>
+              <input type="text" id="ss-server-name" class="settings-input">
+            </div>
+            <div class="settings-field">
+              <label>Server Icon (letter/emoji)</label>
+              <input type="text" id="ss-server-icon" class="settings-input" maxlength="2">
+            </div>
+            <div class="settings-field">
+              <label>Server Picture (URL)</label>
+              <input type="text" id="ss-server-pic" class="settings-input" placeholder="https://...">
+            </div>
+            <div class="settings-field">
+              <label>Description</label>
+              <textarea id="ss-server-desc" class="settings-textarea" rows="3" placeholder="Describe your server..."></textarea>
+            </div>
+          </div>
+          <div class="settings-section">
+            <h3>Transfer Ownership</h3>
+            <div class="settings-field-horizontal">
+              <input type="text" id="ss-transfer-username" class="settings-input transfer-input" placeholder="Enter member's username...">
+              <button id="btn-ss-transfer" class="settings-btn danger-btn">Transfer</button>
+            </div>
+          </div>
+          <div class="settings-section">
+            <h3>Kick Member</h3>
+            <div class="settings-field-horizontal">
+              <input type="text" id="ss-kick-username" class="settings-input transfer-input" placeholder="Enter username to kick...">
+              <button id="btn-ss-kick" class="settings-btn danger-btn">Kick</button>
+            </div>
+          </div>
+          <div class="settings-section">
+            <h3>Ban Member</h3>
+            <div class="settings-field-horizontal">
+              <input type="text" id="ss-ban-username" class="settings-input transfer-input" placeholder="Enter username to ban...">
+              <select id="ss-ban-duration" class="settings-select ban-select">
+                <option value="">Permanent</option>
+                <option value="1800000">30 minutes</option>
+                <option value="3600000">1 hour</option>
+                <option value="7200000">2 hours</option>
+                <option value="18000000">5 hours</option>
+                <option value="28800000">8 hours</option>
+                <option value="36000000">10 hours</option>
+                <option value="43200000">12 hours</option>
+                <option value="86400000">24 hours</option>
+                <option value="-1">Until owner unban</option>
+              </select>
+              <button id="btn-ss-ban" class="settings-btn danger-btn">Ban</button>
+            </div>
+            <button id="btn-ss-view-bans" class="settings-btn" style="margin-top:6px;font-size:0.6rem;">View Banned Users</button>
+            <div id="ss-banned-list" class="ss-banned-list hidden"></div>
+          </div>
+          <button id="btn-ss-save" class="login-btn settings-save-btn">Save Changes</button>
+        </div>
       </div>
     </div>
 

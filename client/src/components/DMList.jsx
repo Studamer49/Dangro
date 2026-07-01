@@ -2,6 +2,16 @@ import React, { useState } from "react";
 import { useApp } from "../contexts/AppContext";
 import { api } from "../services/api";
 
+const AVATARS = ["#5865f2", "#3ba55d", "#ed4245", "#f0b232", "#a855f7", "#22d3ee"];
+
+function hashColor(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return AVATARS[Math.abs(hash) % AVATARS.length];
+}
+
 export default function DMList() {
   const { state, dispatch, addToast } = useApp();
   const [feedback, setFeedback] = useState({ message: "", type: "" });
@@ -35,7 +45,7 @@ export default function DMList() {
       if (state.activeChatType === "dm" && state.activeDmFriendId === friendId) {
         dispatch({
           type: "SET_ACTIVE_CHAT",
-          payload: { activeChatType: "channel", activeServerId: "dangro-hq", activeChannelId: "general" },
+          payload: { activeChatType: "channel", activeServerId: null, activeChannelId: null },
         });
       }
     } catch {}
@@ -74,8 +84,17 @@ export default function DMList() {
 
   const pendingFriends = state.friends.filter(f => f.status === "pending_in" || f.status === "pending_out");
 
+  const statusColor = (status) =>
+    status === "online" ? "var(--green)" :
+    status === "idle" ? "var(--yellow)" :
+    status === "dnd" ? "var(--red)" : "var(--text-muted)";
+
   return (
     <div className="dm-section">
+      <div className="dm-section-header">
+        <span>Direct Messages</span>
+      </div>
+
       <div className="dm-subtabs">
         <button className={"dm-subtab" + (state.activeFriendSubtab === "online" ? " active" : "")} onClick={() => switchSubtab("online")}>Online</button>
         <button className={"dm-subtab" + (state.activeFriendSubtab === "all" ? " active" : "")} onClick={() => switchSubtab("all")}>All</button>
@@ -85,11 +104,13 @@ export default function DMList() {
 
       {(state.activeFriendSubtab === "online" || state.activeFriendSubtab === "all") && (
         <>
-          <input type="text" className="dm-friend-search" placeholder="Search friends..." value={state.friendSearchQuery}
-            onChange={e => dispatch({ type: "SET_FRIEND_SEARCH", payload: e.target.value })} />
+          <div className="dm-friend-search">
+            <input type="text" placeholder="Search friends..." value={state.friendSearchQuery}
+              onChange={e => dispatch({ type: "SET_FRIEND_SEARCH", payload: e.target.value })} />
+          </div>
           {visibleFriends.length === 0 ? (
             <div className="empty-state">
-              <div className="empty-state-icon">👥</div>
+              <div className="empty-state-icon">&#128101;</div>
               <div className="empty-state-title">No friends found</div>
               <div className="empty-state-desc">Add friends using the + Add tab to start chatting.</div>
             </div>
@@ -97,17 +118,14 @@ export default function DMList() {
             visibleFriends.map(friend => (
               <div key={friend.id} className={"dm-item" + (state.activeChatType === "dm" && state.activeDmFriendId === friend.id ? " active" : "")}
                 onClick={() => openDM(friend.id)}>
-                <div className="dm-avatar" style={{ backgroundColor: friend.avatarColor || "#555" }}>
+                <div className="dm-avatar" style={{ backgroundColor: hashColor(friend.username) }}>
                   {friend.username.charAt(0).toUpperCase()}
                 </div>
                 <div className="dm-info">
-                  <div className="dm-username">{friend.username}
-                    <span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 4 }}>#{friend.discriminator}</span>
-                  </div>
+                  <div className="dm-username">{friend.username}</div>
                   <div className="dm-status">{friend.customStatus || friend.status}</div>
                 </div>
-                <div className="dm-status-dot" style={{ backgroundColor: friend.status === "online" ? "var(--green)" : friend.status === "idle" ? "var(--yellow)" : friend.status === "dnd" ? "var(--red)" : "var(--text-muted)" }} />
-                <button className="msg-action-btn" title="Remove" onClick={(e) => { e.stopPropagation(); removeFriend(friend.id, friend.username); }} style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 12, padding: 2 }}>✕</button>
+                <span className="dm-status-dot" style={{ background: statusColor(friend.status) }} />
               </div>
             ))
           )}
@@ -117,7 +135,7 @@ export default function DMList() {
       {state.activeFriendSubtab === "pending" && (
         pendingFriends.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-state-icon">📨</div>
+            <div className="empty-state-icon">&#128231;</div>
             <div className="empty-state-title">No pending requests</div>
             <div className="empty-state-desc">Friend requests will appear here.</div>
           </div>
@@ -126,19 +144,19 @@ export default function DMList() {
             const isIncoming = friend.status === "pending_in";
             return (
               <div key={friend.id} className="dm-item">
-                <div className="dm-avatar" style={{ backgroundColor: friend.avatarColor || "#555" }}>
+                <div className="dm-avatar" style={{ backgroundColor: hashColor(friend.username) }}>
                   {friend.username.charAt(0).toUpperCase()}
                 </div>
                 <div className="dm-info">
-                  <div className="dm-username">{friend.username}<span style={{ fontSize: 11, color: "var(--text-muted)", marginLeft: 4 }}>#{friend.discriminator}</span></div>
+                  <div className="dm-username">{friend.username}</div>
                   <div className="dm-status" style={{ color: isIncoming ? "var(--yellow)" : "var(--text-muted)", fontSize: 11 }}>
                     {isIncoming ? "Incoming Request" : "Outgoing Request"}
                   </div>
                 </div>
                 {isIncoming && (
-                  <button style={{ background: "var(--green)", border: "none", color: "#fff", borderRadius: 4, padding: "4px 8px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}
+                  <button style={{ background: "var(--accent-green)", border: "none", color: "#fff", borderRadius: 4, padding: "4px 8px", fontSize: 11, cursor: "pointer", fontWeight: 600 }}
                     onClick={async () => {
-                      await api.friends.update(friend.id, { status: "online", customStatus: "Friends! 👋" });
+                      await api.friends.update(friend.id, { status: "accepted" });
                       const friends = await api.friends.list();
                       dispatch({ type: "SET_FRIENDS", payload: friends });
                       addToast("Accepted @" + friend.username + "'s request!", "success");
@@ -148,7 +166,7 @@ export default function DMList() {
                   onClick={async () => {
                     await api.friends.remove(friend.id);
                     dispatch({ type: "SET_FRIENDS", payload: state.friends.filter(f => f.id !== friend.id) });
-                  }}>✕</button>
+                  }}>&#10005;</button>
               </div>
             );
           })

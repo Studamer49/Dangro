@@ -14,7 +14,7 @@ function initDB() {
       id TEXT PRIMARY KEY,
       username TEXT UNIQUE NOT NULL,
       password_hash TEXT NOT NULL,
-      display_name TEXT NOT NULL,
+      display_name TEXT,
       bio TEXT DEFAULT '',
       status TEXT DEFAULT 'online',
       custom_status TEXT DEFAULT '',
@@ -35,8 +35,10 @@ function initDB() {
       name TEXT NOT NULL,
       icon TEXT DEFAULT 'S',
       owner_id TEXT NOT NULL,
-      invite_code TEXT UNIQUE NOT NULL,
+      description TEXT DEFAULT '',
+      server_pic TEXT DEFAULT '',
       is_public INTEGER DEFAULT 1,
+      invite_code TEXT UNIQUE,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
     );
@@ -44,6 +46,16 @@ function initDB() {
     CREATE TABLE IF NOT EXISTS server_members (
       server_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
+      role TEXT DEFAULT 'member',
+      PRIMARY KEY (server_id, user_id),
+      FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS server_bans (
+      server_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      banned_until TEXT,
       PRIMARY KEY (server_id, user_id),
       FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -63,10 +75,9 @@ function initDB() {
       chat_key TEXT NOT NULL,
       sender_id TEXT NOT NULL,
       content TEXT NOT NULL,
-      timestamp TEXT DEFAULT (datetime('now')),
       is_image INTEGER DEFAULT 0,
       reply_to TEXT,
-      system INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
@@ -106,18 +117,19 @@ function initDB() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_messages_chat_key ON messages(chat_key);
-    CREATE INDEX IF NOT EXISTS idx_messages_timestamp ON messages(timestamp);
     CREATE INDEX IF NOT EXISTS idx_friends_user_id ON friends(user_id);
     CREATE INDEX IF NOT EXISTS idx_friends_friend_id ON friends(friend_id);
-    CREATE INDEX IF NOT EXISTS idx_server_members_user_id ON server_members(user_id);
-    CREATE INDEX IF NOT EXISTS idx_group_members_user_id ON group_members(user_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_server_members_server_id ON server_members(server_id);
   `);
 
   return db;
 }
 
 function getDB() {
-  if (!db) initDB();
+  if (!db) {
+    throw new Error('Database not initialized. Call initDB() first.');
+  }
   return db;
 }
 

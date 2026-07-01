@@ -33,6 +33,30 @@ export default function ServerSection() {
     });
   }
 
+  async function joinServer() {
+    const code = joinCode.trim();
+    if (!code) return;
+    try {
+      const server = await api.servers.get(code);
+      if (server) {
+        dispatch({
+          type: "SET_ACTIVE_CHAT",
+          payload: {
+            activeServerId: server.id,
+            activeChatType: "channel",
+            activeChannelId: server.channels?.[0]?.id || "general",
+          },
+        });
+        dispatch({ type: "SET_NAV_TAB", payload: "servers" });
+        setShowJoinModal(false);
+        setJoinCode("");
+        addToast("Joined " + server.name + "!", "success");
+      }
+    } catch (e) {
+      addToast("Server not found: " + e.message, "error");
+    }
+  }
+
   async function createChannel() {
     let name = channelName.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-_]/g, "");
     if (!name) return;

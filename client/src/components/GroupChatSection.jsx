@@ -1,6 +1,8 @@
 import React, { useState } from "react";
 import { useApp } from "../contexts/AppContext";
 
+const GROUP_COLORS = ["#5865f2", "#a855f7", "#22d3ee", "#f0b232", "#3ba55d"];
+
 export default function GroupChatSection() {
   const { state, dispatch, addToast } = useApp();
   const [showModal, setShowModal] = useState(false);
@@ -54,74 +56,51 @@ export default function GroupChatSection() {
     }
   }
 
-  const availableMembers = state.friends.filter(f => f.status !== "offline" && f.status !== "pending_in" && f.status !== "pending_out");
-
-  const groupColors = ["#5b5bf0", "#a855f7", "#22d3ee", "#f0b232", "#3ba55d"];
-
   return (
-    <div className="group-section">
+    <div className="dm-section">
       <div className="dm-section-header">
-        <h3>Group Chats</h3>
-        <button style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 16, padding: "2px 4px" }}
+        <span>Group Chats</span>
+        <button style={{ background: "none", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 16 }}
           onClick={() => setShowModal(true)}>+</button>
       </div>
 
       {state.groupChats.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-state-icon">👥</div>
+          <div className="empty-state-icon">&#128101;</div>
           <div className="empty-state-title">No group chats</div>
           <div className="empty-state-desc">Click + to create one with friends.</div>
         </div>
       ) : (
         state.groupChats.map((group, i) => (
-          <div key={group.id} className={"group-item" + (state.activeGroupChatId === group.id && state.activeChatType === "group" ? " active" : "")}
+          <div key={group.id} className={"dm-item" + (state.activeGroupChatId === group.id && state.activeChatType === "group" ? " active" : "")}
             onClick={() => selectGroup(group)}>
-            <div className="group-avatar" style={{ backgroundColor: groupColors[i % groupColors.length] }}>
+            <div className="dm-avatar" style={{ backgroundColor: GROUP_COLORS[i % GROUP_COLORS.length] }}>
               {group.name.charAt(0).toUpperCase()}
             </div>
-            <div className="group-info">
-              <div className="group-name">{group.name}</div>
-              <div className="group-members">{group.members.length} members</div>
+            <div className="dm-info">
+              <div className="dm-username">{group.name}</div>
+              <div className="dm-status">{group.members.length} members</div>
             </div>
           </div>
         ))
       )}
 
-      {activeGroup && (
-        <div style={{ marginTop: 16, borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-          <div className="dm-section-header">
-            <h3>Members ({activeGroup.members.length})</h3>
-          </div>
-          {activeGroup.members.map(m => (
-            <div key={m} className="dm-item" style={{ padding: "4px 8px", cursor: "default" }}>
-              <div className="dm-avatar" style={{ width: 28, height: 28, fontSize: 11, backgroundColor: "#555" }}>
-                {m.charAt(0).toUpperCase()}
-              </div>
-              <div className="dm-username" style={{ fontSize: 13 }}>
-                {m === state.displayName ? m + " (you)" : m}
-              </div>
-              <div className="dm-status-dot" style={{ backgroundColor: state.friends.some(f => f.username === m && f.status !== "offline") ? "var(--green)" : "var(--text-muted)" }} />
-            </div>
-          ))}
-        </div>
-      )}
-
       {showModal && (
-        <div className="call-overlay" onClick={() => setShowModal(false)}>
-          <div className="call-card" onClick={e => e.stopPropagation()} style={{ minWidth: 340, textAlign: "left" }}>
-            <h3 style={{ marginBottom: 16 }}>Create Group Chat</h3>
+        <div className="modal-overlay" onClick={() => setShowModal(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <h3>Create Group Chat</h3>
             <div className="settings-field">
               <label>Group Name</label>
-              <input type="text" placeholder="Group Name" value={groupName} onChange={e => setGroupName(e.target.value)} />
+              <input className="settings-input" type="text" placeholder="Group Name" value={groupName} onChange={e => setGroupName(e.target.value)} />
             </div>
             <div className="settings-field">
               <label>Select Members</label>
-              <div style={{ maxHeight: 150, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
-                {availableMembers.length === 0 ? (
-                  <div style={{ fontSize: 13, color: "var(--text-muted)", padding: 8 }}>No online friends available.</div>
+              <div style={{ maxHeight: 150, overflowY: "auto", marginTop: 4 }}>
+                {state.friends.filter(f => f.status !== "pending_in" && f.status !== "pending_out").length === 0 ? (
+                  <div style={{ fontSize: 13, color: "var(--text-muted)", padding: 8 }}>No friends available.</div>
                 ) : (
-                  availableMembers.map(f => (
-                    <label key={f.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", padding: "4px 0" }}>
+                  state.friends.filter(f => f.status !== "pending_in" && f.status !== "pending_out").map(f => (
+                    <label key={f.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", padding: "6px 0" }}>
                       <input type="checkbox" checked={selectedMembers.includes(f.username)}
                         onChange={() => toggleMember(f.username)} style={{ accentColor: "var(--accent)" }} />
                       <span>{f.username}</span>
@@ -130,9 +109,9 @@ export default function GroupChatSection() {
                 )}
               </div>
             </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 16 }}>
-              <button className="login-submit" style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--text-secondary)" }} onClick={() => setShowModal(false)}>Cancel</button>
-              <button className="login-submit" style={{ width: "auto", padding: "10px 20px" }} onClick={createGroup}>Create</button>
+            <div className="modal-actions">
+              <button className="modal-btn cancel" onClick={() => setShowModal(false)}>Cancel</button>
+              <button className="modal-btn submit" onClick={createGroup}>Create</button>
             </div>
           </div>
         </div>

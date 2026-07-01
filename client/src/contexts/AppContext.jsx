@@ -1,27 +1,7 @@
 import React, { createContext, useContext, useReducer, useCallback, useEffect, useRef } from "react";
 import { useLocalStorage } from "../hooks/useLocalStorage";
-import socket from "../services/socket";
-import { api } from "../services/api";
-
-const MOCK_YOUTUBE_VIDEOS = [
-  { id: "jfKfPfyJRdk", title: "lofi hip hop radio - beats to relax/study to", channelName: "Lofi Girl", views: "68M views", likes: "2.3M likes", thumbnail: "https://images.unsplash.com/photo-1518495973542-4542c06a5843?auto=format&fit=crop&w=400&q=80" },
-  { id: "2g811Eo7K8U", title: "Modern Web Design Aesthetics - CSS Secrets", channelName: "AestheticCodes", views: "154K views", likes: "12K likes", thumbnail: "https://images.unsplash.com/photo-1507238691740-187a5b1d37b8?auto=format&fit=crop&w=400&q=80" },
-  { id: "3tmd-ClpJxg", title: "4K Relaxing Nature - Birds Chirping in Forest", channelName: "Nature Sounds", views: "2.1M views", likes: "89K likes", thumbnail: "https://images.unsplash.com/photo-1511497584788-876760111969?auto=format&fit=crop&w=400&q=80" },
-  { id: "JGwWNGJdvx8", title: "Shape of You - Ed Sheeran (Official Music Video)", channelName: "Ed Sheeran", views: "6.2B views", likes: "28M likes", thumbnail: "https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?auto=format&fit=crop&w=400&q=80" },
-];
-
-const MOCK_INSTAGRAM_POSTS = [
-  { id: "ig1", username: "design_inspiration", userAvatarColor: "#555555", image: "https://images.unsplash.com/photo-1541462608141-2f5287b4e93d?auto=format&fit=crop&w=500&q=80", likes: 1243, caption: "Clean dashboard concepts. Minimalist, functional. What do you think? #uidesign #minimal", liked: false, comments: [{ username: "pixel_craft", text: "Wow, the colors are amazing!" }, { username: "ux_lily", text: "Love the clean design." }] },
-  { id: "ig2", username: "setup_goals", userAvatarColor: "#444444", image: "https://images.unsplash.com/photo-1547082299-de196ea013d6?auto=format&fit=crop&w=500&q=80", likes: 852, caption: "Late night coding session. Clean vibes only! Rate this setup 1-10.", liked: true, comments: [{ username: "coder_dan", text: "Solid 10/10, keyboard specs?" }, { username: "neon_vibes", text: "That setup is perfect." }] },
-  { id: "ig3", username: "travel_adventures", userAvatarColor: "#666666", image: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?auto=format&fit=crop&w=500&q=80", likes: 2341, caption: "Sunset views from the summit! Best hike ever! #travel #nature", liked: false, comments: [{ username: "wanderlust_amy", text: "Where is this?" }, { username: "nature_lover", text: "Absolutely breathtaking!" }] },
-  { id: "ig4", username: "foodie_crush", userAvatarColor: "#333333", image: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=500&q=80", likes: 567, caption: "Homemade pasta for dinner. Recipe in bio! #foodie #homemade", liked: false, comments: [{ username: "chef_mike", text: "Looks delicious!" }] },
-];
-
-const MOCK_REPLIES = [
-  "Oh that's awesome!", "Nice! Tell me more.", "Haha, for real 😂", "I'm testing the new features.",
-  "Did you check the video player?", "Sounds great!", "I'll review this later.", "CSS grids are magic.",
-  "Love the new design!", "Keep up the great work!",
-];
+import socket, { reconnectSocket } from "../services/socket";
+import { api, setTokens, clearTokens, getAccessToken } from "../services/api";
 
 const initialState = {
   user: null,
@@ -29,29 +9,25 @@ const initialState = {
   friends: [],
   groupChats: [],
   messages: {},
+  messageCursors: {},
   activeChatType: "channel",
-  activeServerId: "dangro-hq",
-  activeChannelId: "general",
+  activeServerId: null,
+  activeChannelId: null,
   activeDmFriendId: null,
   activeGroupChatId: null,
-  activeNavTab: "servers",
-  activeLeftTab: "youtube-client",
+  activeNavTab: "dms",
   activeFriendSubtab: "online",
   displayName: "You",
   bio: "",
   status: "online",
   customStatus: "",
   profilePic: "",
-  leftPanelWidth: 25,
-  rightPanelWidth: 18.75,
-  leftPanelCollapsed: false,
-  rightPanelCollapsed: false,
   friendSearchQuery: "",
   chatSearchQuery: "",
-  youtubeVideos: MOCK_YOUTUBE_VIDEOS,
-  instagramPosts: MOCK_INSTAGRAM_POSTS,
-  activeYtVideoId: "jfKfPfyJRdk",
   toasts: [],
+  rememberMe: false,
+  uploadProgress: null,
+  typingUsers: {},
 };
 
 function reducer(state, action) {
@@ -66,40 +42,65 @@ function reducer(state, action) {
       return { ...state, groupChats: action.payload };
     case "SET_MESSAGES":
       return { ...state, messages: { ...state.messages, [action.chatKey]: action.payload } };
+    case "SET_MESSAGES_BATCH":
+      return {
+        ...state,
+        messages: { ...state.messages, [action.chatKey]: [...(action.prepend ? action.payload : []), ...(state.messages[action.chatKey] || []), ...(action.prepend ? [] : action.payload)] },
+        messageCursors: { ...state.messageCursors, [action.chatKey]: { ...state.messageCursors[action.chatKey], ...action.cursors } },
+      };
+    case "PREPEND_MESSAGES":
+      return {
+        ...state,
+        messages: {
+          ...state.messages,
+          [action.chatKey]: [...action.payload, ...(state.messages[action.chatKey] || [])],
+        },
+      };
     case "ADD_MESSAGE":
-      return { ...state, messages: { ...state.messages, [action.chatKey]: [...(state.messages[action.chatKey] || []), action.payload] } };
+      return {
+        ...state,
+        messages: {
+          ...state.messages,
+          [action.chatKey]: [...(state.messages[action.chatKey] || []), action.payload],
+        },
+      };
+    case "UPDATE_MESSAGE":
+      return {
+        ...state,
+        messages: {
+          ...state.messages,
+          [action.chatKey]: (state.messages[action.chatKey] || []).map(m =>
+            m.id === action.payload.id ? { ...m, ...action.payload } : m
+          ),
+        },
+      };
+    case "REMOVE_MESSAGE":
+      return {
+        ...state,
+        messages: {
+          ...state.messages,
+          [action.chatKey]: (state.messages[action.chatKey] || []).filter(m => m.id !== action.payload),
+        },
+      };
     case "SET_ACTIVE_CHAT":
       return { ...state, ...action.payload };
     case "SET_NAV_TAB":
       return { ...state, activeNavTab: action.payload };
-    case "SET_LEFT_TAB":
-      return { ...state, activeLeftTab: action.payload };
     case "SET_FRIEND_SUBTAB":
       return { ...state, activeFriendSubtab: action.payload };
-    case "SET_LAYOUT":
-      return { ...state, ...action.payload };
     case "SET_PROFILE":
       return { ...state, ...action.payload };
     case "SET_FRIEND_SEARCH":
       return { ...state, friendSearchQuery: action.payload };
     case "SET_CHAT_SEARCH":
       return { ...state, chatSearchQuery: action.payload };
-    case "SET_YT_VIDEO":
-      return { ...state, activeYtVideoId: action.payload };
-    case "TOGGLE_IG_LIKE": {
-      const posts = state.instagramPosts.map(p =>
-        p.id === action.payload ? { ...p, liked: !p.liked, likes: p.liked ? p.likes - 1 : p.likes + 1 } : p
-      );
-      return { ...state, instagramPosts: posts };
-    }
-    case "ADD_IG_COMMENT": {
-      const posts = state.instagramPosts.map(p =>
-        p.id === action.payload.postId ? { ...p, comments: [...p.comments, { username: "dangro_user", text: action.payload.text }] } : p
-      );
-      return { ...state, instagramPosts: posts };
-    }
-    case "ADD_YOUTUBE_VIDEO":
-      return { ...state, youtubeVideos: [...state.youtubeVideos, action.payload] };
+    case "SET_TYPING":
+      return {
+        ...state,
+        typingUsers: { ...state.typingUsers, [action.chatKey]: action.payload },
+      };
+    case "SET_UPLOAD_PROGRESS":
+      return { ...state, uploadProgress: action.payload };
     case "ADD_TOAST":
       return { ...state, toasts: [...state.toasts, action.payload] };
     case "REMOVE_TOAST":
@@ -114,27 +115,34 @@ function reducer(state, action) {
 const AppContext = createContext(null);
 
 export function AppProvider({ children }) {
-  const [persisted, setPersisted] = useLocalStorage("dangro_state_v3", {});
+  const [persisted, setPersisted] = useLocalStorage("dangro_state_v5", {});
   const [state, dispatch] = useReducer(reducer, { ...initialState, ...persisted });
   const stateRef = useRef(state);
   stateRef.current = state;
 
   useEffect(() => {
-    const { user, servers, friends, groupChats, messages, ...layoutState } = state;
+    const { user, servers, friends, groupChats, messages, messageCursors, typingUsers, ...layoutState } = state;
     if (state.user) {
-      setPersisted(layoutState);
+      setPersisted({ ...layoutState, rememberMe: state.rememberMe });
     }
   }, [state]);
 
   useEffect(() => {
-    const session = localStorage.getItem("dangro_session");
-    if (session) {
-      try {
-        const parsed = JSON.parse(session);
-        if (parsed.loggedIn) {
-          dispatch({ type: "SET_USER", payload: { username: parsed.username } });
-        }
-      } catch {}
+    const token = getAccessToken();
+    if (token && !state.user) {
+      api.auth.me().then(data => {
+        const u = data.user;
+        dispatch({ type: "SET_USER", payload: { id: u.id, username: u.username, email: u.email } });
+        dispatch({ type: "SET_PROFILE", payload: {
+          displayName: u.displayName || u.username,
+          bio: u.bio || "",
+          status: u.status || "online",
+          customStatus: u.customStatus || "",
+          profilePic: u.profilePic || "",
+        }});
+      }).catch(() => {
+        clearTokens();
+      });
     }
   }, []);
 
@@ -142,6 +150,7 @@ export function AppProvider({ children }) {
     if (state.user) {
       api.servers.list().then(servers => dispatch({ type: "SET_SERVERS", payload: servers })).catch(() => {});
       api.friends.list().then(friends => dispatch({ type: "SET_FRIENDS", payload: friends })).catch(() => {});
+      reconnectSocket();
       socket.connect();
       return () => { socket.disconnect(); };
     }
@@ -149,78 +158,128 @@ export function AppProvider({ children }) {
 
   useEffect(() => {
     socket.on("message:new", (msg) => {
-      if (msg.sender !== stateRef.current.displayName) {
-        dispatch({ type: "ADD_MESSAGE", chatKey: getActiveChatKey(stateRef.current), payload: msg });
-        triggerMockReply(stateRef.current, msg);
+      const chatKey = getActiveChatKey(stateRef.current);
+      dispatch({ type: "ADD_MESSAGE", chatKey: msg.chatKey || chatKey, payload: msg });
+    });
+
+    socket.on("message:updated", (data) => {
+      const chatKey = getActiveChatKey(stateRef.current);
+      const msgs = stateRef.current.messages[chatKey] || [];
+      const idx = msgs.findIndex(m => m.id === data.messageId);
+      if (idx >= 0) {
+        dispatch({ type: "UPDATE_MESSAGE", chatKey, payload: { id: data.messageId, ...data } });
       }
     });
-    return () => { socket.off("message:new"); };
+
+    socket.on("message:deleted", (data) => {
+      const chatKey = getActiveChatKey(stateRef.current);
+      const msgs = stateRef.current.messages[chatKey] || [];
+      if (msgs.find(m => m.id === data.messageId)) {
+        dispatch({ type: "REMOVE_MESSAGE", chatKey, payload: data.messageId });
+      }
+    });
+
+    socket.on("typing:update", (data) => {
+      const chatKey = getActiveChatKey(stateRef.current);
+      dispatch({ type: "SET_TYPING", chatKey, payload: data });
+    });
+
+    socket.on("presence:update", (data) => {
+      dispatch({ type: "SET_FRIENDS", payload: stateRef.current.friends.map(f =>
+        f.id === data.userId ? { ...f, status: data.status } : f
+      )});
+    });
+
+    return () => {
+      socket.off("message:new");
+      socket.off("message:updated");
+      socket.off("message:deleted");
+      socket.off("typing:update");
+      socket.off("presence:update");
+    };
   }, []);
 
-  const login = useCallback(async (username, password) => {
-    const result = await api.auth.login(username, password);
-    localStorage.setItem("dangro_session", JSON.stringify({ loggedIn: true, username: result.username, timestamp: Date.now() }));
-    dispatch({ type: "SET_USER", payload: { username: result.username } });
-    if (result.displayName) {
-      dispatch({ type: "SET_PROFILE", payload: { displayName: result.displayName } });
-    }
+  const login = useCallback(async (username, password, rememberMe = false) => {
+    const result = await api.auth.login(username, password, rememberMe);
+    setTokens(result.accessToken, result.refreshToken);
+    const u = result.user;
+    dispatch({ type: "SET_USER", payload: { id: u.id, username: u.username, email: u.email } });
+    dispatch({ type: "SET_PROFILE", payload: {
+      displayName: u.displayName || u.username,
+      bio: u.bio || "",
+      status: u.status || "online",
+      customStatus: u.customStatus || "",
+      profilePic: u.profilePic || "",
+    }});
     return result;
   }, []);
 
-  const signup = useCallback(async (username, password) => {
-    const result = await api.auth.signup(username, password);
-    localStorage.setItem("dangro_session", JSON.stringify({ loggedIn: true, username: result.username, timestamp: Date.now() }));
-    dispatch({ type: "SET_USER", payload: { username: result.username } });
-    dispatch({ type: "SET_PROFILE", payload: { displayName: username } });
+  const signup = useCallback(async (username, email, password) => {
+    const result = await api.auth.signup(username, email, password);
+    setTokens(result.accessToken, result.refreshToken);
+    const u = result.user;
+    dispatch({ type: "SET_USER", payload: { id: u.id, username: u.username, email: u.email } });
+    dispatch({ type: "SET_PROFILE", payload: {
+      displayName: u.displayName || u.username,
+      bio: u.bio || "",
+      status: u.status || "online",
+      customStatus: u.customStatus || "",
+      profilePic: u.profilePic || "",
+    }});
     return result;
   }, []);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem("dangro_session");
-    localStorage.removeItem("dangro_state_v3");
+  const logout = useCallback(async () => {
+    try {
+      const rt = localStorage.getItem("dangro_refresh_token");
+      if (rt) await api.auth.logout(rt);
+    } catch {}
+    clearTokens();
+    localStorage.removeItem("dangro_state_v5");
     dispatch({ type: "RESET" });
   }, []);
 
-  const loadMessages = useCallback(async (chatKey) => {
+  const loadMessages = useCallback(async (chatKey, options = {}) => {
     try {
-      const messages = await api.messages.list(chatKey);
-      dispatch({ type: "SET_MESSAGES", chatKey, payload: messages });
-    } catch {}
+      const result = await api.messages.list(chatKey, options);
+      if (options.before) {
+        dispatch({ type: "PREPEND_MESSAGES", chatKey, payload: result.messages });
+      } else {
+        dispatch({ type: "SET_MESSAGES", chatKey, payload: result.messages });
+      }
+      dispatch({
+        type: "SET_MESSAGES_BATCH",
+        chatKey,
+        payload: result.messages,
+        prepend: !!options.before,
+        cursors: { hasMore: result.hasMore, nextCursor: result.nextCursor, total: result.total },
+      });
+      return result;
+    } catch {
+      return null;
+    }
   }, []);
 
-  const sendMessage = useCallback(async (content, isImage = false, replyTo = null) => {
+  const sendMessage = useCallback(async (content, isImage = false, replyTo = null, attachments = []) => {
     const s = stateRef.current;
     const chatKey = getActiveChatKey(s);
-    socket.emit("message:send", { chatKey, sender: s.displayName, content, isImage, replyTo });
-  }, []);
+    const optimisticId = "opt_" + Date.now();
+    const optimisticMsg = {
+      id: optimisticId,
+      chatKey,
+      sender: s.displayName,
+      content,
+      timestamp: new Date().toISOString(),
+      isImage,
+      system: false,
+      reactions: {},
+      replyTo: replyTo || null,
+      attachments,
+      editedAt: null,
+    };
 
-  const triggerMockReply = useCallback((s, userMsg) => {
-    const chatKey = getActiveChatKey(s);
-    let replyName = "pixel_alex";
-    if (s.activeChatType === "channel") {
-      const pool = s.friends.filter(f => f.status !== "offline");
-      if (pool.length) replyName = pool[Math.floor(Math.random() * pool.length)].username;
-    } else if (s.activeChatType === "dm") {
-      const friend = s.friends.find(f => f.id === s.activeDmFriendId);
-      if (friend) replyName = friend.username;
-    } else if (s.activeChatType === "group") {
-      const group = s.groupChats.find(g => g.id === s.activeGroupChatId);
-      if (group && group.members.length > 0) {
-        const others = group.members.filter(m => m !== s.displayName);
-        if (others.length) replyName = others[Math.floor(Math.random() * others.length)];
-      }
-    }
-    setTimeout(() => {
-      if (getActiveChatKey(stateRef.current) !== chatKey) return;
-      setTimeout(() => {
-        let response = MOCK_REPLIES[Math.floor(Math.random() * MOCK_REPLIES.length)];
-        const lower = userMsg?.toLowerCase() || "";
-        if (lower.includes("hello") || lower.includes("hey")) response = "Hey! Hope you're having a great day! 👋";
-        else if (lower.includes("youtube") || lower.includes("video")) response = "The video player works great! Check it out.";
-        else if (lower.includes("instagram") || lower.includes("ig")) response = "Just saw the latest posts! They look awesome 🔥";
-        socket.emit("message:send", { chatKey, sender: replyName, content: response, isImage: false, replyTo: null });
-      }, 2000);
-    }, 1000);
+    dispatch({ type: "ADD_MESSAGE", chatKey, payload: optimisticMsg });
+    socket.emit("message:send", { chatKey, sender: s.displayName, content, isImage, replyTo, attachments });
   }, []);
 
   const addToast = useCallback((message, type = "info") => {
@@ -243,8 +302,11 @@ export function useApp() {
 }
 
 export function getActiveChatKey(s) {
-  if (s.activeChatType === "channel") return s.activeServerId + "_" + s.activeChannelId;
-  if (s.activeChatType === "dm") return "dm_" + s.activeDmFriendId;
-  if (s.activeChatType === "group") return "group_" + s.activeGroupChatId;
-  return s.activeServerId + "_" + s.activeChannelId;
+  if (s.activeChatType === "channel" && s.activeServerId && s.activeChannelId)
+    return s.activeServerId + "_" + s.activeChannelId;
+  if (s.activeChatType === "dm" && s.activeDmFriendId)
+    return "dm_" + s.activeDmFriendId;
+  if (s.activeChatType === "group" && s.activeGroupChatId)
+    return "group_" + s.activeGroupChatId;
+  return null;
 }

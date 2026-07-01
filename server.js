@@ -9,7 +9,7 @@ const { initDB, getDB } = require('./db');
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
+const wss = new WebSocketServer({ server, allowSynchronousEvents: false });
 
 let PORT = parseInt(process.env.PORT) || 3000;
 
@@ -22,6 +22,7 @@ initDB();
 const onlineUsers = new Map(); // userId -> { ws, user }
 const userSockets = new Map(); // userId -> Set<ws>
 const sessions = new Map(); // token -> userId
+const callState = new Map(); // callKey -> { callerId, connected, startTime }
 
 function broadcastToUser(userId, message) {
   const sockets = userSockets.get(userId);
@@ -61,6 +62,24 @@ function hasChatAccess(userId, chatKey) {
   const db = getDB();
   const member = db.prepare('SELECT 1 FROM server_members WHERE server_id = ? AND user_id = ?').get(serverId, userId);
   return !!member;
+}
+
+function getDMKey(a, b) {
+  return 'dm_' + [a, b].sort().join('_');
+}
+
+function insertSystemMessage(chatKey, content, userId) {
+  const db = getDB();
+  const id = uuidv4();
+  db.prepare('INSERT INTO messages (id, chat_key, sender_id, content, timestamp, system) VALUES (?, ?, ?, ?, ?, ?)').run(
+    id, chatKey, userId, content, new Date().toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }), 1
+  );
+  const message = {
+    id, sender: 'System', senderId: 'system', content,
+    timestamp: new Date().toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+    isImage: false, system: true, replyTo: null, reactions: {}
+  };
+  broadcastToChatKey(chatKey, { type: 'message:new', chatKey, message });
 }
 
 // ============ REST API ============
@@ -200,8 +219,8 @@ app.get('/api/messages/:chatKey', (req, res) => {
     });
     return {
       id: msg.id,
-      sender: msg.sender_name,
-      senderId: msg.sender_id,
+      sender: msg.system ? 'System' : msg.sender_name,
+      senderId: msg.system ? 'system' : msg.sender_id,
       content: msg.content,
       timestamp: msg.timestamp,
       isImage: !!msg.is_image,
@@ -221,7 +240,7 @@ wss.on('connection', (ws) => {
 
   ws.on('pong', () => { ws.isAlive = true; });
 
-  ws.on('message', (raw) => {
+  ws.on('message', (raw, isBinary) => {
     try {
       const msg = JSON.parse(raw.toString());
       handleMessage(ws, msg);
@@ -340,7 +359,7 @@ function handleMessage(ws, msg) {
       });
 
       // Get all users (for adding friends)
-      const allUsers = db.prepare('SELECT id, username, display_name, status FROM users WHERE id != ?').all(user.id);
+      const allUsers = db.prepare('SELECT id, username, display_name, profile_pic, status FROM users WHERE id != ?').all(user.id);
 
       ws.send(JSON.stringify({
         type: 'init',
@@ -351,12 +370,12 @@ function handleMessage(ws, msg) {
           customStatus: f.custom_status || '', avatarColor: '#555', profilePic: f.profile_pic || ''
         })),
         pendingRequests: {
-          incoming: pendingIn.map(u => ({ id: u.id, username: u.username, displayName: u.display_name })),
-          outgoing: pendingOut.map(u => ({ id: u.id, username: u.username, displayName: u.display_name }))
+          incoming: pendingIn.map(u => ({ id: u.id, username: u.username, displayName: u.display_name, profilePic: u.profile_pic || '' })),
+          outgoing: pendingOut.map(u => ({ id: u.id, username: u.username, displayName: u.display_name, profilePic: u.profile_pic || '' }))
         },
         servers: serversWithChannels,
         groupChats: groupsWithMembers,
-        allUsers: allUsers.map(u => ({ id: u.id, username: u.username, displayName: u.display_name }))
+        allUsers: allUsers.map(u => ({ id: u.id, username: u.username, displayName: u.display_name, profilePic: u.profile_pic || '' }))
       }));
 
       if (wasOffline) notifyFriendsStatus(user.id, 'online');
@@ -430,21 +449,22 @@ function handleMessage(ws, msg) {
       if (!username) return;
 
       const db = getDB();
-      const target = db.prepare('SELECT id, username, display_name FROM users WHERE LOWER(username) = LOWER(?)').get(username.trim());
+      const target = db.prepare('SELECT id, username, display_name, profile_pic FROM users WHERE LOWER(username) = LOWER(?)').get(username.trim());
       if (!target) return ws.send(JSON.stringify({ type: 'error', message: 'User not found' }));
       if (target.id === ws.userId) return ws.send(JSON.stringify({ type: 'error', message: 'Cannot add yourself' }));
 
       const existing = db.prepare('SELECT status FROM friends WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)').get(ws.userId, target.id, target.id, ws.userId);
       if (existing) return ws.send(JSON.stringify({ type: 'error', message: existing.status === 'accepted' ? 'Already friends' : 'Request already pending' }));
 
-      db.prepare('INSERT INTO friends (user_id, friend_id, status) VALUES (?, ?, "pending")').run(ws.userId, target.id);
-      ws.send(JSON.stringify({ type: 'friend:request:sent', to: { id: target.id, username: target.username, displayName: target.display_name } }));
+      db.prepare("INSERT INTO friends (user_id, friend_id, status) VALUES (?, ?, 'pending')").run(ws.userId, target.id);
+      const tgtPic = target.profile_pic || ''
+      ws.send(JSON.stringify({ type: 'friend:request:sent', to: { id: target.id, username: target.username, displayName: target.display_name, profilePic: tgtPic } }));
 
       // Notify target if online
       const user = onlineUsers.get(ws.userId);
       broadcastToUser(target.id, {
         type: 'friend:request:incoming',
-        from: { id: ws.userId, username: user ? user.username : 'Unknown', displayName: user ? user.display_name : 'Unknown' }
+        from: { id: ws.userId, username: user ? user.username : 'Unknown', displayName: user ? user.display_name : 'Unknown', profilePic: user ? user.profile_pic || '' : '' }
       });
       break;
     }
@@ -455,17 +475,17 @@ function handleMessage(ws, msg) {
       if (!friendId) return;
 
       const db = getDB();
-      const request = db.prepare('SELECT * FROM friends WHERE user_id = ? AND friend_id = ? AND status = "pending"').get(friendId, ws.userId);
+      const request = db.prepare("SELECT * FROM friends WHERE user_id = ? AND friend_id = ? AND status = 'pending'").get(friendId, ws.userId);
       if (!request) return ws.send(JSON.stringify({ type: 'error', message: 'No pending request' }));
 
-      db.prepare('UPDATE friends SET status = "accepted" WHERE user_id = ? AND friend_id = ?').run(friendId, ws.userId);
+      db.prepare("UPDATE friends SET status = 'accepted' WHERE user_id = ? AND friend_id = ?").run(friendId, ws.userId);
 
       // Also create reverse entry
       const reverse = db.prepare('SELECT 1 FROM friends WHERE user_id = ? AND friend_id = ?').get(ws.userId, friendId);
       if (!reverse) {
-        db.prepare('INSERT INTO friends (user_id, friend_id, status) VALUES (?, ?, "accepted")').run(ws.userId, friendId);
+        db.prepare("INSERT INTO friends (user_id, friend_id, status) VALUES (?, ?, 'accepted')").run(ws.userId, friendId);
       } else {
-        db.prepare('UPDATE friends SET status = "accepted" WHERE user_id = ? AND friend_id = ?').run(ws.userId, friendId);
+        db.prepare("UPDATE friends SET status = 'accepted' WHERE user_id = ? AND friend_id = ?").run(ws.userId, friendId);
       }
 
       const friend = db.prepare('SELECT id, username, display_name, status, custom_status, profile_pic FROM users WHERE id = ?').get(friendId);
@@ -549,6 +569,14 @@ function handleMessage(ws, msg) {
       const already = db.prepare('SELECT 1 FROM server_members WHERE server_id = ? AND user_id = ?').get(server.id, ws.userId);
       if (already) return ws.send(JSON.stringify({ type: 'error', message: 'Already a member' }));
 
+      const ban = db.prepare("SELECT banned_until FROM server_bans WHERE server_id = ? AND user_id = ?").get(server.id, ws.userId);
+      if (ban) {
+        if (ban.banned_until && new Date(ban.banned_until) > new Date()) {
+          return ws.send(JSON.stringify({ type: 'error', message: 'You are banned from this server until ' + ban.banned_until }));
+        }
+        db.prepare('DELETE FROM server_bans WHERE server_id = ? AND user_id = ?').run(server.id, ws.userId);
+      }
+
       db.prepare('INSERT INTO server_members (server_id, user_id) VALUES (?, ?)').run(server.id, ws.userId);
 
       const channels = db.prepare('SELECT * FROM channels WHERE server_id = ?').all(server.id);
@@ -568,6 +596,124 @@ function handleMessage(ws, msg) {
           system: true, reactions: {}, replyTo: null, isImage: false
         }
       }, null);
+      break;
+    }
+
+    case 'server:update': {
+      if (!ws.userId) return;
+      const { serverId, name, icon, description, serverPic } = msg;
+      if (!serverId) return;
+      const db = getDB();
+      const server = db.prepare('SELECT * FROM servers WHERE id = ? AND owner_id = ?').get(serverId, ws.userId);
+      if (!server) return ws.send(JSON.stringify({ type: 'error', message: 'Only the owner can update the server' }));
+      const updates = []; const params = [];
+      if (name !== undefined) { updates.push('name = ?'); params.push(name); }
+      if (icon !== undefined) { updates.push('icon = ?'); params.push(icon); }
+      if (description !== undefined) { updates.push('description = ?'); params.push(description); }
+      if (serverPic !== undefined) { updates.push('server_pic = ?'); params.push(serverPic); }
+      if (updates.length) { params.push(serverId); db.prepare(`UPDATE servers SET ${updates.join(', ')} WHERE id = ?`).run(...params); }
+      const updated = db.prepare('SELECT * FROM servers WHERE id = ?').get(serverId);
+      // Broadcast update to all server members
+      const members = db.prepare('SELECT user_id FROM server_members WHERE server_id = ?').all(serverId);
+      members.forEach(m => broadcastToUser(m.user_id, { type: 'server:updated', server: updated }));
+      break;
+    }
+
+    case 'server:transfer': {
+      if (!ws.userId) return;
+      const { serverId, newOwnerId } = msg;
+      if (!serverId || !newOwnerId) return;
+      const dbs = getDB();
+      const server = dbs.prepare('SELECT * FROM servers WHERE id = ? AND owner_id = ?').get(serverId, ws.userId);
+      if (!server) return ws.send(JSON.stringify({ type: 'error', message: 'Only the owner can transfer ownership' }));
+      const member = dbs.prepare('SELECT 1 FROM server_members WHERE server_id = ? AND user_id = ?').get(serverId, newOwnerId);
+      if (!member) return ws.send(JSON.stringify({ type: 'error', message: 'User is not a member of this server' }));
+      dbs.prepare('UPDATE servers SET owner_id = ? WHERE id = ?').run(newOwnerId, serverId);
+      dbs.prepare("UPDATE server_members SET role = 'owner' WHERE server_id = ? AND user_id = ?").run(serverId, newOwnerId);
+      dbs.prepare("UPDATE server_members SET role = 'member' WHERE server_id = ? AND user_id = ? AND role = 'owner'").run(serverId, ws.userId);
+      const updated = dbs.prepare('SELECT * FROM servers WHERE id = ?').get(serverId);
+      const members = dbs.prepare('SELECT user_id FROM server_members WHERE server_id = ?').all(serverId);
+      members.forEach(m => broadcastToUser(m.user_id, { type: 'server:updated', server: updated }));
+      break;
+    }
+
+    case 'server:members': {
+      if (!ws.userId) return;
+      const { serverId } = msg;
+      if (!serverId) return;
+      const dbr = getDB();
+      const isMember = dbr.prepare('SELECT 1 FROM server_members WHERE server_id = ? AND user_id = ?').get(serverId, ws.userId);
+      if (!isMember) return;
+      const members = dbr.prepare(`SELECT u.id, u.username, u.display_name, u.status, u.profile_pic, sm.role FROM server_members sm JOIN users u ON sm.user_id = u.id WHERE sm.server_id = ?`).all(serverId);
+      ws.send(JSON.stringify({ type: 'server:memberlist', serverId, members }));
+      break;
+    }
+
+    case 'server:kick': {
+      if (!ws.userId) return;
+      const { serverId, targetUsername } = msg;
+      if (!serverId || !targetUsername) return;
+      const dbk = getDB();
+      const server = dbk.prepare('SELECT * FROM servers WHERE id = ? AND owner_id = ?').get(serverId, ws.userId);
+      if (!server) return ws.send(JSON.stringify({ type: 'error', message: 'Only the owner can kick members' }));
+      const target = dbk.prepare("SELECT id, username, display_name FROM users WHERE LOWER(username) = LOWER(?)").get(targetUsername.trim());
+      if (!target) return ws.send(JSON.stringify({ type: 'error', message: 'User not found' }));
+      if (target.id === ws.userId) return ws.send(JSON.stringify({ type: 'error', message: 'Cannot kick yourself' }));
+      const isMember = dbk.prepare('SELECT 1 FROM server_members WHERE server_id = ? AND user_id = ?').get(serverId, target.id);
+      if (!isMember) return ws.send(JSON.stringify({ type: 'error', message: 'User is not a member' }));
+      dbk.prepare('DELETE FROM server_members WHERE server_id = ? AND user_id = ?').run(serverId, target.id);
+      broadcastToUser(target.id, { type: 'server:kicked', serverId, serverName: server.name });
+      const members = dbk.prepare('SELECT user_id FROM server_members WHERE server_id = ?').all(serverId);
+      members.forEach(m => broadcastToUser(m.user_id, { type: 'server:memberremoved', serverId, userId: target.id }));
+      ws.send(JSON.stringify({ type: 'server:kick:done', serverId, userId: target.id }));
+      break;
+    }
+
+    case 'server:ban': {
+      if (!ws.userId) return;
+      const { serverId, targetUsername, duration } = msg;
+      if (!serverId || !targetUsername) return;
+      const dbb = getDB();
+      const server = dbb.prepare('SELECT * FROM servers WHERE id = ? AND owner_id = ?').get(serverId, ws.userId);
+      if (!server) return ws.send(JSON.stringify({ type: 'error', message: 'Only the owner can ban members' }));
+      const target = dbb.prepare("SELECT id, username, display_name FROM users WHERE LOWER(username) = LOWER(?)").get(targetUsername.trim());
+      if (!target) return ws.send(JSON.stringify({ type: 'error', message: 'User not found' }));
+      if (target.id === ws.userId) return ws.send(JSON.stringify({ type: 'error', message: 'Cannot ban yourself' }));
+      // Remove from server
+      dbb.prepare('DELETE FROM server_members WHERE server_id = ? AND user_id = ?').run(serverId, target.id);
+      // Insert ban with optional expiry
+      const bannedUntil = duration ? new Date(Date.now() + duration).toISOString() : null;
+      dbb.prepare("INSERT OR REPLACE INTO server_bans (server_id, user_id, banned_until) VALUES (?, ?, ?)").run(serverId, target.id, bannedUntil);
+      broadcastToUser(target.id, { type: 'server:banned', serverId, serverName: server.name, bannedUntil });
+      const members = dbb.prepare('SELECT user_id FROM server_members WHERE server_id = ?').all(serverId);
+      members.forEach(m => broadcastToUser(m.user_id, { type: 'server:memberremoved', serverId, userId: target.id }));
+      ws.send(JSON.stringify({ type: 'server:ban:done', serverId, userId: target.id, bannedUntil }));
+      break;
+    }
+
+    case 'server:unban': {
+      if (!ws.userId) return;
+      const { serverId, targetUsername } = msg;
+      if (!serverId || !targetUsername) return;
+      const dbu = getDB();
+      const server = dbu.prepare('SELECT * FROM servers WHERE id = ? AND owner_id = ?').get(serverId, ws.userId);
+      if (!server) return ws.send(JSON.stringify({ type: 'error', message: 'Only the owner can unban members' }));
+      const target = dbu.prepare("SELECT id FROM users WHERE LOWER(username) = LOWER(?)").get(targetUsername.trim());
+      if (!target) return ws.send(JSON.stringify({ type: 'error', message: 'User not found' }));
+      dbu.prepare('DELETE FROM server_bans WHERE server_id = ? AND user_id = ?').run(serverId, target.id);
+      ws.send(JSON.stringify({ type: 'server:unban:done', serverId, userId: target.id }));
+      break;
+    }
+
+    case 'server:bannedlist': {
+      if (!ws.userId) return;
+      const { serverId } = msg;
+      if (!serverId) return;
+      const dbl = getDB();
+      const server = dbl.prepare('SELECT * FROM servers WHERE id = ? AND owner_id = ?').get(serverId, ws.userId);
+      if (!server) return;
+      const banned = dbl.prepare(`SELECT sb.user_id, sb.banned_until, u.username, u.display_name FROM server_bans sb JOIN users u ON sb.user_id = u.id WHERE sb.server_id = ?`).all(serverId);
+      ws.send(JSON.stringify({ type: 'server:bannedlist', serverId, banned }));
       break;
     }
 
@@ -636,14 +782,11 @@ function handleMessage(ws, msg) {
       const profileData = { id: ws.userId, displayName: user ? user.display_name : displayName, bio: user ? user.bio : bio, status: user ? user.status : status, customStatus: user ? user.custom_status : customStatus, profilePic: user ? user.profile_pic : profilePic, theme: user ? user.theme : theme, username: user ? user.username : '' };
       ws.send(JSON.stringify({ type: 'profile:updated', profile: profileData }));
 
-      // Broadcast profile update to all friends of this user
-      const friends = db.prepare(`
-        SELECT user_id FROM friends WHERE friend_id = ? AND status = 'accepted'
-        UNION
-        SELECT friend_id FROM friends WHERE user_id = ? AND status = 'accepted'
-      `).all(ws.userId, ws.userId);
-      friends.forEach(f => {
-        broadcastToUser(f.user_id, { type: 'profile:updated', profile: profileData });
+      // Broadcast profile update to all connected users
+      userSockets.forEach((sockets, uid) => {
+        if (uid !== ws.userId) {
+          broadcastToUser(uid, { type: 'profile:updated', profile: profileData });
+        }
       });
       break;
     }
@@ -652,6 +795,8 @@ function handleMessage(ws, msg) {
       if (!ws.userId) return;
       const { targetUserId, sdp } = msg;
       const user = onlineUsers.get(ws.userId);
+      const callKey = getDMKey(ws.userId, targetUserId);
+      callState.set(callKey, { callerId: ws.userId, connected: false, startTime: Date.now() });
       broadcastToUser(targetUserId, { type: 'call:offer', fromUserId: ws.userId, username: user ? user.display_name : 'Unknown', sdp });
       break;
     }
@@ -659,6 +804,10 @@ function handleMessage(ws, msg) {
     case 'call:answer': {
       if (!ws.userId) return;
       const { targetUserId, sdp } = msg;
+      const callKey = getDMKey(ws.userId, targetUserId);
+      const state = callState.get(callKey);
+      if (state) state.connected = true;
+      insertSystemMessage(callKey, 'Call connected', ws.userId);
       broadcastToUser(targetUserId, { type: 'call:answer', fromUserId: ws.userId, sdp });
       break;
     }
@@ -673,6 +822,23 @@ function handleMessage(ws, msg) {
     case 'call:end': {
       if (!ws.userId) return;
       const { targetUserId } = msg;
+      const callKey = getDMKey(ws.userId, targetUserId);
+      const state = callState.get(callKey);
+      let msgContent = 'Call ended';
+      if (state) {
+        if (state.connected) {
+          const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+          const m = Math.floor(elapsed / 60);
+          const s = elapsed % 60;
+          msgContent = 'Call ended (' + m + ':' + s.toString().padStart(2, '0') + ')';
+        } else if (ws.userId === state.callerId) {
+          msgContent = 'Call missed';
+        } else {
+          msgContent = 'Call declined';
+        }
+        callState.delete(callKey);
+      }
+      insertSystemMessage(callKey, msgContent, ws.userId);
       broadcastToUser(targetUserId, { type: 'call:ended', fromUserId: ws.userId });
       break;
     }

@@ -10,6 +10,8 @@ document.addEventListener("DOMContentLoaded", () => {
   let groupChats = [];
   let messages = {};
   let allUsers = [];
+  let pendingTransferUsername = null;
+  let currentServerMembers = [];
   let onlineUserIds = new Set();
 
   let replyTarget = null;
@@ -123,9 +125,14 @@ document.addEventListener("DOMContentLoaded", () => {
     return "Today at " + h + ":" + m + " " + ampm;
   }
 
+  function getDMKey(friendId) {
+    const ids = [currentUser.id, friendId].sort();
+    return "dm_" + ids[0] + "_" + ids[1];
+  }
+
   function getActiveChatKey() {
     if (activeChatType === "channel" && activeServerId && activeChannelId) return activeServerId + "_" + activeChannelId;
-    if (activeChatType === "dm" && activeDmFriendId) return "dm_" + activeDmFriendId;
+    if (activeChatType === "dm" && activeDmFriendId) return getDMKey(activeDmFriendId);
     if (activeChatType === "group" && activeGroupChatId) return "group_" + activeGroupChatId;
     return null;
   }
@@ -429,6 +436,103 @@ document.addEventListener("DOMContentLoaded", () => {
         }
         break;
 
+      case "server:updated":
+        const svUpd = servers.find(s => s.id === msg.server.id);
+        if (svUpd) {
+          Object.assign(svUpd, msg.server);
+          renderServers();
+          updateChatHeader();
+        }
+        break;
+
+      case "server:memberlist":
+        if (activeServerId === msg.serverId) {
+          currentServerMembers = msg.members || [];
+          renderServerMembers();
+          // Handle pending transfer
+          if (pendingTransferUsername) {
+            const targetMember = currentServerMembers.find(m => m.username.toLowerCase() === pendingTransferUsername.toLowerCase());
+            if (targetMember) {
+              wsSend({ type: "server:transfer", serverId: activeServerId, newOwnerId: targetMember.id });
+              showToast("Transferred ownership to @" + pendingTransferUsername, "success");
+            } else {
+              showToast("User not found in server members", "error");
+            }
+            pendingTransferUsername = null;
+          }
+        }
+        break;
+
+      case "server:memberremoved":
+        if (msg.userId === currentUser.id) {
+          servers = servers.filter(s => s.id !== msg.serverId);
+          if (activeServerId === msg.serverId) {
+            activeServerId = servers.length ? servers[0].id : null;
+            activeChannelId = null;
+            renderChat();
+          }
+          renderServers();
+          showToast("You were removed from the server", "info");
+        } else {
+          renderServerMembers();
+        }
+        break;
+
+      case "server:kicked":
+        if (msg.serverId) {
+          servers = servers.filter(s => s.id !== msg.serverId);
+          if (activeServerId === msg.serverId) {
+            activeServerId = servers.length ? servers[0].id : null;
+            activeChannelId = null;
+            renderChat();
+          }
+          renderServers();
+          switchNav("servers");
+          showToast("You were kicked from " + (msg.serverName || "the server"), "error");
+        }
+        break;
+
+      case "server:banned":
+        if (msg.serverId) {
+          servers = servers.filter(s => s.id !== msg.serverId);
+          if (activeServerId === msg.serverId) {
+            activeServerId = servers.length ? servers[0].id : null;
+            activeChannelId = null;
+            renderChat();
+          }
+          renderServers();
+          switchNav("servers");
+          showToast("You were banned from " + (msg.serverName || "the server") + (msg.bannedUntil ? " until " + msg.bannedUntil : ""), "error");
+        }
+        break;
+
+      case "server:kick:done":
+      case "server:ban:done":
+        showToast("Action completed", "success");
+        break;
+
+      case "server:bannedlist":
+        const bannedContainer = document.getElementById("ss-banned-list");
+        bannedContainer.innerHTML = "";
+        if (!msg.banned || !msg.banned.length) {
+          bannedContainer.innerHTML = '<div style="padding:6px;color:var(--text-muted);">No banned users.</div>';
+        } else {
+          msg.banned.forEach(b => {
+            const item = document.createElement("div");
+            item.className = "banned-item";
+            const expiry = b.banned_until ? " (until " + new Date(b.banned_until).toLocaleString() + ")" : " (permanent)";
+            item.innerHTML = '<span>' + (b.display_name || b.username) + expiry + '</span><button class="unban-btn" data-username="' + b.username + '">Unban</button>';
+            item.querySelector(".unban-btn").addEventListener("click", () => {
+              wsSend({ type: "server:unban", serverId: msg.serverId, targetUsername: b.username });
+              item.remove();
+              showToast("Unbanned " + b.username, "success");
+            });
+            bannedContainer.appendChild(item);
+          });
+        }
+        bannedContainer.classList.remove("hidden");
+        break;
+
       case "group:created":
         if (!groupChats.find(g => g.id === msg.group.id)) {
           groupChats.push(msg.group);
@@ -452,11 +556,17 @@ document.addEventListener("DOMContentLoaded", () => {
             friends[fIdx].displayName = msg.profile.displayName;
             friends[fIdx].profilePic = msg.profile.profilePic || "";
           }
+          // Update in all users list
+          const aIdx = allUsers.findIndex(u => u.id === msg.profile.id);
+          if (aIdx !== -1) {
+            allUsers[aIdx].displayName = msg.profile.displayName;
+            allUsers[aIdx].profilePic = msg.profile.profilePic || "";
+          }
           // Update in group members
-      groupChats.forEach(g => {
-        const m = g.members ? g.members.find(m => m.id === msg.profile.id) : null;
-        if (m) { m.displayName = msg.profile.displayName; m.profilePic = msg.profile.profilePic || ""; }
-      });
+          groupChats.forEach(g => {
+            const m = g.members ? g.members.find(m => m.id === msg.profile.id) : null;
+            if (m) { m.displayName = msg.profile.displayName; m.profilePic = msg.profile.profilePic || ""; }
+          });
           renderFriendsList();
           renderChat();
         }
@@ -1065,6 +1175,80 @@ document.addEventListener("DOMContentLoaded", () => {
       document.getElementById("join-server-input").value = "";
     });
 
+    // Server Settings Modal
+    const ssm = document.getElementById("server-settings-modal");
+    document.getElementById("btn-server-settings").addEventListener("click", () => {
+      const server = servers.find(s => s.id === activeServerId);
+      if (!server || server.owner_id !== currentUser.id) { showToast("Only the server owner can access settings", "error"); return; }
+      document.getElementById("ss-server-name").value = server.name || "";
+      document.getElementById("ss-server-icon").value = server.icon || "";
+      document.getElementById("ss-server-pic").value = server.server_pic || server.serverPic || "";
+      document.getElementById("ss-server-desc").value = server.description || "";
+      document.getElementById("ss-transfer-username").value = "";
+      document.getElementById("ss-kick-username").value = "";
+      document.getElementById("ss-ban-username").value = "";
+      document.getElementById("ss-ban-duration").value = "";
+      document.getElementById("ss-banned-list").classList.add("hidden");
+      document.getElementById("ss-banned-list").innerHTML = "";
+      ssm.classList.remove("hidden");
+    });
+    document.getElementById("btn-server-settings-close").addEventListener("click", () => { ssm.classList.add("hidden"); });
+
+    document.getElementById("btn-ss-save").addEventListener("click", () => {
+      const server = servers.find(s => s.id === activeServerId);
+      if (!server) return;
+      const payload = { type: "server:update", serverId: activeServerId };
+      const name = document.getElementById("ss-server-name").value.trim();
+      const icon = document.getElementById("ss-server-icon").value.trim();
+      const serverPic = document.getElementById("ss-server-pic").value.trim();
+      const description = document.getElementById("ss-server-desc").value.trim();
+      if (name && name !== server.name) payload.name = name;
+      if (icon && icon !== server.icon) payload.icon = icon;
+      if (serverPic !== (server.server_pic || "")) payload.serverPic = serverPic;
+      if (description !== (server.description || "")) payload.description = description;
+      wsSend(payload);
+      showToast("Server settings saved!", "success");
+      if (name) server.name = name;
+      if (icon) server.icon = icon;
+      if (serverPic) { server.server_pic = serverPic; server.serverPic = serverPic; }
+      if (description !== undefined) server.description = description;
+      renderServers();
+      updateChatHeader();
+      ssm.classList.add("hidden");
+    });
+
+    document.getElementById("btn-ss-transfer").addEventListener("click", () => {
+      const uname = document.getElementById("ss-transfer-username").value.trim();
+      if (!uname) { showToast("Enter a username", "error"); return; }
+      if (!confirm("Transfer server ownership to @" + uname + "? This cannot be undone!")) return;
+      // Find user ID by fetching members
+      wsSend({ type: "server:members", serverId: activeServerId });
+      // We'll handle the actual transfer after getting the memberlist
+      pendingTransferUsername = uname;
+      showToast("Looking up member...", "info");
+    });
+
+    document.getElementById("btn-ss-kick").addEventListener("click", () => {
+      const uname = document.getElementById("ss-kick-username").value.trim();
+      if (!uname) { showToast("Enter a username", "error"); return; }
+      if (!confirm("Kick @" + uname + " from the server?")) return;
+      wsSend({ type: "server:kick", serverId: activeServerId, targetUsername: uname });
+      showToast("Kicking " + uname + "...", "info");
+    });
+
+    document.getElementById("btn-ss-ban").addEventListener("click", () => {
+      const uname = document.getElementById("ss-ban-username").value.trim();
+      const duration = parseInt(document.getElementById("ss-ban-duration").value);
+      if (!uname) { showToast("Enter a username", "error"); return; }
+      if (!confirm("Ban @" + uname + " from the server?")) return;
+      wsSend({ type: "server:ban", serverId: activeServerId, targetUsername: uname, duration: duration || null });
+      showToast("Banning " + uname + "...", "info");
+    });
+
+    document.getElementById("btn-ss-view-bans").addEventListener("click", () => {
+      wsSend({ type: "server:bannedlist", serverId: activeServerId });
+    });
+
     renderServers();
     renderChannels();
   }
@@ -1122,6 +1306,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const server = servers.find(s => s.id === activeServerId);
     if (!server) return;
     document.getElementById("active-server-title").textContent = server.name;
+    const ssBtn = document.getElementById("btn-server-settings");
+    if (server.owner_id === currentUser.id) { ssBtn.classList.remove("hidden"); } else { ssBtn.classList.add("hidden"); }
     const inviteInfo = document.getElementById("server-invite-code");
     inviteInfo.textContent = server.owner_name ? "Owner: " + server.owner_name : "";
     if (server.invite_code) inviteInfo.textContent = "Invite: " + server.invite_code;
@@ -1359,7 +1545,7 @@ document.addEventListener("DOMContentLoaded", () => {
     activeDmFriendId = friendId;
     activeGroupChatId = null;
     document.querySelectorAll(".channel-btn").forEach(b => b.classList.remove("active"));
-    const key = "dm_" + friendId;
+    const key = getDMKey(friendId);
     if (!messages[key]) loadMessages(key);
     renderFriendsList();
     updateChatHeader();
@@ -1494,26 +1680,7 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById("user-profile-modal").addEventListener("click", (e) => {
       if (e.target === e.currentTarget) document.getElementById("user-profile-modal").classList.add("hidden");
     });
-    document.getElementById("btn-profile-friend").addEventListener("click", () => {
-      const userId = document.getElementById("btn-profile-friend").getAttribute("data-user-id");
-      if (!userId) return;
-      const btn = document.getElementById("btn-profile-friend");
-      if (deniedUsers.has(userId)) {
-        showToast("Please wait before sending another request", "error");
-        return;
-      }
-      const isFriend = friends.some(f => f.id === userId);
-      const isPending = pendingRequests.incoming.some(r => r.id === userId) || pendingRequests.outgoing.some(r => r.id === userId);
-      if (isFriend || isPending) {
-        showToast(isFriend ? "Already friends" : "Request already pending", "info");
-        return;
-      }
-      wsSend({ type: "friend:request", username: document.getElementById("btn-profile-friend").getAttribute("data-username") });
-      btn.textContent = "Request Sent";
-      btn.classList.add("pending");
-      btn.disabled = true;
-      showToast("Friend request sent!", "success");
-    });
+
     document.getElementById("btn-profile-message").addEventListener("click", () => {
       const userId = document.getElementById("btn-profile-message").getAttribute("data-user-id");
       if (!userId) return;

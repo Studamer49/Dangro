@@ -1,0 +1,19 @@
+version: "3.8"
+services:
+  dangro:
+    build: .
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - DATABASE_PATH=/data/dangro.db
+      - CORS_ORIGIN=http://localhost:3001
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET:-change-me-too}
+    volumes:
+      - dangro-data:/data
+    restart: unless-stopped
+
+volumes:
+  dangro-data:
