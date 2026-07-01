@@ -71,12 +71,13 @@ function getDMKey(a, b) {
 function insertSystemMessage(chatKey, content, userId) {
   const db = getDB();
   const id = uuidv4();
+  const ts = new Date().toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
   db.prepare('INSERT INTO messages (id, chat_key, sender_id, content, timestamp, system) VALUES (?, ?, ?, ?, ?, ?)').run(
-    id, chatKey, userId, content, new Date().toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }), 1
+    id, chatKey, userId, content, ts, 1
   );
   const message = {
     id, sender: 'System', senderId: 'system', content,
-    timestamp: new Date().toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }),
+    timestamp: ts,
     isImage: false, system: true, replyTo: null, reactions: {}
   };
   broadcastToChatKey(chatKey, { type: 'message:new', chatKey, message });
