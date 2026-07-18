@@ -82,7 +82,7 @@ export default function FriendsPage() {
             onClick={() => setActiveTab("friends")}
             className={`w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${
               activeTab === "friends"
-                ? "bg-dangro-600 text-white"
+                ? "bg-accent-600 text-white"
                 : "text-gray-400 hover:bg-gray-800 hover:text-white"
             }`}
           >
@@ -92,7 +92,7 @@ export default function FriendsPage() {
             onClick={() => setActiveTab("requests")}
             className={`w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${
               activeTab === "requests"
-                ? "bg-dangro-600 text-white"
+                ? "bg-accent-600 text-white"
                 : "text-gray-400 hover:bg-gray-800 hover:text-white"
             }`}
           >
@@ -102,7 +102,7 @@ export default function FriendsPage() {
             onClick={() => setActiveTab("add")}
             className={`w-full rounded-lg px-3 py-2 text-left text-sm font-medium transition-colors ${
               activeTab === "add"
-                ? "bg-dangro-600 text-white"
+                ? "bg-accent-600 text-white"
                 : "text-gray-400 hover:bg-gray-800 hover:text-white"
             }`}
           >
@@ -125,7 +125,7 @@ export default function FriendsPage() {
                     className="flex items-center justify-between rounded-lg bg-gray-900 p-3"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-dangro-600 flex items-center justify-center text-sm font-bold">
+                      <div className="h-10 w-10 rounded-full bg-accent-600 flex items-center justify-center text-sm font-bold">
                         {f.friend?.username?.[0]?.toUpperCase()}
                       </div>
                       <span className="text-white">{f.friend?.username}</span>
@@ -156,7 +156,7 @@ export default function FriendsPage() {
                     className="flex items-center justify-between rounded-lg bg-gray-900 p-3"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-dangro-600 flex items-center justify-center text-sm font-bold">
+                      <div className="h-10 w-10 rounded-full bg-accent-600 flex items-center justify-center text-sm font-bold">
                         {r.sender?.username?.[0]?.toUpperCase()}
                       </div>
                       <span className="text-white">{r.sender?.username}</span>
@@ -182,7 +182,7 @@ export default function FriendsPage() {
               value={searchQuery}
               onChange={(e) => searchUsers(e.target.value)}
               placeholder="Search by username..."
-              className="mb-4 w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-dangro-500 focus:outline-none"
+              className="mb-4 w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
             />
             <div className="space-y-2">
               {searchResults.map((user) => (
@@ -191,14 +191,14 @@ export default function FriendsPage() {
                   className="flex items-center justify-between rounded-lg bg-gray-900 p-3"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-full bg-dangro-600 flex items-center justify-center text-sm font-bold">
+                    <div className="h-10 w-10 rounded-full bg-accent-600 flex items-center justify-center text-sm font-bold">
                       {user.username[0].toUpperCase()}
                     </div>
                     <span className="text-white">{user.username}</span>
                   </div>
                   <button
                     onClick={() => sendRequest(user.id)}
-                    className="rounded-lg bg-dangro-600/20 px-3 py-1.5 text-xs text-dangro-400 hover:bg-dangro-600/30"
+                    className="rounded-lg bg-accent-600/20 px-3 py-1.5 text-xs text-accent-400 hover:bg-accent-600/30"
                   >
                     Add Friend
                   </button>

@@ -39,7 +39,7 @@ export default function ServerSidebar() {
     <div className="flex w-[72px] flex-col items-center gap-2 bg-gray-950 py-3">
       <button
         onClick={() => navigate("/friends")}
-        className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-dangro-400 transition-all hover:rounded-xl hover:bg-dangro-600 hover:text-white"
+        className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-accent-400 transition-all hover:rounded-xl hover:bg-accent-600 hover:text-white"
         title="Friends"
       >
         <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
@@ -53,7 +53,7 @@ export default function ServerSidebar() {
         <button
           key={server.id}
           onClick={() => navigate(`/channels/${server.channels?.[0]?.id}`)}
-          className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-white transition-all hover:rounded-xl hover:bg-dangro-600"
+          className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-white transition-all hover:rounded-xl hover:bg-accent-600"
           title={server.name}
         >
           {server.icon ? (
@@ -83,7 +83,7 @@ export default function ServerSidebar() {
               value={newServerName}
               onChange={(e) => setNewServerName(e.target.value)}
               placeholder="Server name"
-              className="mb-4 w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-dangro-500 focus:outline-none"
+              className="mb-4 w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
               onKeyDown={(e) => e.key === "Enter" && createServer()}
               autoFocus
             />
@@ -96,7 +96,7 @@ export default function ServerSidebar() {
               </button>
               <button
                 onClick={createServer}
-                className="rounded-lg bg-dangro-600 px-4 py-2 text-sm text-white hover:bg-dangro-500"
+                className="rounded-lg bg-accent-600 px-4 py-2 text-sm text-white hover:bg-accent-500"
               >
                 Create
               </button>

@@ -62,7 +62,7 @@ export default function LoginPage() {
             <input
               type="email"
               {...register("email")}
-              className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-dangro-500 focus:outline-none focus:ring-1 focus:ring-dangro-500"
+              className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
               placeholder="you@example.com"
             />
             {errors.email && (
@@ -77,7 +77,7 @@ export default function LoginPage() {
             <input
               type="password"
               {...register("password")}
-              className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-dangro-500 focus:outline-none focus:ring-1 focus:ring-dangro-500"
+              className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
               placeholder="••••••••"
             />
             {errors.password && (
@@ -90,7 +90,7 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={isSubmitting}
-            className="w-full rounded-lg bg-dangro-600 px-4 py-3 font-medium text-white transition-colors hover:bg-dangro-500 disabled:opacity-50"
+            className="w-full rounded-lg bg-accent-600 px-4 py-3 font-medium text-white transition-colors hover:bg-accent-500 disabled:opacity-50"
           >
             {isSubmitting ? "Signing in..." : "Sign In"}
           </button>
@@ -98,7 +98,7 @@ export default function LoginPage() {
 
         <p className="text-center text-sm text-gray-400">
           Need an account?{" "}
-          <Link to="/register" className="text-dangro-400 hover:underline">
+          <Link to="/register" className="text-accent-400 hover:underline">
             Sign Up
           </Link>
         </p>

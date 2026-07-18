@@ -1,9 +1,9 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { getSocket } from "@/lib/socket";
 import api from "@/lib/api";
-import type { Message } from "@/types";
+import type { Message, Reaction } from "@/types";
 
 export default function ChatArea() {
   const { channelId } = useParams();
@@ -17,44 +17,7 @@ export default function ChatArea() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  useEffect(() => {
-    if (channelId) {
-      fetchMessages();
-      const socket = getSocket();
-      socket.emit("join_channel", channelId);
-
-      socket.on("new_message", (message: Message) => {
-        setMessages((prev) => [...prev, message]);
-      });
-
-      socket.on("typing_start", (data: { userId: string; channelId: string }) => {
-        if (data.channelId === channelId && data.userId !== user?.id) {
-          setTypingUsers((prev) => {
-            if (!prev.includes(data.userId)) return [...prev, data.userId];
-            return prev;
-          });
-        }
-      });
-
-      socket.on("typing_stop", (data: { userId: string; channelId: string }) => {
-        if (data.channelId === channelId) {
-          setTypingUsers((prev) => prev.filter((u) => u !== data.userId));
-        }
-      });
-
-      return () => {
-        socket.off("new_message");
-        socket.off("typing_start");
-        socket.off("typing_stop");
-      };
-    }
-  }, [channelId, user?.id]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  const fetchMessages = async () => {
+  const fetchMessages = useCallback(async () => {
     if (!channelId) return;
     try {
       const { data } = await api.get(`/messages/${channelId}`);
@@ -62,23 +25,106 @@ export default function ChatArea() {
     } catch {
       // silent
     }
-  };
+  }, [channelId]);
+
+  useEffect(() => {
+    if (!channelId) {
+      setMessages([]);
+      return;
+    }
+
+    fetchMessages();
+    const socket = getSocket();
+    socket.emit("join_channel", channelId);
+
+    const handleNewMessage = (message: Message) => {
+      if (message.channelId !== channelId) return;
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === message.id)) return prev;
+        return [...prev, message];
+      });
+    };
+
+    const handleEdited = (message: Message) => {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === message.id ? message : m))
+      );
+    };
+
+    const handleDeleted = (data: { messageId: string }) => {
+      setMessages((prev) => prev.filter((m) => m.id !== data.messageId));
+    };
+
+    const handleReactionsUpdated = (data: {
+      messageId: string;
+      reactions: Reaction[];
+    }) => {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === data.messageId ? { ...m, reactions: data.reactions } : m
+        )
+      );
+    };
+
+    const handleTypingStart = (data: {
+      userId: string;
+      channelId: string;
+    }) => {
+      if (data.channelId === channelId && data.userId !== user?.id) {
+        setTypingUsers((prev) => {
+          if (!prev.includes(data.userId)) return [...prev, data.userId];
+          return prev;
+        });
+      }
+    };
+
+    const handleTypingStop = (data: {
+      userId: string;
+      channelId: string;
+    }) => {
+      if (data.channelId === channelId) {
+        setTypingUsers((prev) => prev.filter((u) => u !== data.userId));
+      }
+    };
+
+    socket.on("new_message", handleNewMessage);
+    socket.on("message_edited", handleEdited);
+    socket.on("message_deleted", handleDeleted);
+    socket.on("message_reactions_updated", handleReactionsUpdated);
+    socket.on("typing_start", handleTypingStart);
+    socket.on("typing_stop", handleTypingStop);
+
+    return () => {
+      socket.off("new_message", handleNewMessage);
+      socket.off("message_edited", handleEdited);
+      socket.off("message_deleted", handleDeleted);
+      socket.off("message_reactions_updated", handleReactionsUpdated);
+      socket.off("typing_start", handleTypingStart);
+      socket.off("typing_stop", handleTypingStop);
+    };
+  }, [channelId, user?.id, fetchMessages]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
 
   const sendMessage = async () => {
     if (!newMessage.trim() || !channelId) return;
     const socket = getSocket();
     socket.emit("typing_stop", { channelId });
 
+    const content = newMessage;
+    setNewMessage("");
+    setReplyTo(null);
+
     try {
       await api.post("/messages", {
-        content: newMessage,
+        content,
         channelId,
         replyToId: replyTo?.id || null,
       });
-      setNewMessage("");
-      setReplyTo(null);
     } catch {
-      // silent
+      setNewMessage(content);
     }
   };
 
@@ -86,11 +132,6 @@ export default function ChatArea() {
     if (!editContent.trim()) return;
     try {
       await api.patch(`/messages/${messageId}`, { content: editContent });
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === messageId ? { ...m, content: editContent, edited: true } : m
-        )
-      );
       setEditingId(null);
       setEditContent("");
     } catch {
@@ -101,7 +142,14 @@ export default function ChatArea() {
   const deleteMessage = async (messageId: string) => {
     try {
       await api.delete(`/messages/${messageId}`);
-      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    } catch {
+      // silent
+    }
+  };
+
+  const toggleReaction = async (messageId: string, emoji: string) => {
+    try {
+      await api.post(`/messages/${messageId}/reactions`, { emoji });
     } catch {
       // silent
     }
@@ -133,6 +181,18 @@ export default function ChatArea() {
     }
   };
 
+  const quickReactions = ["👍", "❤️", "😂", "🔥", "👀"];
+
+  if (!channelId) {
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center">
+          <p className="text-lg text-gray-400">Select a channel to start chatting</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex-1 overflow-y-auto p-4">
@@ -141,13 +201,13 @@ export default function ChatArea() {
             <p className="text-gray-500">No messages yet. Start the conversation!</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-1">
             {messages.map((message) => (
               <div
                 key={message.id}
-                className="group flex gap-3 rounded-lg p-2 hover:bg-gray-900/50"
+                className="group flex gap-3 rounded-lg px-2 py-1 hover:bg-gray-900/50"
               >
-                <div className="h-10 w-10 flex-shrink-0 rounded-full bg-dangro-600 flex items-center justify-center text-sm font-bold">
+                <div className="h-10 w-10 flex-shrink-0 rounded-full bg-accent-600 flex items-center justify-center text-sm font-bold">
                   {message.author?.username?.[0]?.toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -163,7 +223,7 @@ export default function ChatArea() {
                     )}
                   </div>
                   {message.replyTo && (
-                    <div className="mb-1 rounded border-l-2 border-dangro-600 bg-gray-900/50 px-2 py-1 text-xs text-gray-400">
+                    <div className="mb-1 rounded border-l-2 border-accent-600 bg-gray-900/50 px-2 py-1 text-xs text-gray-400">
                       Replying to {message.replyTo.author?.username}:{" "}
                       {message.replyTo.content}
                     </div>
@@ -174,13 +234,32 @@ export default function ChatArea() {
                       value={editContent}
                       onChange={(e) => setEditContent(e.target.value)}
                       onKeyDown={handleKeyDown}
-                      className="w-full rounded border border-dangro-500 bg-gray-800 px-2 py-1 text-white focus:outline-none"
+                      className="w-full rounded border border-accent-500 bg-gray-800 px-2 py-1 text-white focus:outline-none"
                       autoFocus
                     />
                   ) : (
                     <p className="text-gray-300 break-words">{message.content}</p>
                   )}
+
+                  {message.reactions && message.reactions.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-1">
+                      {message.reactions.map((reaction) => (
+                        <button
+                          key={reaction.id}
+                          onClick={() => toggleReaction(message.id, reaction.emoji)}
+                          className={`rounded-full border px-2 py-0.5 text-xs transition-colors ${
+                            reaction.userId === user?.id
+                              ? "border-accent-500 bg-accent-600/20 text-accent-300"
+                              : "border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600"
+                          }`}
+                        >
+                          {reaction.emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
+
                 {message.authorId === user?.id && editingId !== message.id && (
                   <div className="flex gap-1 opacity-0 group-hover:opacity-100">
                     <button
@@ -201,12 +280,23 @@ export default function ChatArea() {
                   </div>
                 )}
                 {message.authorId !== user?.id && (
-                  <button
-                    onClick={() => setReplyTo(message)}
-                    className="opacity-0 group-hover:opacity-100 rounded p-1 text-gray-500 hover:bg-gray-800 hover:text-white"
-                  >
-                    Reply
-                  </button>
+                  <div className="flex gap-1 opacity-0 group-hover:opacity-100">
+                    {quickReactions.map((emoji) => (
+                      <button
+                        key={emoji}
+                        onClick={() => toggleReaction(message.id, emoji)}
+                        className="rounded p-1 text-xs text-gray-500 hover:bg-gray-800 hover:text-white"
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                    <button
+                      onClick={() => setReplyTo(message)}
+                      className="rounded p-1 text-gray-500 hover:bg-gray-800 hover:text-white"
+                    >
+                      Reply
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
@@ -224,11 +314,11 @@ export default function ChatArea() {
       {replyTo && (
         <div className="flex items-center gap-2 border-t border-gray-800 bg-gray-900 px-4 py-2">
           <span className="text-xs text-gray-400">
-            Replying to {replyTo.author?.username}
+            Replying to <span className="font-medium text-gray-300">{replyTo.author?.username}</span>: {replyTo.content}
           </span>
           <button
             onClick={() => setReplyTo(null)}
-            className="text-xs text-gray-500 hover:text-white"
+            className="ml-auto text-xs text-gray-500 hover:text-white"
           >
             ✕
           </button>
@@ -244,17 +334,18 @@ export default function ChatArea() {
               handleTyping();
             }}
             onKeyDown={handleKeyDown}
-            placeholder={channelId ? "Type a message..." : "Select a channel"}
-            disabled={!channelId}
-            className="flex-1 resize-none rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-dangro-500 focus:outline-none disabled:opacity-50"
+            placeholder="Type a message..."
+            className="flex-1 resize-none rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
             rows={1}
           />
           <button
-            onClick={editingId ? () => editMessage(editingId) : sendMessage}
-            disabled={!newMessage.trim() || !channelId}
-            className="rounded-lg bg-dangro-600 px-4 py-3 text-white transition-colors hover:bg-dangro-500 disabled:opacity-50"
+            onClick={sendMessage}
+            disabled={!newMessage.trim()}
+            className="rounded-lg bg-accent-600 px-4 py-3 text-white transition-colors hover:bg-accent-500 disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Send
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+            </svg>
           </button>
         </div>
       </div>

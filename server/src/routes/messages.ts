@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
+import { getIO } from "../socket/io.js";
 import { authenticate, AuthRequest } from "../middleware/auth.js";
 import { AppError } from "../middleware/errorHandler.js";
 
@@ -15,6 +16,15 @@ const sendMessageSchema = z.object({
 const editMessageSchema = z.object({
   content: z.string().min(1).max(4000),
 });
+
+const messageInclude = {
+  author: { select: { id: true, username: true, avatar: true } },
+  replyTo: {
+    include: { author: { select: { id: true, username: true } } },
+  },
+  reactions: true,
+  attachments: true,
+};
 
 router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
   try {
@@ -40,15 +50,13 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
         channelId,
         replyToId: replyToId || undefined,
       },
-      include: {
-        author: { select: { id: true, username: true, avatar: true } },
-        replyTo: {
-          include: { author: { select: { id: true, username: true } } },
-        },
-        reactions: true,
-        attachments: true,
-      },
+      include: messageInclude,
     });
+
+    const io = getIO();
+    if (io) {
+      io.to(`channel:${channelId}`).emit("new_message", message);
+    }
 
     res.status(201).json({ message });
   } catch (err) {
@@ -70,14 +78,10 @@ router.get("/:channelId", authenticate, async (req: AuthRequest, res: Response) 
     const messages = await prisma.message.findMany({
       where: { channelId },
       include: {
-        author: { select: { id: true, username: true, avatar: true } },
-        replyTo: {
-          include: { author: { select: { id: true, username: true } } },
-        },
+        ...messageInclude,
         reactions: {
           include: { user: { select: { id: true, username: true } } },
         },
-        attachments: true,
       },
       orderBy: { createdAt: "asc" },
       take: 100,
@@ -107,12 +111,13 @@ router.patch("/:id", authenticate, async (req: AuthRequest, res: Response) => {
     const updated = await prisma.message.update({
       where: { id: messageId },
       data: { content, edited: true },
-      include: {
-        author: { select: { id: true, username: true, avatar: true } },
-        reactions: true,
-        attachments: true,
-      },
+      include: messageInclude,
     });
+
+    const io = getIO();
+    if (io) {
+      io.to(`channel:${message.channelId}`).emit("message_edited", updated);
+    }
 
     res.json({ message: updated });
   } catch (err) {
@@ -142,6 +147,11 @@ router.delete("/:id", authenticate, async (req: AuthRequest, res: Response) => {
     }
 
     await prisma.message.delete({ where: { id: messageId } });
+
+    const io = getIO();
+    if (io) {
+      io.to(`channel:${message.channelId}`).emit("message_deleted", { messageId });
+    }
 
     res.json({ message: "Message deleted" });
   } catch (err) {
@@ -176,13 +186,30 @@ router.post("/:id/reactions", authenticate, async (req: AuthRequest, res: Respon
 
     if (existing) {
       await prisma.reaction.delete({ where: { id: existing.id } });
-      res.json({ message: "Reaction removed" });
     } else {
       await prisma.reaction.create({
         data: { userId: req.userId!, messageId, emoji },
       });
-      res.json({ message: "Reaction added" });
     }
+
+    const updatedMessage = await prisma.message.findUnique({
+      where: { id: messageId },
+      include: {
+        reactions: {
+          include: { user: { select: { id: true, username: true } } },
+        },
+      },
+    });
+
+    const io = getIO();
+    if (io && updatedMessage) {
+      io.to(`channel:${message.channelId}`).emit("message_reactions_updated", {
+        messageId,
+        reactions: updatedMessage.reactions,
+      });
+    }
+
+    res.json({ message: existing ? "Reaction removed" : "Reaction added" });
   } catch (err) {
     if (err instanceof z.ZodError) {
       res.status(400).json({ message: err.errors[0].message });

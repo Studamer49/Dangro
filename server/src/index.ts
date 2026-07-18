@@ -10,6 +10,7 @@ import { config } from "./config.js";
 import { prisma } from "./prisma.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { setupSocketHandlers } from "./socket/index.js";
+import { setIO } from "./socket/io.js";
 
 import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/users.js";
@@ -27,6 +28,8 @@ const io = new SocketServer(httpServer, {
     credentials: true,
   },
 });
+
+setIO(io);
 
 app.use(helmet());
 app.use(

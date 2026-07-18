@@ -5,19 +5,24 @@ export default {
   theme: {
     extend: {
       colors: {
-        dangro: {
-          50: "#eef2ff",
-          100: "#e0e7ff",
-          200: "#c7d2fe",
-          300: "#a5b4fc",
-          400: "#818cf8",
-          500: "#6366f1",
-          600: "#4f46e5",
-          700: "#4338ca",
-          800: "#3730a3",
-          900: "#312e81",
-          950: "#1e1b4b",
+        accent: {
+          50: "var(--accent-50)",
+          100: "var(--accent-100)",
+          200: "var(--accent-200)",
+          300: "var(--accent-300)",
+          400: "var(--accent-400)",
+          500: "var(--accent-500)",
+          600: "var(--accent-600)",
+          700: "var(--accent-700)",
+          800: "var(--accent-800)",
+          900: "var(--accent-900)",
+          950: "var(--accent-950)",
         },
+      },
+      fontSize: {
+        "chat-sm": ["0.75rem", { lineHeight: "1rem" }],
+        "chat-base": ["0.875rem", { lineHeight: "1.25rem" }],
+        "chat-lg": ["1rem", { lineHeight: "1.5rem" }],
       },
     },
   },

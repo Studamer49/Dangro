@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api from "@/lib/api";
+import { getSocket } from "@/lib/socket";
 import type { Server, Channel } from "@/types";
 
 export default function ChannelSidebar() {
@@ -11,6 +12,7 @@ export default function ChannelSidebar() {
   const [newChannelName, setNewChannelName] = useState("");
   const [newChannelType, setNewChannelType] = useState<"text" | "voice">("text");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [joinedVoiceId, setJoinedVoiceId] = useState<string | null>(null);
 
   useEffect(() => {
     if (channelId) {
@@ -39,9 +41,28 @@ export default function ChannelSidebar() {
       setChannels((prev) => [...prev, data.channel]);
       setNewChannelName("");
       setShowCreateModal(false);
-      navigate(`/channels/${data.channel.id}`);
+      if (newChannelType === "text") {
+        navigate(`/channels/${data.channel.id}`);
+      }
     } catch {
       // silent
+    }
+  };
+
+  const joinVoice = (channelId: string) => {
+    const socket = getSocket();
+    if (joinedVoiceId) {
+      socket.emit("voice_leave", { channelId: joinedVoiceId });
+    }
+    socket.emit("voice_join", { channelId });
+    setJoinedVoiceId(channelId);
+  };
+
+  const leaveVoice = () => {
+    if (joinedVoiceId) {
+      const socket = getSocket();
+      socket.emit("voice_leave", { channelId: joinedVoiceId });
+      setJoinedVoiceId(null);
     }
   };
 
@@ -90,26 +111,42 @@ export default function ChannelSidebar() {
               Voice Channels
             </h3>
             {voiceChannels.map((channel) => (
-              <button
-                key={channel.id}
-                onClick={() => navigate(`/channels/${channel.id}`)}
-                className={`w-full rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
-                  channelId === channel.id
-                    ? "bg-gray-700 text-white"
-                    : "text-gray-400 hover:bg-gray-800 hover:text-gray-200"
-                }`}
-              >
-                🔊 {channel.name}
-              </button>
+              <div key={channel.id}>
+                <button
+                  onClick={() => joinVoice(channel.id)}
+                  className={`w-full rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
+                    joinedVoiceId === channel.id
+                      ? "bg-green-600/20 text-green-400"
+                      : "text-gray-400 hover:bg-gray-800 hover:text-gray-200"
+                  }`}
+                >
+                  {joinedVoiceId === channel.id ? "🟢" : "🔊"} {channel.name}
+                </button>
+              </div>
             ))}
           </div>
         )}
       </div>
 
+      {joinedVoiceId && (
+        <div className="border-t border-gray-800 p-3">
+          <div className="mb-2 flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+            <span className="text-xs font-medium text-green-400">Voice Connected</span>
+          </div>
+          <button
+            onClick={leaveVoice}
+            className="w-full rounded-lg bg-red-600/20 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-600/30"
+          >
+            Disconnect
+          </button>
+        </div>
+      )}
+
       <div className="border-t border-gray-800 p-2">
         <button
           onClick={() => setShowCreateModal(true)}
-          className="w-full rounded-lg bg-dangro-600 px-3 py-2 text-sm font-medium text-white hover:bg-dangro-500"
+          className="w-full rounded-lg bg-accent-600 px-3 py-2 text-sm font-medium text-white hover:bg-accent-500"
         >
           + Create Channel
         </button>
@@ -124,7 +161,7 @@ export default function ChannelSidebar() {
               value={newChannelName}
               onChange={(e) => setNewChannelName(e.target.value)}
               placeholder="channel-name"
-              className="mb-4 w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-dangro-500 focus:outline-none"
+              className="mb-4 w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
               onKeyDown={(e) => e.key === "Enter" && createChannel()}
               autoFocus
             />
@@ -133,7 +170,7 @@ export default function ChannelSidebar() {
                 onClick={() => setNewChannelType("text")}
                 className={`rounded-lg px-3 py-1.5 text-sm ${
                   newChannelType === "text"
-                    ? "bg-dangro-600 text-white"
+                    ? "bg-accent-600 text-white"
                     : "bg-gray-800 text-gray-400"
                 }`}
               >
@@ -143,7 +180,7 @@ export default function ChannelSidebar() {
                 onClick={() => setNewChannelType("voice")}
                 className={`rounded-lg px-3 py-1.5 text-sm ${
                   newChannelType === "voice"
-                    ? "bg-dangro-600 text-white"
+                    ? "bg-accent-600 text-white"
                     : "bg-gray-800 text-gray-400"
                 }`}
               >
@@ -159,7 +196,7 @@ export default function ChannelSidebar() {
               </button>
               <button
                 onClick={createChannel}
-                className="rounded-lg bg-dangro-600 px-4 py-2 text-sm text-white hover:bg-dangro-500"
+                className="rounded-lg bg-accent-600 px-4 py-2 text-sm text-white hover:bg-accent-500"
               >
                 Create
               </button>
