@@ -7,7 +7,7 @@ services:
       npm install --prefix server
       npm install --prefix client
       npm run build --prefix client
-      npx prisma generate --prefix server
+      cd server && npx prisma generate && cd ..
       npm run build --prefix server
     startCommand: npm start
     envVars:
