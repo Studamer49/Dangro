@@ -14,10 +14,8 @@ COPY client ./client
 COPY package.json ./
 
 RUN npm run build --prefix client
-RUN npm run build --prefix server
-
-RUN npm install --prefix server prisma
 RUN npx prisma generate --prefix server
+RUN npm run build --prefix server
 
 EXPOSE 3001
 
