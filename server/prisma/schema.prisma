@@ -33,6 +33,19 @@ model User {
   sentNotifications Notification[] @relation("NotificationFromUser")
   attachments    Attachment[]
 
+  conversations1  Conversation[] @relation("ConversationUser1")
+  conversations2  Conversation[] @relation("ConversationUser2")
+  sentDMs         DirectMessage[] @relation("DirectMessageSender")
+
+  posts           Post[]         @relation("PostAuthor")
+  postLikes       PostLike[]
+  postComments    PostComment[]  @relation("PostCommentAuthor")
+  stories         Story[]        @relation("StoryAuthor")
+  followers       Follow[]       @relation("FollowFollowing")
+  following       Follow[]       @relation("FollowFollower")
+  sentCalls       Call[]         @relation("CallCaller")
+  receivedCalls   Call[]         @relation("CallReceiver")
+
   @@map("users")
 }
 
@@ -184,4 +197,137 @@ model Notification {
   fromUser User? @relation("NotificationFromUser", fields: [fromUserId], references: [id], onDelete: SetNull)
 
   @@map("notifications")
+}
+
+model Conversation {
+  id           String   @id @default(uuid())
+  user1Id      String
+  user2Id      String
+  lastMessageAt DateTime?
+  createdAt    DateTime @default(now())
+
+  user1  User           @relation("ConversationUser1", fields: [user1Id], references: [id], onDelete: Cascade)
+  user2  User           @relation("ConversationUser2", fields: [user2Id], references: [id], onDelete: Cascade)
+  messages DirectMessage[]
+
+  @@unique([user1Id, user2Id])
+  @@map("conversations")
+}
+
+model DirectMessage {
+  id             String    @id @default(uuid())
+  content        String
+  senderId       String
+  conversationId String
+  attachmentUrl  String?
+  attachmentType String?
+  replyToId      String?
+  readAt         DateTime?
+  deliveredAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  sender       User         @relation("DirectMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  replyTo      DirectMessage? @relation("DMReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      DirectMessage[] @relation("DMReplies")
+
+  @@map("direct_messages")
+}
+
+model Post {
+  id        String   @id @default(uuid())
+  authorId  String
+  caption   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  author   User          @relation("PostAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  media    PostMedia[]
+  likes    PostLike[]
+  comments PostComment[]
+
+  @@map("posts")
+}
+
+model PostMedia {
+  id       String  @id @default(uuid())
+  postId   String
+  url      String
+  type     String  // image, video
+  order    Int     @default(0)
+  width    Int?
+  height   Int?
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@map("post_media")
+}
+
+model PostLike {
+  id        String   @id @default(uuid())
+  postId    String
+  userId    String
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, userId])
+  @@map("post_likes")
+}
+
+model PostComment {
+  id        String   @id @default(uuid())
+  postId    String
+  authorId  String
+  content   String
+  createdAt DateTime @default(now())
+
+  author User @relation("PostCommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  post   Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@map("post_comments")
+}
+
+model Story {
+  id        String   @id @default(uuid())
+  authorId  String
+  mediaUrl  String
+  mediaType String   // image, video
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  author User @relation("StoryAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@map("stories")
+}
+
+model Follow {
+  id          String   @id @default(uuid())
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  follower  User @relation("FollowFollower", fields: [followerId], references: [id], onDelete: Cascade)
+  following User @relation("FollowFollowing", fields: [followingId], references: [id], onDelete: Cascade)
+
+  @@unique([followerId, followingId])
+  @@map("follows")
+}
+
+model Call {
+  id         String   @id @default(uuid())
+  callerId   String
+  receiverId String
+  type       String   // video, voice
+  status     String   @default("ringing") // ringing, active, missed, ended
+  roomID     String
+  startedAt  DateTime @default(now())
+  endedAt    DateTime?
+
+  caller   User @relation("CallCaller", fields: [callerId], references: [id], onDelete: Cascade)
+  receiver User @relation("CallReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@map("calls")
 }

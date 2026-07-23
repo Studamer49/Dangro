@@ -7,6 +7,10 @@ import ChannelSidebar from "@/components/ChannelSidebar";
 import ChatArea from "@/components/ChatArea";
 import FriendsPage from "@/pages/FriendsPage";
 import SettingsPage from "@/pages/SettingsPage";
+import DirectMessagesPage from "@/pages/DirectMessagesPage";
+import FeedPage from "@/pages/FeedPage";
+import ExplorePage from "@/pages/ExplorePage";
+import ProfilePage from "@/pages/ProfilePage";
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
@@ -59,8 +63,13 @@ export default function DashboardPage() {
         </header>
         <main className="flex-1 overflow-hidden">
           <Routes>
-            <Route path="/" element={<ChatArea />} />
+            <Route path="/" element={<FeedPage />} />
+            <Route path="/feed" element={<FeedPage />} />
+            <Route path="/dms" element={<DirectMessagesPage />} />
+            <Route path="/dms/:conversationId" element={<DirectMessagesPage />} />
             <Route path="/friends/*" element={<FriendsPage />} />
+            <Route path="/explore" element={<ExplorePage />} />
+            <Route path="/profile/:userId" element={<ProfilePage />} />
             <Route path="/channels/:channelId" element={<ChatArea />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>

@@ -18,6 +18,11 @@ import friendRoutes from "./routes/friends.js";
 import serverRoutes from "./routes/servers.js";
 import channelRoutes from "./routes/channels.js";
 import messageRoutes from "./routes/messages.js";
+import dmRoutes from "./routes/dms.js";
+import uploadRoutes from "./routes/uploads.js";
+import postRoutes from "./routes/posts.js";
+import storyRoutes from "./routes/stories.js";
+import followRoutes from "./routes/follows.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -55,6 +60,11 @@ app.use("/api/friends", friendRoutes);
 app.use("/api/servers", serverRoutes);
 app.use("/api/channels", channelRoutes);
 app.use("/api/messages", messageRoutes);
+app.use("/api/dms", dmRoutes);
+app.use("/api/uploads", uploadRoutes);
+app.use("/api/posts", postRoutes);
+app.use("/api/stories", storyRoutes);
+app.use("/api/follows", followRoutes);
 
 app.use("/uploads", express.static(path.resolve("uploads")));
 

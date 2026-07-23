@@ -112,6 +112,76 @@ export function setupSocketHandlers(io: SocketServer): void {
       });
     });
 
+    socket.on("dm_join", (conversationId: string) => {
+      socket.join(`dm:${conversationId}`);
+    });
+
+    socket.on("dm_leave", (conversationId: string) => {
+      socket.leave(`dm:${conversationId}`);
+    });
+
+    socket.on("dm_typing_start", (data: { conversationId: string }) => {
+      socket.to(`dm:${data.conversationId}`).emit("dm_typing_start", {
+        userId,
+        conversationId: data.conversationId,
+      });
+    });
+
+    socket.on("dm_typing_stop", (data: { conversationId: string }) => {
+      socket.to(`dm:${data.conversationId}`).emit("dm_typing_stop", {
+        userId,
+        conversationId: data.conversationId,
+      });
+    });
+
+    socket.on("call_invite", (data: { targetUserId: string; callType: string; roomId: string }) => {
+      io.to(`user:${data.targetUserId}`).emit("call_invite", {
+        callerId: userId,
+        callType: data.callType,
+        roomId: data.roomId,
+      });
+    });
+
+    socket.on("call_accept", (data: { targetUserId: string; roomId: string }) => {
+      io.to(`user:${data.targetUserId}`).emit("call_accept", {
+        accepterId: userId,
+        roomId: data.roomId,
+      });
+    });
+
+    socket.on("call_reject", (data: { targetUserId: string }) => {
+      io.to(`user:${data.targetUserId}`).emit("call_reject", {
+        rejecterId: userId,
+      });
+    });
+
+    socket.on("call_end", (data: { targetUserId: string }) => {
+      io.to(`user:${data.targetUserId}`).emit("call_end", {
+        enderId: userId,
+      });
+    });
+
+    socket.on("webrtc_offer", (data: { targetUserId: string; offer: unknown }) => {
+      io.to(`user:${data.targetUserId}`).emit("webrtc_offer", {
+        userId,
+        offer: data.offer,
+      });
+    });
+
+    socket.on("webrtc_answer", (data: { targetUserId: string; answer: unknown }) => {
+      io.to(`user:${data.targetUserId}`).emit("webrtc_answer", {
+        userId,
+        answer: data.answer,
+      });
+    });
+
+    socket.on("ice_candidate", (data: { targetUserId: string; candidate: unknown }) => {
+      io.to(`user:${data.targetUserId}`).emit("ice_candidate", {
+        userId,
+        candidate: data.candidate,
+      });
+    });
+
     socket.on("disconnect", async () => {
       console.log(`User disconnected: ${userId}`);
       await prisma.user.update({

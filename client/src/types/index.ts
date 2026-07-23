@@ -105,3 +105,94 @@ export interface Friend {
   createdAt: string;
   friend?: User;
 }
+
+export interface Conversation {
+  id: string;
+  otherUser: User;
+  lastMessage: DirectMessage | null;
+  lastMessageAt: string | null;
+  unreadCount: number;
+}
+
+export interface DirectMessage {
+  id: string;
+  content: string;
+  senderId: string;
+  conversationId: string;
+  attachmentUrl: string | null;
+  attachmentType: string | null;
+  replyToId: string | null;
+  readAt: string | null;
+  deliveredAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  sender?: User;
+  replyTo?: DirectMessage;
+}
+
+export interface Post {
+  id: string;
+  authorId: string;
+  caption: string | null;
+  createdAt: string;
+  updatedAt: string;
+  author?: User;
+  media?: PostMedia[];
+  likes?: PostLike[];
+  comments?: PostComment[];
+  _count?: { likes: number; comments: number };
+}
+
+export interface PostMedia {
+  id: string;
+  postId: string;
+  url: string;
+  type: string;
+  order: number;
+  width: number | null;
+  height: number | null;
+}
+
+export interface PostLike {
+  id: string;
+  postId: string;
+  userId: string;
+  createdAt: string;
+}
+
+export interface PostComment {
+  id: string;
+  postId: string;
+  authorId: string;
+  content: string;
+  createdAt: string;
+  author?: User;
+}
+
+export interface Story {
+  id: string;
+  authorId: string;
+  mediaUrl: string;
+  mediaType: string;
+  createdAt: string;
+  expiresAt: string;
+  author?: User;
+}
+
+export interface Follow {
+  id: string;
+  followerId: string;
+  followingId: string;
+  createdAt: string;
+}
+
+export interface Call {
+  id: string;
+  callerId: string;
+  receiverId: string;
+  type: string;
+  status: string;
+  roomID: string;
+  startedAt: string;
+  endedAt: string | null;
+}
