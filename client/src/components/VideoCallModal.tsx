@@ -16,20 +16,9 @@ export default function VideoCallModal() {
     endCall,
   } = useCallStore();
 
-  const { createOffer } = useWebRTC();
+  useWebRTC();
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  const hasStarted = useRef(false);
-
-  useEffect(() => {
-    if (isInCall && !hasStarted.current) {
-      hasStarted.current = true;
-      createOffer();
-    }
-    if (!isInCall) {
-      hasStarted.current = false;
-    }
-  }, [isInCall, createOffer]);
 
   useEffect(() => {
     if (localVideoRef.current && localStream) {

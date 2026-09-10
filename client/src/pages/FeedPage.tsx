@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import api from "@/lib/api";
-import type { Post, Story } from "@/types";
+import type { Post, StoryGroup } from "@/types";
 
 export default function FeedPage() {
   const [posts, setPosts] = useState<Post[]>([]);
-  const [stories, setStories] = useState<Story[]>([]);
+  const [stories, setStories] = useState<StoryGroup[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -43,12 +43,12 @@ export default function FeedPage() {
               </div>
               <span className="text-[10px] text-gray-400">Your story</span>
             </button>
-            {stories.map((story) => (
-              <button key={story.id} className="flex flex-col items-center gap-1">
+            {stories.map((group) => (
+              <button key={group.author.id} className="flex flex-col items-center gap-1">
                 <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-red-500 bg-gray-800 text-sm font-bold">
-                  {story.author?.username?.[0]?.toUpperCase()}
+                  {group.author?.username?.[0]?.toUpperCase()}
                 </div>
-                <span className="text-[10px] text-gray-400">{story.author?.username}</span>
+                <span className="text-[10px] text-gray-400">{group.author?.username}</span>
               </button>
             ))}
           </div>

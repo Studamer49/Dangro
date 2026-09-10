@@ -179,6 +179,11 @@ export interface Story {
   author?: User;
 }
 
+export interface StoryGroup {
+  author: User;
+  stories: Story[];
+}
+
 export interface Follow {
   id: string;
   followerId: string;

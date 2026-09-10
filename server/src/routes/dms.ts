@@ -15,7 +15,7 @@ const sendMessageSchema = z.object({
   content: z.string().min(1).max(4000),
   attachmentUrl: z.string().optional(),
   attachmentType: z.string().optional(),
-  replyToId: z.string().uuid().optional(),
+  replyToId: z.string().uuid().nullish(),
 });
 
 const dmInclude = {
@@ -24,10 +24,6 @@ const dmInclude = {
     include: { sender: { select: { id: true, username: true } } },
   },
 };
-
-function getConversationId(userId1: string, userId2: string): string {
-  return [userId1, userId2].sort().join("_");
-}
 
 router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
   try {

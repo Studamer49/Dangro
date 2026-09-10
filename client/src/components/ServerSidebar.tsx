@@ -89,7 +89,7 @@ export default function ServerSidebar() {
           title={server.name}
         >
           {server.icon ? (
-            <img src={server.icon} alt={server.name} className="h-full w-full rounded-inherit object-cover" />
+            <img src={server.icon} alt={server.name} className="h-full w-full rounded-xl object-cover" />
           ) : (
             <span className="text-lg font-bold">{server.name[0].toUpperCase()}</span>
           )}
@@ -114,7 +114,7 @@ export default function ServerSidebar() {
         title="Profile"
       >
         {user?.avatar ? (
-          <img src={user.avatar} alt="Profile" className="h-full w-full rounded-inherit object-cover" />
+          <img src={user.avatar} alt="Profile" className="h-full w-full rounded-xl object-cover" />
         ) : (
           <span className="text-lg font-bold">{user?.username?.[0]?.toUpperCase()}</span>
         )}

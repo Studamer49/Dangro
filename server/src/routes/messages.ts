@@ -10,7 +10,7 @@ const router = Router();
 const sendMessageSchema = z.object({
   content: z.string().min(1).max(4000),
   channelId: z.string().uuid(),
-  replyToId: z.string().uuid().optional(),
+  replyToId: z.string().uuid().nullish(),
 });
 
 const editMessageSchema = z.object({
@@ -75,6 +75,20 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
 router.get("/:channelId", authenticate, async (req: AuthRequest, res: Response) => {
   try {
     const channelId = req.params.channelId as string;
+
+    const channel = await prisma.channel.findUnique({
+      where: { id: channelId },
+      include: { server: { include: { members: { where: { userId: req.userId } } } } },
+    });
+
+    if (!channel) {
+      throw new AppError("Channel not found", 404);
+    }
+
+    if (channel.server.members.length === 0) {
+      throw new AppError("Not a member of this server", 403);
+    }
+
     const messages = await prisma.message.findMany({
       where: { channelId },
       include: {
@@ -83,12 +97,16 @@ router.get("/:channelId", authenticate, async (req: AuthRequest, res: Response) 
           include: { user: { select: { id: true, username: true } } },
         },
       },
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: "desc" },
       take: 100,
     });
 
-    res.json({ messages });
-  } catch {
+    res.json({ messages: messages.reverse() });
+  } catch (err) {
+    if (err instanceof AppError) {
+      res.status(err.statusCode).json({ message: err.message });
+      return;
+    }
     res.status(500).json({ message: "Internal server error" });
   }
 });

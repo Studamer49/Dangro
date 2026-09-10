@@ -65,10 +65,11 @@ export default function FriendsPage() {
     }
   };
 
-  const removeFriend = async (friendId: string) => {
+  const removeFriend = async (friend: Friend) => {
+    if (!friend.friend) return;
     try {
-      await api.delete(`/friends/remove/${friendId}`);
-      setFriends((prev) => prev.filter((f) => f.id !== friendId));
+      await api.delete(`/friends/remove/${friend.friend.id}`);
+      setFriends((prev) => prev.filter((f) => f.id !== friend.id));
     } catch {
       // silent
     }
@@ -131,7 +132,7 @@ export default function FriendsPage() {
                       <span className="text-white">{f.friend?.username}</span>
                     </div>
                     <button
-                      onClick={() => removeFriend(f.id)}
+                      onClick={() => removeFriend(f)}
                       className="rounded-lg bg-red-600/20 px-3 py-1.5 text-xs text-red-400 hover:bg-red-600/30"
                     >
                       Remove

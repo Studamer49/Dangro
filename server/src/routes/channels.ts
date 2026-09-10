@@ -26,6 +26,10 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
       throw new AppError("Not a member of this server", 403);
     }
 
+    if (member.role !== "owner" && member.role !== "admin") {
+      throw new AppError("Only admins can create channels", 403);
+    }
+
     const channel = await prisma.channel.create({
       data: { name, type, serverId },
     });

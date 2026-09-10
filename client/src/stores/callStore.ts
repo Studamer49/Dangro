@@ -11,6 +11,7 @@ interface IncomingCall {
 
 interface CallState {
   isInCall: boolean;
+  isCaller: boolean;
   callType: "video" | "voice" | null;
   roomId: string | null;
   targetUserId: string | null;
@@ -25,6 +26,7 @@ interface CallState {
   acceptCall: () => void;
   rejectCall: () => void;
   endCall: () => void;
+  resetCall: () => void;
   setLocalStream: (stream: MediaStream | null) => void;
   setRemoteStream: (stream: MediaStream | null) => void;
   toggleMute: () => void;
@@ -34,6 +36,7 @@ interface CallState {
 
 export const useCallStore = create<CallState>((set, get) => ({
   isInCall: false,
+  isCaller: false,
   callType: null,
   roomId: null,
   targetUserId: null,
@@ -50,6 +53,7 @@ export const useCallStore = create<CallState>((set, get) => ({
     socket.emit("call_invite", { targetUserId, callType, roomId });
     set({
       isInCall: true,
+      isCaller: true,
       callType,
       roomId,
       targetUserId,
@@ -69,6 +73,7 @@ export const useCallStore = create<CallState>((set, get) => ({
     });
     set({
       isInCall: true,
+      isCaller: false,
       callType: incomingCall.callType,
       roomId: incomingCall.roomId,
       targetUserId: incomingCall.callerId,
@@ -89,20 +94,27 @@ export const useCallStore = create<CallState>((set, get) => ({
   },
 
   endCall: () => {
-    const { targetUserId, localStream } = get();
+    const { targetUserId, resetCall } = get();
     if (targetUserId) {
       const socket = getSocket();
       socket.emit("call_end", { targetUserId });
     }
+    resetCall();
+  },
+
+  resetCall: () => {
+    const { localStream } = get();
     if (localStream) {
       localStream.getTracks().forEach((track) => track.stop());
     }
     set({
       isInCall: false,
+      isCaller: false,
       callType: null,
       roomId: null,
       targetUserId: null,
       targetUser: null,
+      incomingCall: null,
       localStream: null,
       remoteStream: null,
       isMuted: false,

@@ -55,8 +55,9 @@ export const useAuthStore = create<AuthState>((set) => ({
         return;
       }
       const { data } = await api.get("/auth/me");
+      const currentToken = localStorage.getItem("accessToken");
       set({ user: data.user, isAuthenticated: true, isLoading: false });
-      connectSocket(token);
+      connectSocket(currentToken || token);
     } catch {
       localStorage.removeItem("accessToken");
       set({ user: null, isAuthenticated: false, isLoading: false });

@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Routes, Route, useNavigate } from "react-router-dom";
+import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { useSettingsStore } from "@/stores/settingsStore";
 import ServerSidebar from "@/components/ServerSidebar";
@@ -17,6 +17,9 @@ export default function DashboardPage() {
   const logout = useAuthStore((s) => s.logout);
   const fontSize = useSettingsStore((s) => s.fontSize);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  const showChannelSidebar = location.pathname.startsWith("/channels/");
 
   const handleLogout = async () => {
     await logout();
@@ -33,7 +36,7 @@ export default function DashboardPage() {
   return (
     <div className={`flex h-screen bg-gray-950 text-white ${fontSizeClass}`}>
       <ServerSidebar />
-      <ChannelSidebar />
+      {showChannelSidebar && <ChannelSidebar />}
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-gray-800 bg-gray-900 px-4 py-3">
           <div className="flex items-center gap-3">

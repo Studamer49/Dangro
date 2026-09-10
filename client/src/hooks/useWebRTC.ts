@@ -121,6 +121,10 @@ export function useWebRTC() {
 
     const socket = getSocket();
 
+    socket.on("call_accept", () => {
+      createOffer();
+    });
+
     socket.on("webrtc_offer", async (data: { offer: RTCSessionDescriptionInit; userId: string }) => {
       await handleOffer(data.offer, data.userId);
     });
@@ -135,15 +139,16 @@ export function useWebRTC() {
 
     socket.on("call_end", () => {
       cleanup();
-      useCallStore.getState().endCall();
+      useCallStore.getState().resetCall();
     });
 
     socket.on("call_reject", () => {
       cleanup();
-      useCallStore.getState().endCall();
+      useCallStore.getState().resetCall();
     });
 
     return () => {
+      socket.off("call_accept");
       socket.off("webrtc_offer");
       socket.off("webrtc_answer");
       socket.off("ice_candidate");
@@ -151,7 +156,7 @@ export function useWebRTC() {
       socket.off("call_reject");
       cleanup();
     };
-  }, [isInCall, handleOffer, handleAnswer, handleIceCandidate, cleanup]);
+  }, [isInCall, createOffer, handleOffer, handleAnswer, handleIceCandidate, cleanup]);
 
   return { createOffer };
 }
