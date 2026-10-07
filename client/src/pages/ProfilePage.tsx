@@ -1,71 +1,83 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
-import api from "@/lib/api";
+import { useToast } from "@/stores/toastStore";
+import api, { apiErrorMessage } from "@/lib/api";
 import type { User, Post } from "@/types";
+import ProfileAvatar from "@/components/profile/ProfileAvatar";
+import EditProfileModal from "@/components/profile/EditProfileModal";
 
 export default function ProfilePage() {
   const { userId } = useParams();
   const navigate = useNavigate();
+  const toast = useToast();
   const currentUser = useAuthStore((s) => s.user);
+
   const [profileUser, setProfileUser] = useState<User | null>(null);
   const [posts, setPosts] = useState<Post[]>([]);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followerCount, setFollowerCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
-  const [postCount, setPostCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [showEditModal, setShowEditModal] = useState(false);
 
-  const isOwnProfile = currentUser?.id === userId;
+  const isOwnProfile = !!currentUser && currentUser.id === userId;
 
+  // useToast() builds a fresh wrapper object on every render, so listing it in
+  // the fetchers' dependency arrays would make the effect refetch endlessly.
+  // Mirror it into a ref instead; every wrapper closes over the same stable push().
+  const toastRef = useRef(toast);
   useEffect(() => {
-    if (userId) {
-      fetchProfile();
-      fetchPosts();
-      fetchFollowStatus();
-    }
-  }, [userId]);
+    toastRef.current = toast;
+  }, [toast]);
 
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
     try {
       const { data } = await api.get(`/users/${userId}`);
-      setProfileUser(data.user);
-    } catch {
-      // silent
+      setProfileUser(data.user as User);
+    } catch (err) {
+      toastRef.current.error(apiErrorMessage(err));
+      setProfileUser(null);
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
 
-  const fetchPosts = async () => {
+  const fetchPosts = useCallback(async () => {
     try {
-      const { data } = await api.get(`/posts/feed`);
-      const userPosts = data.posts.filter((p: Post) => p.authorId === userId);
-      setPosts(userPosts);
-      setPostCount(userPosts.length);
-    } catch {
-      // silent
+      const { data } = await api.get(`/posts/user/${userId}`);
+      setPosts(data.posts as Post[]);
+    } catch (err) {
+      toastRef.current.error(apiErrorMessage(err));
     }
-  };
+  }, [userId]);
 
-  const fetchFollowStatus = async () => {
+  const fetchFollowStatus = useCallback(async () => {
     try {
       const { data } = await api.get(`/follows/${userId}`);
       setIsFollowing(data.isFollowing);
       setFollowerCount(data.followerCount);
       setFollowingCount(data.followingCount);
-    } catch {
-      // silent
+    } catch (err) {
+      toastRef.current.error(apiErrorMessage(err));
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    setLoading(true);
+    fetchProfile();
+    fetchPosts();
+    fetchFollowStatus();
+  }, [userId, fetchProfile, fetchPosts, fetchFollowStatus]);
 
   const toggleFollow = async () => {
     try {
       const { data } = await api.post(`/follows/${userId}`);
       setIsFollowing(data.isFollowing);
-      setFollowerCount((prev) => (data.isFollowing ? prev + 1 : prev - 1));
-    } catch {
-      // silent
+      setFollowerCount(data.followerCount);
+    } catch (err) {
+      toast.error(apiErrorMessage(err));
     }
   };
 
@@ -73,8 +85,8 @@ export default function ProfilePage() {
     try {
       await api.post("/dms/start", { userId });
       navigate("/dms");
-    } catch {
-      // silent
+    } catch (err) {
+      toast.error(apiErrorMessage(err));
     }
   };
 
@@ -98,57 +110,57 @@ export default function ProfilePage() {
     <div className="flex h-full flex-col overflow-y-auto bg-gray-950">
       <div className="mx-auto w-full max-w-lg p-6">
         <div className="mb-8 flex items-center gap-6">
-          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-accent-600 text-3xl font-bold">
-            {profileUser.avatar ? (
-              <img src={profileUser.avatar} alt="" className="h-full w-full rounded-full object-cover" />
-            ) : (
-              profileUser.username[0].toUpperCase()
-            )}
-          </div>
+          <ProfileAvatar username={profileUser.username} avatar={profileUser.avatar} />
           <div className="flex-1">
             <h1 className="text-xl font-bold text-white">{profileUser.username}</h1>
             {profileUser.bio && (
               <p className="mt-1 text-sm text-gray-400">{profileUser.bio}</p>
             )}
+            <p className="mt-2 text-xs text-gray-500">
+              Joined{" "}
+              {new Date(profileUser.createdAt).toLocaleDateString(undefined, {
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}
+            </p>
             <div className="mt-2 flex gap-4 text-sm text-gray-400">
-              <span><strong className="text-white">{postCount}</strong> posts</span>
+              <span><strong className="text-white">{posts.length}</strong> posts</span>
               <span><strong className="text-white">{followerCount}</strong> followers</span>
               <span><strong className="text-white">{followingCount}</strong> following</span>
             </div>
           </div>
         </div>
 
-        {!isOwnProfile && (
-          <div className="mb-6 flex gap-2">
+        <div className="mb-6 flex gap-2">
+          {isOwnProfile ? (
             <button
-              onClick={toggleFollow}
-              className={`rounded-lg px-4 py-2 text-sm font-medium ${
-                isFollowing
-                  ? "bg-gray-800 text-gray-300 hover:bg-gray-700"
-                  : "bg-accent-600 text-white hover:bg-accent-500"
-              }`}
-            >
-              {isFollowing ? "Following" : "Follow"}
-            </button>
-            <button
-              onClick={handleStartDM}
+              onClick={() => setShowEditModal(true)}
               className="rounded-lg bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700"
             >
-              Message
+              Edit profile
             </button>
-          </div>
-        )}
-
-        {isOwnProfile && (
-          <div className="mb-6">
-            <button
-              onClick={() => navigate("/settings")}
-              className="rounded-lg bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700"
-            >
-              Edit Profile
-            </button>
-          </div>
-        )}
+          ) : (
+            <>
+              <button
+                onClick={toggleFollow}
+                className={`rounded-lg px-4 py-2 text-sm font-medium ${
+                  isFollowing
+                    ? "bg-gray-800 text-gray-300 hover:bg-gray-700"
+                    : "bg-accent-600 text-white hover:bg-accent-500"
+                }`}
+              >
+                {isFollowing ? "Unfollow" : "Follow"}
+              </button>
+              <button
+                onClick={handleStartDM}
+                className="rounded-lg bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700"
+              >
+                Message
+              </button>
+            </>
+          )}
+        </div>
 
         <div className="border-t border-gray-800 pt-4">
           {posts.length === 0 ? (
@@ -180,6 +192,16 @@ export default function ProfilePage() {
           )}
         </div>
       </div>
+
+      {showEditModal && currentUser && (
+        <EditProfileModal
+          user={currentUser}
+          onClose={() => setShowEditModal(false)}
+          onSaved={() => {
+            fetchProfile();
+          }}
+        />
+      )}
     </div>
   );
 }

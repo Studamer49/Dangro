@@ -1,5 +1,42 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
+build/
+*.tsbuildinfo
+
+# Stale compiled Vite config artifacts (Bug 1 regression guard)
+client/vite.config.js
+client/vite.config.js.map
+client/vite.config.d.ts
+client/tsconfig.node.tsbuildinfo
+client/tsconfig.tsbuildinfo
+
+# Environment (never commit secrets)
 .env
+.env.*
+!.env.example
+!**/.env.example
+
+# Runtime uploads
+uploads/
+server/uploads/
+
+# Logs
 *.log
+npm-debug.log*
+
+# Editor / OS
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Test / coverage
+coverage/
+.vitest/
+
+# Docker
+.docker/

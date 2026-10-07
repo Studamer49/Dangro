@@ -1,40 +1,76 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
-import api from "@/lib/api";
+import { useToast } from "@/stores/toastStore";
+import api, { apiErrorMessage } from "@/lib/api";
 import type { Server } from "@/types";
 
 export default function ServerSidebar() {
   const [servers, setServers] = useState<Server[]>([]);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
   const [newServerName, setNewServerName] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
+  const [busyCreate, setBusyCreate] = useState(false);
+  const [busyJoin, setBusyJoin] = useState(false);
   const user = useAuthStore((s) => s.user);
+  const toast = useToast();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    fetchServers();
-  }, []);
-
-  const fetchServers = async () => {
+  const fetchServers = useCallback(async () => {
     try {
       const { data } = await api.get("/servers");
       setServers(data.servers);
     } catch {
-      // silent
+      // silent - sidebar can stay empty
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchServers();
+  }, [fetchServers]);
 
   const createServer = async () => {
-    if (!newServerName.trim()) return;
+    const name = newServerName.trim();
+    if (!name || busyCreate) return;
+    setBusyCreate(true);
     try {
-      const { data } = await api.post("/servers", { name: newServerName });
+      const { data } = await api.post("/servers", { name });
       setServers((prev) => [...prev, data.server]);
       setNewServerName("");
       setShowCreateModal(false);
-      navigate(`/channels/${data.server.channels?.[0]?.id}`);
-    } catch {
-      // silent
+      toast.success(`Created ${data.server.name}`);
+      const firstChannel = data.server.channels?.[0]?.id;
+      if (firstChannel) navigate(`/channels/${firstChannel}`);
+    } catch (err: unknown) {
+      toast.error(apiErrorMessage(err, "Could not create server"));
+    } finally {
+      setBusyCreate(false);
     }
+  };
+
+  const joinServer = async () => {
+    const code = inviteCode.trim().toLowerCase();
+    if (!code || busyJoin) return;
+    setBusyJoin(true);
+    try {
+      const { data } = await api.get(`/servers/join/${encodeURIComponent(code)}`);
+      setInviteCode("");
+      setShowJoinModal(false);
+      toast.success(`Joined ${data.server.name}`);
+      const firstChannel = data.server.channels?.[0]?.id;
+      if (firstChannel) navigate(`/channels/${firstChannel}`);
+      else await fetchServers();
+    } catch (err: unknown) {
+      toast.error(apiErrorMessage(err, "Invalid invite code"));
+    } finally {
+      setBusyJoin(false);
+    }
+  };
+
+  const openChannel = (server: Server) => {
+    const firstChannel = server.channels?.[0]?.id;
+    if (firstChannel) navigate(`/channels/${firstChannel}`);
   };
 
   return (
@@ -84,17 +120,27 @@ export default function ServerSidebar() {
       {servers.map((server) => (
         <button
           key={server.id}
-          onClick={() => navigate(`/channels/${server.channels?.[0]?.id}`)}
-          className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-white transition-all hover:rounded-xl hover:bg-accent-600"
+          onClick={() => openChannel(server)}
+          className="group relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-white transition-all hover:rounded-xl hover:bg-accent-600"
           title={server.name}
         >
           {server.icon ? (
             <img src={server.icon} alt={server.name} className="h-full w-full rounded-xl object-cover" />
           ) : (
-            <span className="text-lg font-bold">{server.name[0].toUpperCase()}</span>
+            <span className="text-lg font-bold">{server.name?.[0]?.toUpperCase() ?? "?"}</span>
           )}
         </button>
       ))}
+
+      <button
+        onClick={() => setShowJoinModal(true)}
+        className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-purple-400 transition-all hover:rounded-xl hover:bg-purple-600 hover:text-white"
+        title="Join a Server"
+      >
+        <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+        </svg>
+      </button>
 
       <button
         onClick={() => setShowCreateModal(true)}
@@ -102,7 +148,7 @@ export default function ServerSidebar() {
         title="Create Server"
       >
         <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m-7-7h14" />
         </svg>
       </button>
 
@@ -116,12 +162,12 @@ export default function ServerSidebar() {
         {user?.avatar ? (
           <img src={user.avatar} alt="Profile" className="h-full w-full rounded-xl object-cover" />
         ) : (
-          <span className="text-lg font-bold">{user?.username?.[0]?.toUpperCase()}</span>
+          <span className="text-lg font-bold">{user?.username?.[0]?.toUpperCase() ?? "?"}</span>
         )}
       </button>
 
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-xl bg-gray-900 p-6">
             <h3 className="mb-4 text-lg font-bold text-white">Create Server</h3>
             <input
@@ -142,9 +188,46 @@ export default function ServerSidebar() {
               </button>
               <button
                 onClick={createServer}
-                className="rounded-lg bg-accent-600 px-4 py-2 text-sm text-white hover:bg-accent-500"
+                disabled={busyCreate}
+                className="rounded-lg bg-accent-600 px-4 py-2 text-sm text-white hover:bg-accent-500 disabled:opacity-50"
               >
-                Create
+                {busyCreate ? "Creating..." : "Create"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showJoinModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="w-full max-w-md rounded-xl bg-gray-900 p-6">
+            <h3 className="mb-1 text-lg font-bold text-white">Join a Server</h3>
+            <p className="mb-4 text-sm text-gray-400">Enter an invite code to join.</p>
+            <input
+              type="text"
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value)}
+              placeholder="Invite code"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              className="mb-4 w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+              onKeyDown={(e) => e.key === "Enter" && joinServer()}
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowJoinModal(false)}
+                className="rounded-lg bg-gray-800 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={joinServer}
+                disabled={busyJoin}
+                className="rounded-lg bg-purple-600 px-4 py-2 text-sm text-white hover:bg-purple-500 disabled:opacity-50"
+              >
+                {busyJoin ? "Joining..." : "Join"}
               </button>
             </div>
           </div>

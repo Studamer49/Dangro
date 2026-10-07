@@ -1,66 +1,52 @@
-import { Router, Response } from "express";
+import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
-import { authenticate, AuthRequest } from "../middleware/auth.js";
+import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
+import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
+import { paramId } from "../lib/access.js";
 
 const router = Router();
 
 const createStorySchema = z.object({
-  mediaUrl: z.string(),
+  mediaUrl: z.string().max(500),
   mediaType: z.enum(["image", "video"]),
 });
 
-router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const { mediaUrl, mediaType } = createStorySchema.parse(req.body);
-    const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + 24);
+router.post(
+  "/",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const { mediaUrl, mediaType } = parseOrThrow(createStorySchema, req.body);
+
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     const story = await prisma.story.create({
-      data: {
-        authorId: req.userId!,
-        mediaUrl,
-        mediaType,
-        expiresAt,
-      },
-      include: {
-        author: { select: { id: true, username: true, avatar: true } },
-      },
+      data: { authorId: userId, mediaUrl, mediaType, expiresAt },
+      include: { author: { select: { id: true, username: true, avatar: true } } },
     });
 
-    res.status(201).json({ story });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      res.status(400).json({ message: err.errors[0].message });
-      return;
-    }
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+    ok(res, { story }, 201);
+  })
+);
 
-router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.userId!;
+router.get(
+  "/",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
 
-    await prisma.story.deleteMany({
-      where: { expiresAt: { lt: new Date() } },
-    });
+    await prisma.story.deleteMany({ where: { expiresAt: { lt: new Date() } } });
 
     const following = await prisma.follow.findMany({
       where: { followerId: userId },
       select: { followingId: true },
     });
-    const followingIds = following.map((f) => f.followingId);
-    const authorIds = [userId, ...followingIds];
+    const authorIds = [userId, ...following.map((f) => f.followingId)];
 
     const stories = await prisma.story.findMany({
-      where: {
-        authorId: { in: authorIds },
-        expiresAt: { gt: new Date() },
-      },
-      include: {
-        author: { select: { id: true, username: true, avatar: true } },
-      },
+      where: { authorId: { in: authorIds }, expiresAt: { gt: new Date() } },
+      include: { author: { select: { id: true, username: true, avatar: true } } },
       orderBy: { createdAt: "desc" },
     });
 
@@ -68,31 +54,28 @@ router.get("/", authenticate, async (req: AuthRequest, res: Response) => {
       .map((authorId) => {
         const userStories = stories.filter((s) => s.authorId === authorId);
         if (userStories.length === 0) return null;
-        return {
-          author: userStories[0].author,
-          stories: userStories,
-        };
+        return { author: userStories[0].author, stories: userStories };
       })
-      .filter(Boolean);
+      .filter((group): group is NonNullable<typeof group> => group !== null);
 
-    res.json({ stories: grouped });
-  } catch {
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+    ok(res, { stories: grouped });
+  })
+);
 
-router.delete("/:id", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const story = await prisma.story.findUnique({ where: { id: req.params.id as string } });
-    if (!story || story.authorId !== req.userId) {
-      res.status(404).json({ message: "Story not found" });
-      return;
-    }
-    await prisma.story.delete({ where: { id: req.params.id as string } });
-    res.json({ message: "Story deleted" });
-  } catch {
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+router.delete(
+  "/:id",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const id = paramId(req.params.id, "story id");
+
+    const story = await prisma.story.findUnique({ where: { id }, select: { authorId: true } });
+    if (!story || story.authorId !== userId) throw AppError.of("NOT_FOUND", "Story not found");
+
+    await prisma.story.delete({ where: { id } });
+
+    ok(res, { message: "Story deleted" });
+  })
+);
 
 export default router;

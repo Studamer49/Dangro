@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
+import ErrorBoundary from "@/components/ErrorBoundary";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
 import DashboardPage from "@/pages/DashboardPage";
@@ -51,7 +52,7 @@ export default function App() {
   }, [fetchUser]);
 
   return (
-    <>
+    <ErrorBoundary>
       <VideoCallModal />
       <CallInvitation />
       <Routes>
@@ -80,6 +81,6 @@ export default function App() {
           }
         />
       </Routes>
-    </>
+    </ErrorBoundary>
   );
 }

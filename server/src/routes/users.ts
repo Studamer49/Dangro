@@ -1,51 +1,68 @@
-import { Router, Response } from "express";
+import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
-import { authenticate, AuthRequest } from "../middleware/auth.js";
-import { AppError } from "../middleware/errorHandler.js";
+import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
+import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
+import { paramId } from "../lib/access.js";
 
 const router = Router();
 
 const updateProfileSchema = z.object({
-  username: z.string().min(3).max(32).optional(),
+  username: z.string().min(3).max(32).regex(/^\S+$/, "Username cannot contain spaces").optional(),
+  email: z.string().email().max(254).optional(),
   bio: z.string().max(500).optional(),
+  avatar: z.string().max(500).nullish(),
   status: z.enum(["online", "idle", "dnd", "offline"]).optional(),
 });
 
-router.get("/search", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const query = req.query.q as string;
+const searchQuerySchema = z.object({
+  q: z.string().trim().min(1).max(100).optional(),
+});
 
-    if (!query || query.length < 2) {
-      res.json({ users: [] });
+const publicUserSelect = {
+  id: true,
+  username: true,
+  avatar: true,
+  bio: true,
+  status: true,
+} as const;
+
+router.get(
+  "/search",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const { q } = parseOrThrow(searchQuerySchema, req.query);
+    const userId = requireUser(req);
+
+    if (!q || q.length < 2) {
+      ok(res, { users: [] });
       return;
     }
 
     const users = await prisma.user.findMany({
       where: {
-        username: { contains: query, mode: "insensitive" },
-        id: { not: req.userId! },
+        id: { not: userId },
+        OR: [
+          { username: { contains: q, mode: "insensitive" } },
+          { bio: { contains: q, mode: "insensitive" } },
+        ],
       },
-      select: {
-        id: true,
-        username: true,
-        avatar: true,
-        bio: true,
-        status: true,
-      },
+      select: publicUserSelect,
       take: 20,
     });
 
-    res.json({ users });
-  } catch {
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+    ok(res, { users });
+  })
+);
 
-router.get("/:id", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get(
+  "/:id",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const id = paramId(req.params.id, "user id");
+
     const user = await prisma.user.findUnique({
-      where: { id: req.params.id as string },
+      where: { id },
       select: {
         id: true,
         username: true,
@@ -57,35 +74,50 @@ router.get("/:id", authenticate, async (req: AuthRequest, res: Response) => {
       },
     });
 
-    if (!user) {
-      throw new AppError("User not found", 404);
+    if (!user) throw AppError.of("NOT_FOUND", "User not found");
+
+    ok(res, { user });
+  })
+);
+
+router.patch(
+  "/me",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const input = parseOrThrow(updateProfileSchema, req.body);
+
+    if (Object.keys(input).length === 0) {
+      throw AppError.of("BAD_REQUEST", "Nothing to update");
     }
 
-    res.json({ user });
-  } catch (err) {
-    if (err instanceof AppError) {
-      res.status(err.statusCode).json({ message: err.message });
-      return;
-    }
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+    const data: Record<string, string | null> = {};
 
-router.patch("/me", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const data = updateProfileSchema.parse(req.body);
-
-    if (data.username) {
+    if (input.username !== undefined) {
       const existing = await prisma.user.findFirst({
-        where: { username: data.username, id: { not: req.userId! } },
+        where: { username: { equals: input.username, mode: "insensitive" }, id: { not: userId } },
+        select: { id: true },
       });
-      if (existing) {
-        throw new AppError("Username already taken", 409);
-      }
+      if (existing) throw AppError.of("CONFLICT", "Username already taken");
+      data.username = input.username;
     }
+
+    if (input.email !== undefined) {
+      const email = input.email.trim().toLowerCase();
+      const existing = await prisma.user.findFirst({
+        where: { email: { equals: email, mode: "insensitive" }, id: { not: userId } },
+        select: { id: true },
+      });
+      if (existing) throw AppError.of("CONFLICT", "Email already in use");
+      data.email = email;
+    }
+
+    if (input.bio !== undefined) data.bio = input.bio;
+    if (input.avatar !== undefined) data.avatar = input.avatar ?? null;
+    if (input.status !== undefined) data.status = input.status;
 
     const user = await prisma.user.update({
-      where: { id: req.userId! },
+      where: { id: userId },
       data,
       select: {
         id: true,
@@ -100,18 +132,8 @@ router.patch("/me", authenticate, async (req: AuthRequest, res: Response) => {
       },
     });
 
-    res.json({ user });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      res.status(400).json({ message: err.errors[0].message });
-      return;
-    }
-    if (err instanceof AppError) {
-      res.status(err.statusCode).json({ message: err.message });
-      return;
-    }
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+    ok(res, { user });
+  })
+);
 
 export default router;

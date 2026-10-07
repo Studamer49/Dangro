@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import api from "@/lib/api";
-import { connectSocket, disconnectSocket } from "@/lib/socket";
+import api, { setAuthListeners } from "@/lib/api";
+import { connectSocket, disconnectSocket, setSocketToken } from "@/lib/socket";
 import type { User } from "@/types";
 
 interface AuthState {
@@ -66,3 +66,15 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setUser: (user) => set({ user }),
 }));
+
+// Keep the live Socket.IO session in sync with silent token refreshes, and
+// drop the client into a logged-out state (without a redirect loop) when the
+// refresh token is no longer valid.
+setAuthListeners(
+  (accessToken) => setSocketToken(accessToken),
+  () => {
+    localStorage.removeItem("accessToken");
+    disconnectSocket();
+    useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false });
+  }
+);

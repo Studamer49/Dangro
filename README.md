@@ -1,217 +1,99 @@
 # Dangro
 
-A modern communication platform inspired by Discord. Built with React, Express, Socket.IO, and PostgreSQL.
+A modern communication platform inspired by Discord — real-time chat, voice channels, direct messages, a social feed with stories, and friends. Built with React 19, Express, Socket.IO, Prisma and PostgreSQL.
 
-## Tech Stack
+## Highlights
 
-**Frontend:** React 19, Vite, Tailwind CSS, Framer Motion, Socket.IO Client, Zustand, React Hook Form, Zod
+- **Single-origin deploy:** the Express server serves the built React app, the `/api` REST API **and** Socket.IO from one URL — no CORS or static-host juggling.
+- **Uniform API envelope:** every response is `{ success: true, data }` or `{ success: false, error: { code, message } }`; the client unwraps it automatically, so components read `const { data } = await api.get(...)`.
+- **Resilient by default:** ErrorBoundary + toast system, sanitized persisted settings, guarded `server.name?.[0]`-style access, and a test suite that catches envelope/status regressions.
+- See [`PROJECT_AUDIT.md`](./PROJECT_AUDIT.md) for the engineering audit and [`DEPLOYMENT.md`](./DEPLOYMENT.md) for run instructions.
 
-**Backend:** Node.js, Express, Socket.IO, Prisma ORM, PostgreSQL, JWT Authentication, bcrypt
+## Tech stack
 
-**Database:** Neon PostgreSQL
+**Frontend:** React 19 · Vite · Tailwind CSS · react-router-dom · Zustand · Socket.IO client · React Hook Form + Zod · Framer Motion
 
-**Deployment:** Render Web Service, Docker, GitHub
+**Backend:** Node.js · Express · Socket.IO · Prisma ORM · PostgreSQL (Neon) · JWT refresh/access · bcrypt
 
-## Getting Started
+## Quick start
 
-### Prerequisites
-
-- Node.js 20+
-- PostgreSQL database (Neon recommended)
-- Git
-
-### Installation
+Prerequisites: Node.js ≥ 20, a PostgreSQL database (Neon works).
 
 ```bash
-git clone https://github.com/yourusername/dangro.git
-cd dangro
+npm ci --prefix server
+npm ci --prefix client
 
-# Install all dependencies
-npm install --prefix server
-npm install --prefix client
+# configure env — see the .env.example files
+# server/.env  → DATABASE_URL, JWT_SECRET (JWT_REFRESH_SECRET, CLIENT_URL, PORT)
+# client/.env  → VITE_API_URL=/api, VITE_WS_URL=
+
+npm run dev                 # server on :3001, client on :5173 (Vite proxies /api, /uploads, /socket.io)
 ```
 
-### Environment Variables
+Apply the schema: `npm run db:migrate` (dev, creates migration files) or `npm run db:deploy` (applies committed migrations).
 
-**Server** (`server/.env`):
+## Scripts (run from repo root)
 
-```env
-DATABASE_URL=postgresql://user:password@host:5432/dangro
-JWT_SECRET=your-super-secret-jwt-key
-PORT=3001
-CLIENT_URL=http://localhost:5173
-```
+| Command | What it does |
+|---|---|
+| `npm run dev` | Runs server + client together |
+| `npm run build` | Builds the client bundle and compiles the server |
+| `npm run start` | Starts the compiled server (serves API + client) |
+| `npm run lint` | ESLint for both apps |
+| `npm run typecheck` | `tsc --noEmit` for both apps |
+| `npm test` | Server vitest suite + client hook-guard script |
+| `npm run verify` | lint + typecheck + build + test in one command |
+| `npm run db:deploy` | `prisma migrate deploy` against `DATABASE_URL` |
 
-**Client** (`client/.env`):
-
-```env
-VITE_API_URL=/api
-VITE_WS_URL=http://localhost:3001
-```
-
-### Database Setup
-
-```bash
-cd server
-npx prisma migrate dev --name init
-npx prisma generate
-```
-
-### Running Development
-
-```bash
-# From project root - runs both client and server
-npm run dev
-
-# Or individually:
-npm run dev:server
-npm run dev:client
-```
-
-- Frontend: http://localhost:5173
-- Backend: http://localhost:3001
-
-## Folder Structure
+## Folder structure
 
 ```
-dangro/
-├── client/                  # React frontend
+├── client/            React app
 │   ├── src/
-│   │   ├── components/      # Reusable UI components
-│   │   ├── lib/             # Utilities (API, Socket)
-│   │   ├── pages/           # Route pages
-│   │   ├── stores/          # Zustand state stores
-│   │   └── types/           # TypeScript types
-│   ├── index.html
-│   ├── vite.config.ts
-│   ├── tailwind.config.js
-│   └── tsconfig.json
-├── server/                  # Express backend
-│   ├── src/
-│   │   ├── middleware/       # Auth, error handling
-│   │   ├── routes/          # API route handlers
-│   │   ├── socket/          # Socket.IO handlers
-│   │   ├── config.ts
-│   │   ├── index.ts
-│   │   └── prisma.ts
-│   ├── prisma/
-│   │   └── schema.prisma
-│   └── tsconfig.json
+│   │   ├── components/  UI (chat, feed, notifications, onboarding rails…)
+│   │   ├── hooks/       useWebRTC
+│   │   ├── lib/         api (envelope interceptor) + socket + helpers
+│   │   ├── pages/       route pages (feed, explore, friends, channels, dms…)
+│   │   ├── stores/      Zustand: auth, settings, call, toasts
+│   │   ├── styles/      tailwind + custom tokens
+│   │   └── types/       shared TypeScript types
+│   └── vite.config.ts
+├── server/            Express + Socket.IO
+│   ├── prisma/          schema.prisma + migrations
+│   └── src/
+│       ├── lib/         envelope helpers, access checks, notifications
+│       ├── middleware/  auth, error handler
+│       ├── routes/      auth, users, friends, servers, channels, messages,
+│       │                dms, uploads, posts, stories, follows, notifications
+│       └── socket/      Socket.IO auth + validation + rooms
+├── render.yaml        one-click Render deployment
 ├── Dockerfile
-├── render.yaml
-├── package.json
-└── README.md
+└── PROJECT_AUDIT.md / DEPLOYMENT.md
 ```
 
-## API Endpoints
+## Feature surface
 
-### Authentication
+- Server channels (text + voice/WebRTC), permissions on create/rename/delete channels
+- Direct messages with typing indicators, read receipts and replies
+- Friends: requests, accept/reject, sent/cancel, presence via Socket.IO
+- Social: posts (media up to 10 attachments), likes, comments, 24-hour stories
+- Notifications: bell with live socket updates and read/unread state
+- Profile editing (avatar upload + link), follow/unfollow, user + server search, invite links (`/invite/:code`)
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/auth/register` | Register new user |
-| POST | `/api/auth/login` | Login |
-| GET | `/api/auth/me` | Get current user |
-| POST | `/api/auth/refresh` | Refresh access token |
-| POST | `/api/auth/logout` | Logout |
+## API status codes
 
-### Users
+All errors carry `error.code`: `VALIDATION_ERROR` (400), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `NOT_FOUND` (404), `CONFLICT` (409), `PAYLOAD_TOO_LARGE` (413), `RATE_LIMITED` (429), `INTERNAL_ERROR` (500).
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/users/search?q=` | Search users |
-| GET | `/api/users/:id` | Get user profile |
-| PATCH | `/api/users/me` | Update profile |
+## Deployment
 
-### Friends
+Follow [`DEPLOYMENT.md`](./DEPLOYMENT.md). Short version: create a Render Web Service from `render.yaml`, preview a Neon `DATABASE_URL`, let Render generate `JWT_SECRET`/`JWT_REFRESH_SECRET`, set `CLIENT_URL` to your `.onrender.com` URL, deploy — `prisma migrate deploy` runs automatically before each release.
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/friends` | List friends |
-| GET | `/api/friends/requests` | Pending requests |
-| POST | `/api/friends/request` | Send request |
-| POST | `/api/friends/accept` | Accept request |
-| DELETE | `/api/friends/remove/:id` | Remove friend |
+## Security notes
 
-### Servers
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/servers` | List user's servers |
-| POST | `/api/servers` | Create server |
-| GET | `/api/servers/join/:code` | Join via invite |
-| PATCH | `/api/servers/:id` | Update server |
-| DELETE | `/api/servers/:id` | Delete server |
-
-### Channels
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/channels` | Create channel |
-| GET | `/api/channels/:id/server` | Get channel's server |
-
-### Messages
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| POST | `/api/messages` | Send message |
-| GET | `/api/messages/:channelId` | Get channel messages |
-| PATCH | `/api/messages/:id` | Edit message |
-| DELETE | `/api/messages/:id` | Delete message |
-| POST | `/api/messages/:id/reactions` | Toggle reaction |
-
-## Socket.IO Events
-
-| Event | Direction | Description |
-|-------|-----------|-------------|
-| `join_server` | Client → Server | Join server room |
-| `join_channel` | Client → Server | Join channel room |
-| `message` | Client → Server | Send message |
-| `typing_start` | Client → Server | Start typing indicator |
-| `typing_stop` | Client → Server | Stop typing indicator |
-| `voice_join` | Client → Server | Join voice channel |
-| `voice_leave` | Client → Server | Leave voice channel |
-| `voice_signal` | Client → Server | WebRTC signal |
-| `new_message` | Server → Client | New message received |
-| `typing_start` | Server → Client | User typing |
-| `typing_stop` | Server → Client | User stopped typing |
-
-## Neon Database Setup
-
-1. Create account at [neon.tech](https://neon.tech)
-2. Create a new project
-3. Copy the connection string
-4. Paste into `server/.env` as `DATABASE_URL`
-5. Run `npx prisma migrate dev --name init` from the `server/` directory
-
-## Render Deployment
-
-1. Push code to GitHub
-2. Create new Web Service on [render.com](https://render.com)
-3. Connect your GitHub repository
-4. Configure:
-   - **Build Command:**
-     ```
-     npm install --prefix server && npm install --prefix client && npm run build --prefix client && npm run build --prefix server && npx prisma generate --prefix server
-     ```
-   - **Start Command:** `npm start`
-5. Add environment variables:
-   - `DATABASE_URL` - Your Neon connection string
-   - `JWT_SECRET` - A secure random string
-   - `CLIENT_URL` - Your Render service URL
-   - `PORT` - 3001
-   - `NODE_ENV` - production
-6. Deploy
-
-## GitHub Setup
-
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin https://github.com/yourusername/dangro.git
-git push -u origin main
-```
+- Passwords hashed with bcrypt (cost 12); refresh tokens live in an `httpOnly`, `sameSite=lax`, production-`secure` cookie.
+- Uploaded files are magic-byte sniffed and stored with generated names — never the client filename/extension.
+- Server validates membership/reply ownership on every path; `DATABASE_URL`/secrets never leave `.env` (git-ignored).
+- No analytics, no ads. Ever.
 
 ## License
 

@@ -1,32 +1,49 @@
-import { Router, Response } from "express";
+import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
-import { authenticate, AuthRequest } from "../middleware/auth.js";
-import { AppError } from "../middleware/errorHandler.js";
+import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
+import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
+import { paramId } from "../lib/access.js";
 
 const router = Router();
 
 const createPostSchema = z.object({
   caption: z.string().max(2200).optional(),
-  media: z.array(z.object({
-    url: z.string(),
-    type: z.string(),
-    width: z.number().optional(),
-    height: z.number().optional(),
-  })).min(1).max(10),
+  media: z
+    .array(
+      z.object({
+        url: z.string().max(500),
+        type: z.enum(["image", "video"]),
+        width: z.number().int().min(0).max(10000).optional(),
+        height: z.number().int().min(0).max(10000).optional(),
+      })
+    )
+    .min(1)
+    .max(10),
 });
 
-const createCommentSchema = z.object({
-  content: z.string().min(1).max(500),
-});
+const createCommentSchema = z.object({ content: z.string().trim().min(1).max(500) });
 
-router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const { caption, media } = createPostSchema.parse(req.body);
+const baseInclude = {
+  author: { select: { id: true, username: true, avatar: true } },
+  media: { orderBy: { order: "asc" as const } },
+  _count: { select: { likes: true, comments: true } },
+} as const;
+
+function withViewer(userId: string) {
+  return { ...baseInclude, likes: { where: { userId }, select: { id: true } } };
+}
+
+router.post(
+  "/",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const { caption, media } = parseOrThrow(createPostSchema, req.body);
 
     const post = await prisma.post.create({
       data: {
-        authorId: req.userId!,
+        authorId: userId,
         caption,
         media: {
           create: media.map((m, i) => ({
@@ -38,160 +55,158 @@ router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
           })),
         },
       },
-      include: {
-        author: { select: { id: true, username: true, avatar: true } },
-        media: true,
-        _count: { select: { likes: true, comments: true } },
-      },
+      include: withViewer(userId),
     });
 
-    res.status(201).json({ post });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      res.status(400).json({ message: err.errors[0].message });
-      return;
-    }
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+    ok(res, { post }, 201);
+  })
+);
 
-router.get("/feed", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.userId!;
+router.get(
+  "/feed",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+
     const following = await prisma.follow.findMany({
       where: { followerId: userId },
       select: { followingId: true },
     });
-    const followingIds = following.map((f) => f.followingId);
-    const authorIds = [userId, ...followingIds];
+    const authorIds = [userId, ...following.map((f) => f.followingId)];
 
     const posts = await prisma.post.findMany({
       where: { authorId: { in: authorIds } },
-      include: {
-        author: { select: { id: true, username: true, avatar: true } },
-        media: { orderBy: { order: "asc" } },
-        likes: { where: { userId }, select: { id: true } },
-        _count: { select: { likes: true, comments: true } },
-      },
+      include: withViewer(userId),
       orderBy: { createdAt: "desc" },
       take: 50,
     });
 
-    res.json({ posts });
-  } catch {
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+    ok(res, { posts });
+  })
+);
 
-router.get("/:id", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get(
+  "/user/:userId",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const viewerId = requireUser(req);
+    const authorId = paramId(req.params.userId, "user id");
+
+    const posts = await prisma.post.findMany({
+      where: { authorId },
+      include: withViewer(viewerId),
+      orderBy: { createdAt: "desc" },
+      take: 50,
+    });
+
+    ok(res, { posts });
+  })
+);
+
+router.get(
+  "/:id",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const id = paramId(req.params.id, "post id");
+
     const post = await prisma.post.findUnique({
-      where: { id: req.params.id as string },
+      where: { id },
       include: {
-        author: { select: { id: true, username: true, avatar: true } },
-        media: { orderBy: { order: "asc" } },
-        likes: { where: { userId: req.userId! }, select: { id: true } },
+        ...withViewer(userId),
         comments: {
           include: { author: { select: { id: true, username: true, avatar: true } } },
           orderBy: { createdAt: "asc" },
         },
-        _count: { select: { likes: true, comments: true } },
       },
     });
 
-    if (!post) throw new AppError("Post not found", 404);
-    res.json({ post });
-  } catch (err) {
-    if (err instanceof AppError) {
-      res.status(err.statusCode).json({ message: err.message });
-      return;
-    }
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+    if (!post) throw AppError.of("NOT_FOUND", "Post not found");
 
-router.delete("/:id", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const post = await prisma.post.findUnique({ where: { id: req.params.id as string } });
-    if (!post) throw new AppError("Post not found", 404);
-    if (post.authorId !== req.userId) throw new AppError("Not authorized", 403);
-    await prisma.post.delete({ where: { id: req.params.id as string } });
-    res.json({ message: "Post deleted" });
-  } catch (err) {
-    if (err instanceof AppError) {
-      res.status(err.statusCode).json({ message: err.message });
-      return;
-    }
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+    ok(res, { post });
+  })
+);
 
-router.post("/:id/like", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const postId = req.params.id as string;
-    const post = await prisma.post.findUnique({ where: { id: postId } });
-    if (!post) throw new AppError("Post not found", 404);
+router.delete(
+  "/:id",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const id = paramId(req.params.id, "post id");
+
+    const post = await prisma.post.findUnique({ where: { id }, select: { authorId: true } });
+    if (!post) throw AppError.of("NOT_FOUND", "Post not found");
+    if (post.authorId !== userId) throw AppError.of("FORBIDDEN", "You can only delete your own posts");
+
+    await prisma.post.delete({ where: { id } });
+
+    ok(res, { message: "Post deleted" });
+  })
+);
+
+router.post(
+  "/:id/like",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const postId = paramId(req.params.id, "post id");
+
+    const post = await prisma.post.findUnique({ where: { id: postId }, select: { id: true } });
+    if (!post) throw AppError.of("NOT_FOUND", "Post not found");
 
     const existing = await prisma.postLike.findUnique({
-      where: { postId_userId: { postId, userId: req.userId! } },
+      where: { postId_userId: { postId, userId } },
     });
 
     if (existing) {
       await prisma.postLike.delete({ where: { id: existing.id } });
-      res.json({ liked: false });
     } else {
-      await prisma.postLike.create({
-        data: { postId, userId: req.userId! },
-      });
-      res.json({ liked: true });
+      await prisma.postLike.create({ data: { postId, userId } });
     }
-  } catch (err) {
-    if (err instanceof AppError) {
-      res.status(err.statusCode).json({ message: err.message });
-      return;
-    }
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
 
-router.post("/:id/comments", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const postId = req.params.id as string;
-    const { content } = createCommentSchema.parse(req.body);
+    const likeCount = await prisma.postLike.count({ where: { postId } });
 
-    const post = await prisma.post.findUnique({ where: { id: postId } });
-    if (!post) throw new AppError("Post not found", 404);
+    ok(res, { liked: !existing, likeCount });
+  })
+);
 
-    const comment = await prisma.postComment.create({
-      data: { postId, authorId: req.userId!, content },
-      include: { author: { select: { id: true, username: true, avatar: true } } },
-    });
+router.get(
+  "/:id/comments",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const postId = paramId(req.params.id, "post id");
 
-    res.status(201).json({ comment });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      res.status(400).json({ message: err.errors[0].message });
-      return;
-    }
-    if (err instanceof AppError) {
-      res.status(err.statusCode).json({ message: err.message });
-      return;
-    }
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+    const post = await prisma.post.findUnique({ where: { id: postId }, select: { id: true } });
+    if (!post) throw AppError.of("NOT_FOUND", "Post not found");
 
-router.get("/:id/comments", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
     const comments = await prisma.postComment.findMany({
-      where: { postId: req.params.id as string },
+      where: { postId },
       include: { author: { select: { id: true, username: true, avatar: true } } },
       orderBy: { createdAt: "asc" },
     });
-    res.json({ comments });
-  } catch {
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+
+    ok(res, { comments });
+  })
+);
+
+router.post(
+  "/:id/comments",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const postId = paramId(req.params.id, "post id");
+    const { content } = parseOrThrow(createCommentSchema, req.body);
+
+    const post = await prisma.post.findUnique({ where: { id: postId }, select: { id: true } });
+    if (!post) throw AppError.of("NOT_FOUND", "Post not found");
+
+    const comment = await prisma.postComment.create({
+      data: { postId, authorId: userId, content },
+      include: { author: { select: { id: true, username: true, avatar: true } } },
+    });
+
+    ok(res, { comment }, 201);
+  })
+);
 
 export default router;

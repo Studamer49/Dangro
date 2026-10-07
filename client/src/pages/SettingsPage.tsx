@@ -1,4 +1,6 @@
 import { useSettingsStore } from "@/stores/settingsStore";
+import { useAuthStore } from "@/stores/authStore";
+import EditProfileForm from "@/components/profile/EditProfileForm";
 import type { Theme, AccentColor, ChatDensity, FontSize } from "@/stores/settingsStore";
 
 const themes: { value: Theme; label: string; description: string }[] = [
@@ -28,12 +30,14 @@ const accentSwatches: Record<AccentColor, string> = {
 
 export default function SettingsPage() {
   const settings = useSettingsStore();
+  const currentUser = useAuthStore((s) => s.user);
 
   return (
     <div className="flex h-full">
       <div className="w-60 border-r border-gray-800 bg-gray-900 p-4">
         <h2 className="mb-4 text-lg font-bold text-white">Settings</h2>
         <nav className="space-y-1">
+          <SectionLink label="Account" />
           <SectionLink label="Appearance" />
           <SectionLink label="Chat" />
           <SectionLink label="Privacy" />
@@ -42,6 +46,24 @@ export default function SettingsPage() {
 
       <div className="flex-1 overflow-y-auto p-6">
         <div className="mx-auto max-w-2xl space-y-8">
+          <section>
+            <h3 className="mb-4 text-lg font-bold text-white">Account</h3>
+            <div className="space-y-4">
+              <div className="rounded-xl bg-gray-800 p-4">
+                <p className="font-medium text-white">Email</p>
+                <p className="mt-1 text-sm text-gray-300">{currentUser?.email ?? "—"}</p>
+                <p className="mt-1 text-xs text-gray-500">
+                  Your email address is used to sign in and cannot be changed here.
+                </p>
+              </div>
+              {currentUser ? (
+                <EditProfileForm user={currentUser} />
+              ) : (
+                <p className="text-sm text-gray-400">Sign in to edit your profile.</p>
+              )}
+            </div>
+          </section>
+
           <section>
             <h3 className="mb-4 text-lg font-bold text-white">Theme</h3>
             <div className="grid grid-cols-3 gap-3">

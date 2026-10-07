@@ -4,13 +4,15 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAuthStore } from "@/stores/authStore";
+import { apiErrorMessage } from "@/lib/api";
 
 const registerSchema = z
   .object({
     username: z
       .string()
       .min(3, "Username must be at least 3 characters")
-      .max(32, "Username must be at most 32 characters"),
+      .max(32, "Username must be at most 32 characters")
+      .regex(/^\S+$/, "Username cannot contain spaces"),
     email: z.string().email("Invalid email address"),
     password: z
       .string()
@@ -46,8 +48,7 @@ export default function RegisterPage() {
       await register(data.username, data.email, data.password);
       navigate("/");
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { message?: string } } };
-      setError(axiosError.response?.data?.message || "Registration failed");
+      setError(apiErrorMessage(err, "Registration failed"));
     } finally {
       setIsSubmitting(false);
     }

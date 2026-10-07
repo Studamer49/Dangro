@@ -1,84 +1,57 @@
-import { Router, Response } from "express";
+import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
-import { authenticate, AuthRequest } from "../middleware/auth.js";
-import { AppError } from "../middleware/errorHandler.js";
+import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
+import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
+import { assertServerMember, findServerOr404, paramId } from "../lib/access.js";
 
 const router = Router();
 
 const createChannelSchema = z.object({
-  name: z.string().min(1).max(100),
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .regex(/^[a-z0-9 _-]+$/i, "Channel names may only contain letters, numbers, spaces, _ and -"),
   type: z.enum(["text", "voice"]),
   serverId: z.string().uuid(),
 });
 
-router.post("/", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const { name, type, serverId } = createChannelSchema.parse(req.body);
+router.post(
+  "/",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const { name, type, serverId } = parseOrThrow(createChannelSchema, req.body);
 
-    const member = await prisma.member.findUnique({
-      where: {
-        userId_serverId: { userId: req.userId!, serverId },
-      },
-    });
+    await assertServerMember(serverId, userId, ["owner", "admin"]);
 
-    if (!member) {
-      throw new AppError("Not a member of this server", 403);
-    }
+    const channel = await prisma.channel.create({ data: { name, type, serverId } });
 
-    if (member.role !== "owner" && member.role !== "admin") {
-      throw new AppError("Only admins can create channels", 403);
-    }
+    ok(res, { channel }, 201);
+  })
+);
 
-    const channel = await prisma.channel.create({
-      data: { name, type, serverId },
-    });
+router.get(
+  "/:channelId/server",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const channelId = paramId(req.params.channelId, "channel id");
 
-    res.status(201).json({ channel });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      res.status(400).json({ message: err.errors[0].message });
-      return;
-    }
-    if (err instanceof AppError) {
-      res.status(err.statusCode).json({ message: err.message });
-      return;
-    }
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
-
-router.get("/:channelId/server", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
-    const channelId = req.params.channelId as string;
     const channel = await prisma.channel.findUnique({
       where: { id: channelId },
-      include: {
-        server: {
-          include: {
-            channels: true,
-            members: {
-              include: {
-                user: { select: { id: true, username: true, avatar: true, status: true } },
-              },
-            },
-          },
-        },
-      },
+      select: { serverId: true },
     });
+    if (!channel) throw AppError.of("NOT_FOUND", "Channel not found");
 
-    if (!channel) {
-      throw new AppError("Channel not found", 404);
-    }
+    await assertServerMember(channel.serverId, userId);
 
-    res.json({ server: channel.server });
-  } catch (err) {
-    if (err instanceof AppError) {
-      res.status(err.statusCode).json({ message: err.message });
-      return;
-    }
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+    const server = await findServerOr404(channel.serverId);
+
+    ok(res, { server });
+  })
+);
 
 export default router;

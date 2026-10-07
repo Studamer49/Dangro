@@ -25,6 +25,14 @@ export default function DMChatArea({ conversation }: Props) {
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
 
+  const markAsRead = useCallback(async () => {
+    try {
+      await api.patch(`/dms/${conversation.id}/read`);
+    } catch {
+      // silent
+    }
+  }, [conversation.id]);
+
   const fetchMessages = useCallback(async () => {
     try {
       const { data } = await api.get(`/dms/${conversation.id}`);
@@ -33,7 +41,7 @@ export default function DMChatArea({ conversation }: Props) {
     } catch {
       // silent
     }
-  }, [conversation.id]);
+  }, [conversation.id, markAsRead]);
 
   useEffect(() => {
     fetchMessages();
@@ -90,7 +98,7 @@ export default function DMChatArea({ conversation }: Props) {
       socket.off("dm_read", handleRead);
       socket.emit("dm_leave", conversation.id);
     };
-  }, [conversation.id, user?.id, fetchMessages]);
+  }, [conversation.id, user?.id, fetchMessages, markAsRead]);
 
   useEffect(() => {
     if (shouldAutoScroll) {
@@ -103,14 +111,6 @@ export default function DMChatArea({ conversation }: Props) {
     if (!container) return;
     const { scrollTop, scrollHeight, clientHeight } = container;
     setShouldAutoScroll(scrollHeight - scrollTop - clientHeight < 100);
-  };
-
-  const markAsRead = async () => {
-    try {
-      await api.patch(`/dms/${conversation.id}/read`);
-    } catch {
-      // silent
-    }
   };
 
   const sendMessage = async () => {

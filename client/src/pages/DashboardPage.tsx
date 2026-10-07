@@ -11,6 +11,9 @@ import DirectMessagesPage from "@/pages/DirectMessagesPage";
 import FeedPage from "@/pages/FeedPage";
 import ExplorePage from "@/pages/ExplorePage";
 import ProfilePage from "@/pages/ProfilePage";
+import JoinServerPage from "@/pages/JoinServerPage";
+import NotificationsBell from "@/components/NotificationsBell";
+import NotFoundPage from "@/pages/NotFoundPage";
 
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
@@ -40,12 +43,13 @@ export default function DashboardPage() {
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-gray-800 bg-gray-900 px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-full bg-accent-600 flex items-center justify-center text-sm font-bold">
+            <div className="h-8 w-8 shrink-0 rounded-full bg-accent-600 flex items-center justify-center text-sm font-bold">
               {user?.username?.[0]?.toUpperCase()}
             </div>
-            <span className="font-medium">{user?.username}</span>
+            <span className="hidden font-medium sm:inline">{user?.username}</span>
           </div>
           <div className="flex items-center gap-2">
+            <NotificationsBell />
             <button
               onClick={() => navigate("/settings")}
               className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
@@ -74,7 +78,9 @@ export default function DashboardPage() {
             <Route path="/explore" element={<ExplorePage />} />
             <Route path="/profile/:userId" element={<ProfilePage />} />
             <Route path="/channels/:channelId" element={<ChatArea />} />
+            <Route path="/invite/:inviteCode" element={<JoinServerPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </main>
       </div>

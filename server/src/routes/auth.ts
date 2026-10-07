@@ -4,21 +4,33 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { config } from "../config.js";
-import { authenticate, AuthRequest } from "../middleware/auth.js";
-import { AppError } from "../middleware/errorHandler.js";
+import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
+import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 
 const router = Router();
 
 const registerSchema = z.object({
-  username: z.string().min(3).max(32),
-  email: z.string().email(),
+  username: z.string().min(3).max(32).regex(/^\S+$/, "Username cannot contain spaces"),
+  email: z.string().email().max(254),
   password: z.string().min(8).max(128),
 });
 
 const loginSchema = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
+  email: z.string().email().max(254),
+  password: z.string().min(1).max(128),
 });
+
+const userSelect = {
+  id: true,
+  username: true,
+  email: true,
+  bio: true,
+  avatar: true,
+  status: true,
+  lastSeen: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
 
 function generateTokens(userId: string) {
   const accessToken = jwt.sign({ userId }, config.jwtSecret, { expiresIn: "15m" });
@@ -26,169 +38,116 @@ function generateTokens(userId: string) {
   return { accessToken, refreshToken };
 }
 
-router.post("/register", async (req, res: Response) => {
-  try {
-    const { username, email, password } = registerSchema.parse(req.body);
+function setRefreshCookie(res: Response, refreshToken: string): void {
+  res.cookie("refreshToken", refreshToken, {
+    httpOnly: true,
+    secure: config.isProduction,
+    sameSite: "lax",
+    maxAge: 7 * 24 * 60 * 60 * 1000,
+  });
+}
 
-    const existingUser = await prisma.user.findFirst({
-      where: { OR: [{ email }, { username }] },
+router.post(
+  "/register",
+  asyncHandler(async (req, res) => {
+    const input = parseOrThrow(registerSchema, req.body);
+    const username = input.username;
+    const email = input.email.trim().toLowerCase();
+
+    const existing = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email },
+          { email: { equals: email, mode: "insensitive" } },
+          { username: { equals: username, mode: "insensitive" } },
+        ],
+      },
+      select: { id: true },
     });
 
-    if (existingUser) {
-      throw new AppError("User with this email or username already exists", 409);
+    if (existing) {
+      throw AppError.of("CONFLICT", "An account with this email or username already exists");
     }
 
-    const hashedPassword = await bcrypt.hash(password, 12);
+    const hashedPassword = await bcrypt.hash(input.password, 12);
 
     const user = await prisma.user.create({
       data: { username, email, password: hashedPassword },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        bio: true,
-        avatar: true,
-        status: true,
-        lastSeen: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      select: userSelect,
     });
 
     const { accessToken, refreshToken } = generateTokens(user.id);
+    setRefreshCookie(res, refreshToken);
 
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
+    ok(res, { user, accessToken }, 201);
+  })
+);
+
+router.post(
+  "/login",
+  asyncHandler(async (req, res) => {
+    const input = parseOrThrow(loginSchema, req.body);
+    const email = input.email.trim();
+
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: email, mode: "insensitive" } },
     });
 
-    res.status(201).json({ user, accessToken });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      res.status(400).json({ message: err.errors[0].message });
-      return;
-    }
-    if (err instanceof AppError) {
-      res.status(err.statusCode).json({ message: err.message });
-      return;
-    }
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+    if (!user) throw AppError.of("UNAUTHORIZED", "Invalid email or password");
 
-router.post("/login", async (req, res: Response) => {
-  try {
-    const { email, password } = loginSchema.parse(req.body);
-
-    const user = await prisma.user.findUnique({ where: { email } });
-
-    if (!user) {
-      throw new AppError("Invalid email or password", 401);
-    }
-
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-
-    if (!isPasswordValid) {
-      throw new AppError("Invalid email or password", 401);
-    }
+    const isPasswordValid = await bcrypt.compare(input.password, user.password);
+    if (!isPasswordValid) throw AppError.of("UNAUTHORIZED", "Invalid email or password");
 
     const { accessToken, refreshToken } = generateTokens(user.id);
+    setRefreshCookie(res, refreshToken);
 
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
+    const { password: _password, ...safe } = user;
+    ok(res, { user: safe, accessToken });
+  })
+);
 
-    res.json({
-      user: {
-        id: user.id,
-        username: user.username,
-        email: user.email,
-        bio: user.bio,
-        avatar: user.avatar,
-        status: user.status,
-        lastSeen: user.lastSeen,
-        createdAt: user.createdAt,
-        updatedAt: user.updatedAt,
-      },
-      accessToken,
-    });
-  } catch (err) {
-    if (err instanceof z.ZodError) {
-      res.status(400).json({ message: err.errors[0].message });
-      return;
+router.post(
+  "/refresh",
+  asyncHandler(async (req, res) => {
+    const refreshToken = req.cookies?.refreshToken as string | undefined;
+    if (!refreshToken) throw AppError.of("UNAUTHORIZED", "No refresh token");
+
+    let decoded: { userId?: string };
+    try {
+      decoded = jwt.verify(refreshToken, config.jwtRefreshSecret) as { userId?: string };
+    } catch {
+      throw AppError.of("UNAUTHORIZED", "Invalid refresh token");
     }
-    if (err instanceof AppError) {
-      res.status(err.statusCode).json({ message: err.message });
-      return;
-    }
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+    if (!decoded.userId) throw AppError.of("UNAUTHORIZED", "Invalid refresh token");
 
-router.post("/refresh", async (req, res: Response) => {
-  try {
-    const refreshToken = req.cookies?.refreshToken;
+    const user = await prisma.user.findUnique({ where: { id: decoded.userId }, select: { id: true } });
+    if (!user) throw AppError.of("UNAUTHORIZED", "Invalid refresh token");
 
-    if (!refreshToken) {
-      throw new AppError("No refresh token", 401);
-    }
+    const tokens = generateTokens(user.id);
+    setRefreshCookie(res, tokens.refreshToken);
 
-    const decoded = jwt.verify(refreshToken, config.jwtRefreshSecret) as { userId: string };
+    ok(res, { accessToken: tokens.accessToken });
+  })
+);
 
-    const { accessToken, refreshToken: newRefreshToken } = generateTokens(decoded.userId);
-
-    res.cookie("refreshToken", newRefreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    });
-
-    res.json({ accessToken });
-  } catch {
-    res.status(401).json({ message: "Invalid refresh token" });
-  }
-});
-
-router.get("/me", authenticate, async (req: AuthRequest, res: Response) => {
-  try {
+router.get(
+  "/me",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
     const user = await prisma.user.findUnique({
-      where: { id: req.userId! },
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        bio: true,
-        avatar: true,
-        status: true,
-        lastSeen: true,
-        createdAt: true,
-        updatedAt: true,
-      },
+      where: { id: requireUser(req) },
+      select: userSelect,
     });
 
-    if (!user) {
-      throw new AppError("User not found", 404);
-    }
+    if (!user) throw AppError.of("NOT_FOUND", "User not found");
 
-    res.json({ user });
-  } catch (err) {
-    if (err instanceof AppError) {
-      res.status(err.statusCode).json({ message: err.message });
-      return;
-    }
-    res.status(500).json({ message: "Internal server error" });
-  }
-});
+    ok(res, { user });
+  })
+);
 
-router.post("/logout", (_req, res: Response) => {
+router.post("/logout", (_req, res) => {
   res.clearCookie("refreshToken");
-  res.json({ message: "Logged out" });
+  ok(res, { message: "Logged out" });
 });
 
 export default router;

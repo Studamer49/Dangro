@@ -1,64 +1,150 @@
-import { useEffect, useState } from "react";
-import api from "@/lib/api";
-import type { Post, StoryGroup } from "@/types";
+import { useCallback, useEffect, useRef, useState } from "react";
+import api, { apiErrorMessage } from "@/lib/api";
+import { useAuthStore } from "@/stores/authStore";
+import { useToast } from "@/stores/toastStore";
+import type { Post, PostLike, StoryGroup } from "@/types";
+import CreatePostComposer from "@/components/feed/CreatePostComposer";
+import PostCard from "@/components/feed/PostCard";
+import StoriesBar from "@/components/feed/StoriesBar";
 
 export default function FeedPage() {
+  const user = useAuthStore((s) => s.user);
+  const toast = useToast();
   const [posts, setPosts] = useState<Post[]>([]);
   const [stories, setStories] = useState<StoryGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const pendingLikes = useRef<Set<string>>(new Set());
 
-  useEffect(() => {
-    fetchFeed();
-    fetchStories();
-  }, []);
-
-  const fetchFeed = async () => {
+  const fetchFeed = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
       const { data } = await api.get("/posts/feed");
-      setPosts(data.posts);
-    } catch {
-      // silent
+      setPosts(data.posts ?? []);
+    } catch (err) {
+      setError(apiErrorMessage(err));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  const fetchStories = async () => {
+  const fetchStories = useCallback(async () => {
     try {
       const { data } = await api.get("/stories");
-      setStories(data.stories);
+      setStories(data.stories ?? []);
     } catch {
-      // silent
+      // Stories are non-critical: the bar still renders the "add story" affordance.
     }
+  }, []);
+
+  useEffect(() => {
+    void fetchFeed();
+    void fetchStories();
+  }, [fetchFeed, fetchStories]);
+
+  const handleLike = async (post: Post) => {
+    if (pendingLikes.current.has(post.id)) return;
+    pendingLikes.current.add(post.id);
+
+    const wasLiked = (post.likes?.length ?? 0) > 0;
+    const previousCount = post._count?.likes ?? 0;
+    const viewerLike: PostLike = {
+      id: `optimistic-${post.id}`,
+      postId: post.id,
+      userId: user?.id ?? "",
+      createdAt: new Date().toISOString(),
+    };
+    const optimistic: Post = {
+      ...post,
+      likes: wasLiked ? [] : [viewerLike],
+      _count: {
+        likes: Math.max(0, previousCount + (wasLiked ? -1 : 1)),
+        comments: post._count?.comments ?? 0,
+      },
+    };
+    const revert = (current: Post): Post => ({
+      ...current,
+      likes: wasLiked ? [viewerLike] : [],
+      _count: { likes: previousCount, comments: current._count?.comments ?? 0 },
+    });
+
+    setPosts((prev) => prev.map((p) => (p.id === post.id ? optimistic : p)));
+
+    try {
+      const { data } = await api.post(`/posts/${post.id}/like`);
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === post.id
+            ? {
+                ...p,
+                likes: data.liked ? [viewerLike] : [],
+                _count: { likes: data.likeCount, comments: p._count?.comments ?? 0 },
+              }
+            : p
+        )
+      );
+    } catch (err) {
+      setPosts((prev) => prev.map((p) => (p.id === post.id ? revert(p) : p)));
+      toast.error(apiErrorMessage(err));
+    } finally {
+      pendingLikes.current.delete(post.id);
+    }
+  };
+
+  const handleDelete = async (postId: string) => {
+    try {
+      await api.delete(`/posts/${postId}`);
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+      toast.success("Post deleted");
+    } catch (err) {
+      toast.error(apiErrorMessage(err));
+    }
+  };
+
+  const handleCommentCountChange = (postId: string, delta: number) => {
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              _count: {
+                likes: p._count?.likes ?? 0,
+                comments: Math.max(0, (p._count?.comments ?? 0) + delta),
+              },
+            }
+          : p
+      )
+    );
+  };
+
+  const handleCreated = (post: Post) => {
+    setPosts((prev) => [post, ...prev]);
   };
 
   return (
     <div className="flex h-full flex-col items-center overflow-y-auto bg-gray-950">
-      {stories.length > 0 && (
-        <div className="w-full max-w-lg border-b border-gray-800 px-4 py-4">
-          <div className="flex gap-4 overflow-x-auto">
-            <button className="flex flex-col items-center gap-1">
-              <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-gray-700 bg-gray-800 text-xl">
-                +
-              </div>
-              <span className="text-[10px] text-gray-400">Your story</span>
-            </button>
-            {stories.map((group) => (
-              <button key={group.author.id} className="flex flex-col items-center gap-1">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full border-2 border-red-500 bg-gray-800 text-sm font-bold">
-                  {group.author?.username?.[0]?.toUpperCase()}
-                </div>
-                <span className="text-[10px] text-gray-400">{group.author?.username}</span>
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
+      <div className="w-full max-w-lg border-b border-gray-800 px-4 py-4">
+        <StoriesBar groups={stories} viewer={user} onAdded={() => void fetchStories()} />
+      </div>
 
       <div className="w-full max-w-lg space-y-4 p-4">
+        <CreatePostComposer onCreated={handleCreated} />
+
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
+          </div>
+        ) : error ? (
+          <div className="rounded-xl border border-gray-800 bg-gray-900 p-8 text-center">
+            <p className="text-sm text-red-400">Could not load the feed: {error}</p>
+            <button
+              type="button"
+              onClick={() => void fetchFeed()}
+              className="mt-3 rounded-lg bg-gray-800 px-4 py-2 text-sm text-gray-200 transition-colors hover:bg-gray-700"
+            >
+              Retry
+            </button>
           </div>
         ) : posts.length === 0 ? (
           <div className="py-12 text-center">
@@ -68,47 +154,14 @@ export default function FeedPage() {
           </div>
         ) : (
           posts.map((post) => (
-            <div key={post.id} className="rounded-xl border border-gray-800 bg-gray-900">
-              <div className="flex items-center gap-3 p-4">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-600 text-sm font-bold">
-                  {post.author?.username?.[0]?.toUpperCase()}
-                </div>
-                <span className="text-sm font-medium text-white">{post.author?.username}</span>
-              </div>
-              {post.media?.[0] && (
-                <div className="aspect-square bg-gray-800">
-                  {post.media[0].type === "image" ? (
-                    <img src={post.media[0].url} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <video src={post.media[0].url} controls className="h-full w-full object-cover" />
-                  )}
-                </div>
-              )}
-              <div className="p-4">
-                <div className="mb-2 flex gap-4">
-                  <button className="text-gray-400 hover:text-red-400">
-                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
-                    </svg>
-                  </button>
-                  <button className="text-gray-400 hover:text-white">
-                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                    </svg>
-                  </button>
-                </div>
-                <p className="text-sm text-white">{post._count?.likes || 0} likes</p>
-                {post.caption && (
-                  <p className="mt-1 text-sm text-gray-300">
-                    <span className="font-medium text-white">{post.author?.username}</span>{" "}
-                    {post.caption}
-                  </p>
-                )}
-                <p className="mt-1 text-xs text-gray-500">
-                  {new Date(post.createdAt).toLocaleDateString()}
-                </p>
-              </div>
-            </div>
+            <PostCard
+              key={post.id}
+              post={post}
+              viewer={user}
+              onLike={(target) => void handleLike(target)}
+              onDelete={(postId) => void handleDelete(postId)}
+              onCommentCountChange={handleCommentCountChange}
+            />
           ))
         )}
       </div>

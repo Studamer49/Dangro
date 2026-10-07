@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAuthStore } from "@/stores/authStore";
+import { apiErrorMessage } from "@/lib/api";
 
 const loginSchema = z.object({
   email: z.string().email("Invalid email address"),
@@ -33,8 +34,7 @@ export default function LoginPage() {
       await login(data.email, data.password);
       navigate("/");
     } catch (err: unknown) {
-      const axiosError = err as { response?: { data?: { message?: string } } };
-      setError(axiosError.response?.data?.message || "Login failed");
+      setError(apiErrorMessage(err, "Login failed"));
     } finally {
       setIsSubmitting(false);
     }
