@@ -39,4 +39,4 @@ RUN apk add --no-cache openssl libc6-compat
 
 EXPOSE 3001
 
-CMD ["npm", "start"]
+CMD ["sh", "-c", "npm --prefix server run db:deploy && npm start"]

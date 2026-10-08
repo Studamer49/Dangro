@@ -222,6 +222,7 @@ model DirectMessage {
   attachmentUrl  String?
   attachmentType String?
   replyToId      String?
+  edited         Boolean   @default(false)
   readAt         DateTime?
   deliveredAt    DateTime?
   createdAt      DateTime  @default(now())

@@ -17,6 +17,10 @@ const sendMessageSchema = z.object({
   replyToId: z.string().uuid().nullish(),
 });
 
+const editMessageSchema = z.object({
+  content: z.string().trim().min(1).max(4000),
+});
+
 const dmInclude = {
   sender: { select: { id: true, username: true, avatar: true, status: true } },
   replyTo: { include: { sender: { select: { id: true, username: true } } } },
@@ -190,6 +194,85 @@ router.post(
     }
 
     ok(res, { message }, 201);
+  })
+);
+
+router.patch(
+  "/:id",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const { content } = parseOrThrow(editMessageSchema, req.body);
+    const messageId = paramId(req.params.id, "message id");
+
+    const message = await prisma.directMessage.findUnique({ where: { id: messageId } });
+    if (!message) throw AppError.of("NOT_FOUND", "Message not found");
+    if (message.senderId !== userId) {
+      throw AppError.of("FORBIDDEN", "You can only edit your own messages");
+    }
+
+    const conversation = await assertConversationMember(message.conversationId, userId);
+
+    const updated = await prisma.directMessage.update({
+      where: { id: messageId },
+      data: { content, edited: true },
+      include: dmInclude,
+    });
+
+    const io = getIO();
+    if (io) {
+      io.to(`dm:${message.conversationId}`).emit("dm_message_edited", {
+        conversationId: message.conversationId,
+        message: updated,
+      });
+      io.to(`user:${conversation.user1Id}`).emit("dm_message_edited", {
+        conversationId: message.conversationId,
+        message: updated,
+      });
+      io.to(`user:${conversation.user2Id}`).emit("dm_message_edited", {
+        conversationId: message.conversationId,
+        message: updated,
+      });
+    }
+
+    ok(res, { message: updated });
+  })
+);
+
+router.delete(
+  "/:id",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const messageId = paramId(req.params.id, "message id");
+
+    const message = await prisma.directMessage.findUnique({ where: { id: messageId } });
+    if (!message) throw AppError.of("NOT_FOUND", "Message not found");
+    if (message.senderId !== userId) {
+      throw AppError.of("FORBIDDEN", "You can only delete your own messages");
+    }
+
+    const conversation = await assertConversationMember(message.conversationId, userId);
+
+    await prisma.directMessage.delete({ where: { id: messageId } });
+
+    const io = getIO();
+    if (io) {
+      io.to(`dm:${message.conversationId}`).emit("dm_message_deleted", {
+        conversationId: message.conversationId,
+        messageId,
+      });
+      io.to(`user:${conversation.user1Id}`).emit("dm_message_deleted", {
+        conversationId: message.conversationId,
+        messageId,
+      });
+      io.to(`user:${conversation.user2Id}`).emit("dm_message_deleted", {
+        conversationId: message.conversationId,
+        messageId,
+      });
+    }
+
+    ok(res, { message: "Message deleted" });
   })
 );
 
