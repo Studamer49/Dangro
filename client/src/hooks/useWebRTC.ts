@@ -14,9 +14,9 @@ export function useWebRTC() {
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const {
     isInCall,
+    isCaller,
     callType,
     targetUserId,
-    localStream,
     setLocalStream,
     setRemoteStream,
     endCall,
@@ -30,7 +30,7 @@ export function useWebRTC() {
         const socket = getSocket();
         socket.emit("ice_candidate", {
           targetUserId,
-          candidate: event.candidate.toJSON(),
+          signal: event.candidate.toJSON(),
         });
       }
     };
@@ -52,6 +52,8 @@ export function useWebRTC() {
   }, [targetUserId, setRemoteStream, endCall]);
 
   const startLocalStream = useCallback(async (video: boolean) => {
+    const existing = useCallStore.getState().localStream;
+    if (existing) return existing;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: true,
@@ -77,7 +79,7 @@ export function useWebRTC() {
     await pc.setLocalDescription(offer);
     if (targetUserId) {
       const socket = getSocket();
-      socket.emit("webrtc_offer", { targetUserId, offer: pc.localDescription });
+      socket.emit("webrtc_offer", { targetUserId, signal: offer });
     }
   }, [callType, targetUserId, startLocalStream, createPeerConnection]);
 
@@ -89,7 +91,7 @@ export function useWebRTC() {
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     const socket = getSocket();
-    socket.emit("webrtc_answer", { targetUserId: callerId, answer: pc.localDescription });
+    socket.emit("webrtc_answer", { targetUserId: callerId, signal: answer });
   }, [callType, startLocalStream, createPeerConnection]);
 
   const handleAnswer = useCallback(async (answer: RTCSessionDescriptionInit) => {
@@ -109,15 +111,20 @@ export function useWebRTC() {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
     }
-    if (localStream) {
-      localStream.getTracks().forEach((track) => track.stop());
+    const stream = useCallStore.getState().localStream;
+    if (stream) {
+      stream.getTracks().forEach((track) => track.stop());
     }
     setLocalStream(null);
     setRemoteStream(null);
-  }, [localStream, setLocalStream, setRemoteStream]);
+  }, [setLocalStream, setRemoteStream]);
 
   useEffect(() => {
     if (!isInCall) return;
+
+    if (isCaller) {
+      void startLocalStream(callType === "video");
+    }
 
     const socket = getSocket();
 
@@ -156,7 +163,7 @@ export function useWebRTC() {
       socket.off("call_reject");
       cleanup();
     };
-  }, [isInCall, createOffer, handleOffer, handleAnswer, handleIceCandidate, cleanup]);
+  }, [isInCall, isCaller, callType, createOffer, handleOffer, handleAnswer, handleIceCandidate, cleanup, startLocalStream]);
 
   return { createOffer };
 }
