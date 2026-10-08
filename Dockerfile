@@ -3,11 +3,15 @@ FROM node:20-alpine AS build
 
 WORKDIR /app
 
-# Install root scripts (concurrently) for `npm run build`
+# Install the root scripts and every workspace's dependencies (incl. dev deps,
+# which are required to typecheck/build the client and compile the server).
 COPY package.json package-lock.json* ./
-COPY server/package.json ./server/
-COPY client/package.json ./client/
-RUN npm ci --no-audit
+COPY server/package.json server/package-lock.json* ./server/
+COPY client/package.json client/package-lock.json* ./client/
+RUN apk add --no-cache openssl libc6-compat \
+  && npm ci --no-audit \
+  && npm ci --prefix server --no-audit \
+  && npm ci --prefix client --no-audit
 
 # Copy sources
 COPY server ./server
@@ -31,6 +35,7 @@ COPY --from=build /app/server/node_modules ./server/node_modules
 COPY --from=build /app/server/dist ./server/dist
 COPY --from=build /app/server/prisma ./server/prisma
 COPY --from=build /app/client/dist ./client/dist
+RUN apk add --no-cache openssl libc6-compat
 
 EXPOSE 3001
 
