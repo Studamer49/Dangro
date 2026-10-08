@@ -36,10 +36,10 @@ export default function ChatArea() {
 
     fetchMessages();
     const socket = getSocket();
-    socket.emit("join_channel", channelId);
+    socket.emit("join_channel", { channelId });
 
     const rejoin = () => {
-      socket.emit("join_channel", channelId);
+      socket.emit("join_channel", { channelId });
       void fetchMessages();
     };
     socket.on("connect", rejoin);
@@ -47,12 +47,14 @@ export default function ChatArea() {
     const handleNewMessage = (message: Message) => {
       if (message.channelId !== channelId) return;
       setMessages((prev) => {
-        if (prev.some((m) => m.id === message.id)) return prev;
+        if (prev.some((m) => m.id === message.id)) {
+          return prev.map((m) => (m.id === message.id ? message : m));
+        }
         const optimisticIndex = prev.findIndex(
           (m) =>
             m.id.startsWith("temp-") &&
             m.authorId === message.authorId &&
-            m.content === message.content
+            m.content.trim() === message.content.trim()
         );
         if (optimisticIndex !== -1) {
           const next = [...prev];

@@ -47,31 +47,39 @@ export default function DMChatArea({ conversation }: Props) {
   useEffect(() => {
     fetchMessages();
     const socket = getSocket();
-    socket.emit("dm_join", conversation.id);
+    socket.emit("dm_join", { conversationId: conversation.id });
 
     const rejoin = () => {
-      socket.emit("dm_join", conversation.id);
+      socket.emit("dm_join", { conversationId: conversation.id });
       void fetchMessages();
     };
     socket.on("connect", rejoin);
 
-    const handleNewDM = (message: DirectMessage) => {
-      if (message.conversationId !== conversation.id) return;
+    // Single upsert used by every realtime event so a message can never
+    // appear twice (optimistic temp + server echo racing each other).
+    const upsertMessage = (incoming: DirectMessage) => {
       setMessages((prev) => {
-        if (prev.some((m) => m.id === message.id)) return prev;
+        if (prev.some((m) => m.id === incoming.id)) {
+          return prev.map((m) => (m.id === incoming.id ? incoming : m));
+        }
         const optimisticIndex = prev.findIndex(
           (m) =>
             m.id.startsWith("temp-") &&
-            m.senderId === message.senderId &&
-            m.content === message.content
+            m.senderId === incoming.senderId &&
+            m.content.trim() === incoming.content.trim()
         );
         if (optimisticIndex !== -1) {
           const next = [...prev];
-          next[optimisticIndex] = message;
+          next[optimisticIndex] = incoming;
           return next;
         }
-        return [...prev, message];
+        return [...prev, incoming];
       });
+    };
+
+    const handleNewDM = (message: DirectMessage) => {
+      if (message.conversationId !== conversation.id) return;
+      upsertMessage(message);
       if (message.senderId !== user?.id) {
         markAsRead();
       }
@@ -111,10 +119,7 @@ export default function DMChatArea({ conversation }: Props) {
       message: DirectMessage;
     }) => {
       if (data.conversationId !== conversation.id) return;
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === data.message.id)) return prev;
-        return [...prev, data.message];
-      });
+      upsertMessage(data.message);
       if (data.message.senderId !== user?.id) {
         markAsRead();
       }
@@ -138,7 +143,7 @@ export default function DMChatArea({ conversation }: Props) {
       socket.off("dm_read_receipt", handleReadReceipt);
       socket.off("connect", rejoin);
       clearInterval(pollId);
-      socket.emit("dm_leave", conversation.id);
+      socket.emit("dm_leave", { conversationId: conversation.id });
     };
   }, [conversation.id, user?.id, fetchMessages, markAsRead]);
 
