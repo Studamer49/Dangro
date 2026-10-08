@@ -345,7 +345,7 @@ export default function ChatArea() {
                   )}
                 </div>
 
-                {editingId !== message.id && (
+                {editingId !== message.id && !message.id.startsWith("temp-") && (
                   <div className="absolute -top-3 right-2 z-10 transition-opacity">
                     <div className="flex items-center rounded-lg border border-gray-700 bg-gray-900 px-1 py-0.5 opacity-0 shadow-lg group-hover:opacity-100 focus-within:opacity-100">
                       {quickReactions.map((emoji) => (

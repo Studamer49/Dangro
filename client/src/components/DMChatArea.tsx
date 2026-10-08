@@ -107,15 +107,17 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
     };
 
     const handleRead = (data: { conversationId: string; readBy: string }) => {
-      if (data.conversationId === conversation.id) {
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.senderId === user?.id && !m.readAt
-              ? { ...m, readAt: new Date().toISOString() }
-              : m
-          )
-        );
-      }
+      // Only the OTHER participant reading your messages turns YOUR ticks
+      // blue. The dm_read broadcast includes your own reads (readBy === me),
+      // which must not mark your outgoing messages as read.
+      if (data.conversationId !== conversation.id || data.readBy === user?.id) return;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.senderId === user?.id && !m.readAt
+            ? { ...m, readAt: new Date().toISOString() }
+            : m
+        )
+      );
     };
 
     const handleReadReceipt = handleRead;
@@ -612,7 +614,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
                       </div>
                     </div>
 
-                    {editingId !== msg.id && (
+                    {editingId !== msg.id && !msg.id.startsWith("temp-") && (
                       <div className="absolute -top-3.5 right-0 z-10 transition-opacity">
                         <div className="flex items-center rounded-lg border border-gray-700 bg-gray-900 px-1 py-0.5 opacity-0 shadow-lg group-hover:opacity-100 focus-within:opacity-100">
                           <button

@@ -257,6 +257,11 @@ export function setupSocketHandlers(io: SocketServer): void {
     });
 
     socket.on("disconnect", () => {
+      // The socket has already been removed from its rooms by now, so the
+      // room size is the count of OTHER live connections for this user
+      // (e.g. a second tab). Only go offline when the last one closes.
+      const remaining = io.sockets.adapter.rooms.get(`user:${userId}`)?.size ?? 0;
+      if (remaining > 0) return;
       prisma.user
         .update({ where: { id: userId }, data: { status: "offline", lastSeen: new Date() } })
         .catch((err) => console.error(`[socket] failed to mark ${userId} offline:`, err));

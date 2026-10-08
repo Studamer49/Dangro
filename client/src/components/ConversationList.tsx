@@ -106,10 +106,17 @@ export default function ConversationList({ activeConversation, onSelectConversat
 
     const handleRequestEvent = () => void fetchConversations();
 
+    const handleRead = (data: { conversationId: string }) => {
+      setConversations((prev) =>
+        prev.map((c) => (c.id === data.conversationId ? { ...c, unreadCount: 0 } : c))
+      );
+    };
+
     socket.on("new_dm", handleNewDM);
     socket.on("dm_updated", handleDMUpdated);
     socket.on("dm_message_edited", handleMessageEdited);
     socket.on("dm_message_deleted", handleMessageDeleted);
+    socket.on("dm_read", handleRead);
     socket.on("dm_request", handleRequestEvent);
     socket.on("dm_request_accepted", handleRequestEvent);
     socket.on("dm_request_declined", handleRequestEvent);
@@ -122,6 +129,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
       socket.off("dm_updated", handleDMUpdated);
       socket.off("dm_message_edited", handleMessageEdited);
       socket.off("dm_message_deleted", handleMessageDeleted);
+      socket.off("dm_read", handleRead);
       socket.off("dm_request", handleRequestEvent);
       socket.off("dm_request_accepted", handleRequestEvent);
       socket.off("dm_request_declined", handleRequestEvent);
