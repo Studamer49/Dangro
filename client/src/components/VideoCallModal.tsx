@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useCallStore } from "@/stores/callStore";
 import { useWebRTC } from "@/hooks/useWebRTC";
+import Avatar from "@/components/Avatar";
 
 export default function VideoCallModal() {
   const {
@@ -47,9 +48,7 @@ export default function VideoCallModal() {
         ) : (
           <div className="flex h-full items-center justify-center bg-gray-900">
             <div className="text-center">
-              <div className="mb-4 flex h-24 w-24 items-center justify-center rounded-full bg-accent-600 text-4xl font-bold mx-auto">
-                {targetUser?.username?.[0]?.toUpperCase()}
-              </div>
+              <Avatar user={targetUser} className="mb-4 h-24 w-24 text-4xl" />
               <p className="text-xl font-medium text-white">{targetUser?.username}</p>
               <p className="mt-2 text-sm text-gray-400">Connecting...</p>
             </div>

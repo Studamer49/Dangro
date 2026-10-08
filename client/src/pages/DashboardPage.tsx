@@ -13,6 +13,7 @@ import ExplorePage from "@/pages/ExplorePage";
 import ProfilePage from "@/pages/ProfilePage";
 import JoinServerPage from "@/pages/JoinServerPage";
 import NotificationsBell from "@/components/NotificationsBell";
+import Avatar from "@/components/Avatar";
 import NotFoundPage from "@/pages/NotFoundPage";
 
 export default function DashboardPage() {
@@ -43,9 +44,7 @@ export default function DashboardPage() {
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-gray-800 bg-gray-900 px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="h-8 w-8 shrink-0 rounded-full bg-accent-600 flex items-center justify-center text-sm font-bold">
-              {user?.username?.[0]?.toUpperCase()}
-            </div>
+            <Avatar user={user} className="h-8 w-8 text-sm" />
             <span className="hidden font-medium sm:inline">{user?.username}</span>
           </div>
           <div className="flex items-center gap-2">

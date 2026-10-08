@@ -10,7 +10,7 @@ GitHub  →  Render Web Service (single instance)  →  Neon PostgreSQL
 
 - Render builds the frontend **into** the service, and the Express server serves the SPA, the `/api` routes and Socket.IO all from **one origin** (`CLIENT_URL` = your Render service URL).
 - No separate static host, no GitHub Pages, no CORS gymnastics (origin == host is allowed; `VITE_*` variables are not required in production).
-- Uploads land on the service disk (`server/uploads`) because Render Free has no persistent disk — treat them as ephemeral. Backups / CDN are documented future work.
+- Uploads land on the service disk (default `server/uploads`) because Render Free has no persistent disk — treat them as ephemeral (files vanish on restart/redeploy). On a **paid** plan, attach a [Render persistent disk](https://render.com/docs/disks) and point `UPLOAD_DIR` at its mount path (e.g. `/var/data/uploads`) so uploads survive restarts. Backups / CDN are documented future work.
 
 ## Prerequisites
 

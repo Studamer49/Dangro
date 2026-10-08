@@ -78,8 +78,11 @@ export const config = {
   jwtSecret,
   jwtRefreshSecret: optional("JWT_REFRESH_SECRET", jwtSecret + "_refresh"),
   clientUrls,
-  /** Absolute, CWD-independent directory where uploaded files are written. */
-  uploadDir: path.resolve(__dirname, "../uploads"),
+  /** Absolute, CWD-independent directory where uploaded files are written.
+   *  Override with UPLOAD_DIR (e.g. a persistent disk mount in production). */
+  uploadDir: process.env.UPLOAD_DIR
+    ? path.resolve(process.env.UPLOAD_DIR)
+    : path.resolve(__dirname, "../uploads"),
 } as const;
 
 /** Origins accepted in local development regardless of CLIENT_URL. */

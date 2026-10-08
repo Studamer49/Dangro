@@ -34,31 +34,33 @@ router.get(
   "/",
   authenticate,
   asyncHandler(async (req: AuthRequest, res) => {
-    const userId = requireUser(req);
+    requireUser(req);
 
     await prisma.story.deleteMany({ where: { expiresAt: { lt: new Date() } } });
 
-    const following = await prisma.follow.findMany({
-      where: { followerId: userId },
-      select: { followingId: true },
-    });
-    const authorIds = [userId, ...following.map((f) => f.followingId)];
-
     const stories = await prisma.story.findMany({
-      where: { authorId: { in: authorIds }, expiresAt: { gt: new Date() } },
+      where: { expiresAt: { gt: new Date() } },
       include: { author: { select: { id: true, username: true, avatar: true } } },
       orderBy: { createdAt: "desc" },
+      take: 200,
     });
 
-    const grouped = authorIds
-      .map((authorId) => {
-        const userStories = stories.filter((s) => s.authorId === authorId);
-        if (userStories.length === 0) return null;
-        return { author: userStories[0].author, stories: userStories };
-      })
-      .filter((group): group is NonNullable<typeof group> => group !== null);
+    const order: string[] = [];
+    const byAuthor = new Map<
+      string,
+      { author: (typeof stories)[number]["author"]; stories: (typeof stories)[number][] }
+    >();
+    for (const story of stories) {
+      let group = byAuthor.get(story.authorId);
+      if (!group) {
+        group = { author: story.author, stories: [] };
+        byAuthor.set(story.authorId, group);
+        order.push(story.authorId);
+      }
+      group.stories.push(story);
+    }
 
-    ok(res, { stories: grouped });
+    ok(res, { stories: order.map((authorId) => byAuthor.get(authorId)!) });
   })
 );
 

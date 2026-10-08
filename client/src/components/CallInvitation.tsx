@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useCallStore } from "@/stores/callStore";
 import { getSocket } from "@/lib/socket";
 import api from "@/lib/api";
+import Avatar from "@/components/Avatar";
 import type { User } from "@/types";
 
 export default function CallInvitation() {
@@ -50,9 +51,7 @@ export default function CallInvitation() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
       <div className="w-full max-w-sm rounded-2xl bg-gray-900 p-6 text-center shadow-2xl">
-        <div className={`mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-accent-600 text-3xl font-bold ${ringing ? "animate-pulse" : ""}`}>
-          {incomingCall.caller?.username?.[0]?.toUpperCase() || "?"}
-        </div>
+        <Avatar user={incomingCall.caller} className={`h-20 w-20 text-3xl ${ringing ? "animate-pulse" : ""}`} />
         <h3 className="text-lg font-bold text-white">{incomingCall.caller?.username || "Unknown"}</h3>
         <p className="mt-1 text-sm text-gray-400">
           Incoming {incomingCall.callType} call...

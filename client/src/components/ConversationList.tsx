@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useAuthStore } from "@/stores/authStore";
+import { getSocket } from "@/lib/socket";
 import api from "@/lib/api";
-import type { Conversation, User } from "@/types";
+import Avatar from "@/components/Avatar";
+import type { Conversation, DirectMessage, User } from "@/types";
 
 interface Props {
   activeConversation: Conversation | null;
@@ -15,18 +17,75 @@ export default function ConversationList({ activeConversation, onSelectConversat
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [showSearch, setShowSearch] = useState(false);
 
-  useEffect(() => {
-    fetchConversations();
-  }, []);
-
-  const fetchConversations = async () => {
+  const fetchConversations = useCallback(async () => {
     try {
       const { data } = await api.get("/dms");
       setConversations(data.conversations);
     } catch {
       // silent
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    void fetchConversations();
+    const socket = getSocket();
+
+    const handleNewDM = (message: DirectMessage) => {
+      const isActive = activeConversation?.id === message.conversationId;
+      const isSelf = message.senderId === user?.id;
+      setConversations((prev) => {
+        if (!prev.some((c) => c.id === message.conversationId)) {
+          void fetchConversations();
+          return prev;
+        }
+        const unreadDelta = !isSelf && !isActive ? 1 : 0;
+        const updated = prev.map((c) =>
+          c.id === message.conversationId
+            ? {
+                ...c,
+                lastMessage: message,
+                lastMessageAt: message.createdAt,
+                unreadCount: c.unreadCount + unreadDelta,
+              }
+            : c
+        );
+        const index = updated.findIndex((c) => c.id === message.conversationId);
+        return [updated[index], ...updated.filter((c) => c.id !== message.conversationId)];
+      });
+    };
+
+    const handleDMUpdated = (data: { conversationId: string }) => {
+      setConversations((prev) => {
+        if (!prev.some((c) => c.id === data.conversationId)) {
+          void fetchConversations();
+          return prev;
+        }
+        const index = prev.findIndex((c) => c.id === data.conversationId);
+        return [prev[index], ...prev.filter((c) => c.id !== data.conversationId)];
+      });
+    };
+
+    const handleConnect = () => void fetchConversations();
+
+    socket.on("new_dm", handleNewDM);
+    socket.on("dm_updated", handleDMUpdated);
+    socket.on("connect", handleConnect);
+
+    return () => {
+      socket.off("new_dm", handleNewDM);
+      socket.off("dm_updated", handleDMUpdated);
+      socket.off("connect", handleConnect);
+    };
+  }, [activeConversation?.id, user?.id, fetchConversations]);
+
+  useEffect(() => {
+    if (!activeConversation?.id) return;
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === activeConversation.id ? { ...c, unreadCount: 0 } : c
+      )
+    );
+  }, [activeConversation?.id]);
 
   const searchUsers = async (query: string) => {
     setSearchQuery(query);
@@ -109,9 +168,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
                   onClick={() => startConversation(u.id)}
                   className="flex w-full items-center gap-3 rounded-lg px-2 py-2 text-left hover:bg-gray-800"
                 >
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-accent-600 text-xs font-bold">
-                    {u.username[0].toUpperCase()}
-                  </div>
+                  <Avatar user={u} className="h-8 w-8 text-xs" />
                   <span className="text-sm text-white">{u.username}</span>
                 </button>
               ))}
@@ -148,9 +205,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
                 }`}
               >
                 <div className="relative flex-shrink-0">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent-600 text-sm font-bold">
-                    {conv.otherUser?.username?.[0]?.toUpperCase()}
-                  </div>
+                  <Avatar user={conv.otherUser} className="h-10 w-10 text-sm" />
                   <div
                     className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-gray-900 ${
                       conv.otherUser?.status === "online"

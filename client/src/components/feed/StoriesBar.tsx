@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import api, { apiErrorMessage } from "@/lib/api";
 import { useToast } from "@/stores/toastStore";
-import type { StoryGroup, User } from "@/types";
+import Avatar from "@/components/Avatar";
+import type { Story, StoryGroup, User } from "@/types";
 
 interface StoriesBarProps {
   groups: StoryGroup[];
   viewer: User | null;
-  onAdded: () => void;
+  onAdded: (story: Story | undefined) => void;
 }
 
 export default function StoriesBar({ groups, viewer, onAdded }: StoriesBarProps) {
@@ -67,9 +68,10 @@ export default function StoriesBar({ groups, viewer, onAdded }: StoriesBarProps)
         throw new Error("Only images and videos can be added to your story");
       }
       const mediaType = data.type === "video" ? "video" : "image";
-      await api.post("/stories", { mediaUrl: data.url, mediaType });
+      const { data: storyData } = await api.post("/stories", { mediaUrl: data.url, mediaType });
+      const story = storyData.story as Story | undefined;
       toast.success("Story added");
-      onAdded();
+      onAdded(story);
     } catch (err) {
       toast.error(apiErrorMessage(err));
     } finally {
@@ -157,9 +159,7 @@ export default function StoriesBar({ groups, viewer, onAdded }: StoriesBarProps)
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center gap-2 border-b border-gray-800 p-3">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent-600 text-sm font-bold">
-                {viewingGroup.author.username?.[0]?.toUpperCase() ?? "?"}
-              </div>
+              <Avatar user={viewingGroup.author} className="h-8 w-8 text-sm" />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-semibold text-white">
                   {viewingGroup.author.username}

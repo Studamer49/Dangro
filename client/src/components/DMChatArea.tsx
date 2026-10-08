@@ -4,6 +4,7 @@ import { useCallStore } from "@/stores/callStore";
 import { getSocket } from "@/lib/socket";
 import api from "@/lib/api";
 import VoiceRecorder from "@/components/VoiceRecorder";
+import Avatar from "@/components/Avatar";
 import type { Conversation, DirectMessage } from "@/types";
 
 interface Props {
@@ -48,10 +49,27 @@ export default function DMChatArea({ conversation }: Props) {
     const socket = getSocket();
     socket.emit("dm_join", conversation.id);
 
+    const rejoin = () => {
+      socket.emit("dm_join", conversation.id);
+      void fetchMessages();
+    };
+    socket.on("connect", rejoin);
+
     const handleNewDM = (message: DirectMessage) => {
       if (message.conversationId !== conversation.id) return;
       setMessages((prev) => {
         if (prev.some((m) => m.id === message.id)) return prev;
+        const optimisticIndex = prev.findIndex(
+          (m) =>
+            m.id.startsWith("temp-") &&
+            m.senderId === message.senderId &&
+            m.content === message.content
+        );
+        if (optimisticIndex !== -1) {
+          const next = [...prev];
+          next[optimisticIndex] = message;
+          return next;
+        }
         return [...prev, message];
       });
       if (message.senderId !== user?.id) {
@@ -96,6 +114,7 @@ export default function DMChatArea({ conversation }: Props) {
       socket.off("dm_typing_start", handleTypingStart);
       socket.off("dm_typing_stop", handleTypingStop);
       socket.off("dm_read", handleRead);
+      socket.off("connect", rejoin);
       socket.emit("dm_leave", conversation.id);
     };
   }, [conversation.id, user?.id, fetchMessages, markAsRead]);
@@ -119,8 +138,27 @@ export default function DMChatArea({ conversation }: Props) {
     socket.emit("dm_typing_stop", { conversationId: conversation.id });
 
     const content = newMessage;
+    const tempId = `temp-${Date.now()}`;
     setNewMessage("");
     setReplyTo(null);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: tempId,
+        content,
+        senderId: user?.id ?? "",
+        conversationId: conversation.id,
+        attachmentUrl: null,
+        attachmentType: null,
+        replyToId: replyTo?.id ?? null,
+        readAt: null,
+        deliveredAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        sender: user ?? undefined,
+        replyTo: replyTo ?? undefined,
+      },
+    ]);
 
     try {
       await api.post(`/dms/${conversation.id}`, {
@@ -128,6 +166,7 @@ export default function DMChatArea({ conversation }: Props) {
         replyToId: replyTo?.id || null,
       });
     } catch {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setNewMessage(content);
     }
   };
@@ -259,9 +298,7 @@ export default function DMChatArea({ conversation }: Props) {
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-gray-800 bg-gray-900 px-4 py-3">
         <div className="relative">
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-600 text-sm font-bold">
-            {conversation.otherUser?.username?.[0]?.toUpperCase()}
-          </div>
+          <Avatar user={conversation.otherUser} className="h-9 w-9 text-sm" />
           <div
             className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-gray-900 ${
               conversation.otherUser?.status === "online"

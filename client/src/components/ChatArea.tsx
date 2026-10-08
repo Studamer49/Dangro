@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { getSocket } from "@/lib/socket";
 import api from "@/lib/api";
+import Avatar from "@/components/Avatar";
 import type { Message, Reaction } from "@/types";
 
 export default function ChatArea() {
@@ -37,10 +38,27 @@ export default function ChatArea() {
     const socket = getSocket();
     socket.emit("join_channel", channelId);
 
+    const rejoin = () => {
+      socket.emit("join_channel", channelId);
+      void fetchMessages();
+    };
+    socket.on("connect", rejoin);
+
     const handleNewMessage = (message: Message) => {
       if (message.channelId !== channelId) return;
       setMessages((prev) => {
         if (prev.some((m) => m.id === message.id)) return prev;
+        const optimisticIndex = prev.findIndex(
+          (m) =>
+            m.id.startsWith("temp-") &&
+            m.authorId === message.authorId &&
+            m.content === message.content
+        );
+        if (optimisticIndex !== -1) {
+          const next = [...prev];
+          next[optimisticIndex] = message;
+          return next;
+        }
         return [...prev, message];
       });
     };
@@ -101,6 +119,7 @@ export default function ChatArea() {
       socket.off("message_reactions_updated", handleReactionsUpdated);
       socket.off("typing_start", handleTypingStart);
       socket.off("typing_stop", handleTypingStop);
+      socket.off("connect", rejoin);
     };
   }, [channelId, user?.id, fetchMessages]);
 
@@ -114,8 +133,24 @@ export default function ChatArea() {
     socket.emit("typing_stop", { channelId });
 
     const content = newMessage;
+    const tempId = `temp-${Date.now()}`;
     setNewMessage("");
     setReplyTo(null);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: tempId,
+        content,
+        authorId: user?.id ?? "",
+        channelId,
+        replyToId: replyTo?.id ?? null,
+        edited: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        author: user ?? undefined,
+        reactions: [],
+      },
+    ]);
 
     try {
       await api.post("/messages", {
@@ -124,6 +159,7 @@ export default function ChatArea() {
         replyToId: replyTo?.id || null,
       });
     } catch {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setNewMessage(content);
     }
   };
@@ -207,9 +243,7 @@ export default function ChatArea() {
                 key={message.id}
                 className="group flex gap-3 rounded-lg px-2 py-1 hover:bg-gray-900/50"
               >
-                <div className="h-10 w-10 flex-shrink-0 rounded-full bg-accent-600 flex items-center justify-center text-sm font-bold">
-                  {message.author?.username?.[0]?.toUpperCase()}
-                </div>
+                <Avatar user={message.author} className="h-10 w-10 text-sm" />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="font-medium text-white">

@@ -3,6 +3,7 @@ import type { ChangeEvent } from "react";
 import api, { apiErrorMessage } from "@/lib/api";
 import { useAuthStore } from "@/stores/authStore";
 import { useToast } from "@/stores/toastStore";
+import Avatar from "@/components/Avatar";
 import type { Post } from "@/types";
 
 interface CreatePostComposerProps {
@@ -92,9 +93,7 @@ export default function CreatePostComposer({ onCreated }: CreatePostComposerProp
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
       <div className="flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-600 text-sm font-bold">
-          {user?.username?.[0]?.toUpperCase() ?? "?"}
-        </div>
+        <Avatar user={user} className="h-9 w-9 text-sm" />
         <textarea
           value={caption}
           onChange={(event) => setCaption(event.target.value)}

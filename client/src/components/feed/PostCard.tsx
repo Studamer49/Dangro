@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { Post, User } from "@/types";
 import CommentsSection from "./CommentsSection";
+import Avatar from "@/components/Avatar";
 
 interface PostCardProps {
   post: Post;
@@ -25,9 +26,7 @@ export default function PostCard({ post, viewer, onLike, onDelete, onCommentCoun
   return (
     <article className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900">
       <div className="flex items-center gap-3 p-4">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-accent-600 text-sm font-bold">
-          {post.author?.username?.[0]?.toUpperCase() ?? "?"}
-        </div>
+        <Avatar user={post.author} className="h-9 w-9 text-sm" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-medium text-white">{post.author?.username ?? "Unknown"}</p>
           <p className="text-xs text-gray-500">{new Date(post.createdAt).toLocaleDateString()}</p>

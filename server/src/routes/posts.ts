@@ -68,14 +68,7 @@ router.get(
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = requireUser(req);
 
-    const following = await prisma.follow.findMany({
-      where: { followerId: userId },
-      select: { followingId: true },
-    });
-    const authorIds = [userId, ...following.map((f) => f.followingId)];
-
     const posts = await prisma.post.findMany({
-      where: { authorId: { in: authorIds } },
       include: withViewer(userId),
       orderBy: { createdAt: "desc" },
       take: 50,

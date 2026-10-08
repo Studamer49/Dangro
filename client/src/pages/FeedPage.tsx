@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import api, { apiErrorMessage } from "@/lib/api";
 import { useAuthStore } from "@/stores/authStore";
 import { useToast } from "@/stores/toastStore";
-import type { Post, PostLike, StoryGroup } from "@/types";
+import type { Post, PostLike, Story, StoryGroup } from "@/types";
 import CreatePostComposer from "@/components/feed/CreatePostComposer";
 import PostCard from "@/components/feed/PostCard";
 import StoriesBar from "@/components/feed/StoriesBar";
@@ -122,10 +122,31 @@ export default function FeedPage() {
     setPosts((prev) => [post, ...prev]);
   };
 
+  const handleStoryAdded = useCallback(
+    (story: Story | undefined) => {
+      const author = story?.author;
+      if (story && author) {
+        setStories((prev) => {
+          const existing = prev.find((group) => group.author.id === author.id);
+          if (existing) {
+            return prev.map((group) =>
+              group.author.id === author.id
+                ? { ...group, stories: [story, ...group.stories] }
+                : group
+            );
+          }
+          return [{ author, stories: [story] }, ...prev];
+        });
+      }
+      void fetchStories();
+    },
+    [fetchStories]
+  );
+
   return (
     <div className="flex h-full flex-col items-center overflow-y-auto bg-gray-950">
       <div className="w-full max-w-lg border-b border-gray-800 px-4 py-4">
-        <StoriesBar groups={stories} viewer={user} onAdded={() => void fetchStories()} />
+        <StoriesBar groups={stories} viewer={user} onAdded={handleStoryAdded} />
       </div>
 
       <div className="w-full max-w-lg space-y-4 p-4">
@@ -150,7 +171,7 @@ export default function FeedPage() {
           <div className="py-12 text-center">
             <div className="mb-4 text-6xl">📸</div>
             <p className="text-lg text-gray-400">No posts yet</p>
-            <p className="text-sm text-gray-500">Follow people or create a post to see content here</p>
+            <p className="text-sm text-gray-500">Be the first to share something</p>
           </div>
         ) : (
           posts.map((post) => (

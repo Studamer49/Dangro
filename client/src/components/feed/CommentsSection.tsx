@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import api, { apiErrorMessage } from "@/lib/api";
 import { useToast } from "@/stores/toastStore";
+import Avatar from "@/components/Avatar";
 import type { PostComment, User } from "@/types";
 
 interface CommentsSectionProps {
@@ -94,9 +95,7 @@ export default function CommentsSection({ postId, viewer, onCountChange }: Comme
         <ul className="space-y-3">
           {comments.map((comment) => (
             <li key={comment.id} className="flex gap-2">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-accent-600 text-xs font-bold">
-                {comment.author?.username?.[0]?.toUpperCase() ?? "?"}
-              </div>
+              <Avatar user={comment.author} className="h-7 w-7 text-xs" />
               <div className="min-w-0">
                 <p className="text-sm text-white">
                   <span className="font-medium">{comment.author?.username ?? "Unknown"}</span>{" "}
