@@ -1,11 +1,13 @@
 import { useEffect, useRef } from "react";
 import { useCallStore } from "@/stores/callStore";
 import { useWebRTC } from "@/hooks/useWebRTC";
+import { startRingtone } from "@/lib/ringtone";
 import Avatar from "@/components/Avatar";
 
 export default function VideoCallModal() {
   const {
     isInCall,
+    isCaller,
     callType,
     targetUser,
     localStream,
@@ -33,12 +35,22 @@ export default function VideoCallModal() {
     }
   }, [remoteStream]);
 
+  // Caller hears a ringtone while waiting for the other side to answer.
+  useEffect(() => {
+    if (!isInCall || !isCaller || remoteStream) return;
+    const stop = startRingtone();
+    return () => stop();
+  }, [isInCall, isCaller, remoteStream]);
+
   if (!isInCall) return null;
+
+  const isVideoCall = callType === "video";
+  const isConnected = !!remoteStream;
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-gray-950">
       <div className="relative flex-1">
-        {remoteStream ? (
+        {isConnected && isVideoCall ? (
           <video
             ref={remoteVideoRef}
             autoPlay
@@ -48,14 +60,24 @@ export default function VideoCallModal() {
         ) : (
           <div className="flex h-full items-center justify-center bg-gray-900">
             <div className="text-center">
-              <Avatar user={targetUser} className="mb-4 h-24 w-24 text-4xl" />
+              <div className={isConnected ? "" : "animate-pulse"}>
+                <Avatar user={targetUser} className="mx-auto mb-4 h-24 w-24 text-4xl" />
+              </div>
               <p className="text-xl font-medium text-white">{targetUser?.username}</p>
-              <p className="mt-2 text-sm text-gray-400">Connecting...</p>
+              <p className="mt-2 text-sm text-gray-400">
+                {!isConnected
+                  ? isCaller
+                    ? "Ringing..."
+                    : "Connecting..."
+                  : isVideoCall
+                  ? "Connected"
+                  : "Voice call"}
+              </p>
             </div>
           </div>
         )}
 
-        {localStream && (
+        {localStream && isVideoCall && (
           <div className="absolute right-4 top-4 h-40 w-32 overflow-hidden rounded-xl border-2 border-gray-700 bg-gray-800 shadow-lg">
             <video
               ref={localVideoRef}
@@ -88,7 +110,7 @@ export default function VideoCallModal() {
           )}
         </button>
 
-        {callType === "video" && (
+        {isVideoCall && (
           <button
             onClick={toggleVideo}
             className={`flex h-12 w-12 items-center justify-center rounded-full transition-colors ${

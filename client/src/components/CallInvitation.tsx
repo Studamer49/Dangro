@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCallStore } from "@/stores/callStore";
 import { getSocket } from "@/lib/socket";
+import { startRingtone } from "@/lib/ringtone";
 import api from "@/lib/api";
 import Avatar from "@/components/Avatar";
 import type { User } from "@/types";
@@ -8,6 +9,7 @@ import type { User } from "@/types";
 export default function CallInvitation() {
   const { incomingCall, setIncomingCall, acceptCall, rejectCall } = useCallStore();
   const [ringing, setRinging] = useState(false);
+  const stopToneRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const socket = getSocket();
@@ -30,11 +32,31 @@ export default function CallInvitation() {
       setRinging(true);
     };
 
+    const handleCallEnd = () => {
+      setIncomingCall(null);
+      setRinging(false);
+    };
+
     socket.on("call_invite", handleCallInvite);
+    socket.on("call_end", handleCallEnd);
     return () => {
       socket.off("call_invite", handleCallInvite);
+      socket.off("call_end", handleCallEnd);
     };
   }, [setIncomingCall]);
+
+  useEffect(() => {
+    if (ringing) {
+      stopToneRef.current = startRingtone();
+    } else {
+      stopToneRef.current?.();
+      stopToneRef.current = null;
+    }
+    return () => {
+      stopToneRef.current?.();
+      stopToneRef.current = null;
+    };
+  }, [ringing]);
 
   useEffect(() => {
     if (incomingCall) {
