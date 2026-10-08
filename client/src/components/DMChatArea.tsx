@@ -18,6 +18,9 @@ export default function DMChatArea({ conversation }: Props) {
   const [newMessage, setNewMessage] = useState("");
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
   const [replyTo, setReplyTo] = useState<DirectMessage | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [flashId, setFlashId] = useState<string | null>(null);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -114,6 +117,17 @@ export default function DMChatArea({ conversation }: Props) {
 
     const handleReadReceipt = handleRead;
 
+    const handleEdited = (data: { conversationId: string; message: DirectMessage }) => {
+      if (data.conversationId !== conversation.id) return;
+      setMessages((prev) => prev.map((m) => (m.id === data.message.id ? data.message : m)));
+    };
+
+    const handleDeleted = (data: { conversationId: string; messageId: string }) => {
+      if (data.conversationId !== conversation.id) return;
+      setMessages((prev) => prev.filter((m) => m.id !== data.messageId));
+      setReplyTo((cur) => (cur?.id === data.messageId ? null : cur));
+    };
+
     const handleDMUpdated = (data: {
       conversationId: string;
       message: DirectMessage;
@@ -127,6 +141,8 @@ export default function DMChatArea({ conversation }: Props) {
 
     socket.on("new_dm", handleNewDM);
     socket.on("dm_updated", handleDMUpdated);
+    socket.on("dm_message_edited", handleEdited);
+    socket.on("dm_message_deleted", handleDeleted);
     socket.on("dm_typing_start", handleTypingStart);
     socket.on("dm_typing_stop", handleTypingStop);
     socket.on("dm_read", handleRead);
@@ -137,6 +153,8 @@ export default function DMChatArea({ conversation }: Props) {
     return () => {
       socket.off("new_dm", handleNewDM);
       socket.off("dm_updated", handleDMUpdated);
+      socket.off("dm_message_edited", handleEdited);
+      socket.off("dm_message_deleted", handleDeleted);
       socket.off("dm_typing_start", handleTypingStart);
       socket.off("dm_typing_stop", handleTypingStop);
       socket.off("dm_read", handleRead);
@@ -146,6 +164,13 @@ export default function DMChatArea({ conversation }: Props) {
       socket.emit("dm_leave", { conversationId: conversation.id });
     };
   }, [conversation.id, user?.id, fetchMessages, markAsRead]);
+
+  useEffect(() => {
+    setEditingId(null);
+    setEditContent("");
+    setReplyTo(null);
+    setFlashId(null);
+  }, [conversation.id]);
 
   useEffect(() => {
     if (shouldAutoScroll) {
@@ -179,6 +204,7 @@ export default function DMChatArea({ conversation }: Props) {
         attachmentUrl: null,
         attachmentType: null,
         replyToId: replyTo?.id ?? null,
+        edited: false,
         readAt: null,
         deliveredAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
@@ -221,6 +247,7 @@ export default function DMChatArea({ conversation }: Props) {
         attachmentUrl: null,
         attachmentType: previewType,
         replyToId: null,
+        edited: false,
         readAt: null,
         deliveredAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
@@ -271,6 +298,7 @@ export default function DMChatArea({ conversation }: Props) {
         attachmentUrl: null,
         attachmentType: "audio",
         replyToId: null,
+        edited: false,
         readAt: null,
         deliveredAt: new Date().toISOString(),
         createdAt: new Date().toISOString(),
@@ -305,6 +333,35 @@ export default function DMChatArea({ conversation }: Props) {
     }
   };
 
+  const scrollToMessage = (id: string) => {
+    document.getElementById(`dm-message-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFlashId(id);
+    window.setTimeout(() => setFlashId((cur) => (cur === id ? null : cur)), 1500);
+  };
+
+  const editMessage = async (messageId: string) => {
+    if (!editContent.trim() || messageId.startsWith("temp-")) return;
+    try {
+      const { data } = await api.patch(`/dms/${messageId}`, { content: editContent });
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? data.message : m)));
+      setEditingId(null);
+      setEditContent("");
+    } catch {
+      // silent
+    }
+  };
+
+  const deleteMessage = async (messageId: string) => {
+    if (messageId.startsWith("temp-")) return;
+    try {
+      await api.delete(`/dms/${messageId}`);
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+      setReplyTo((cur) => (cur?.id === messageId ? null : cur));
+    } catch {
+      // silent
+    }
+  };
+
   const handleTyping = () => {
     const socket = getSocket();
     socket.emit("dm_typing_start", { conversationId: conversation.id });
@@ -320,6 +377,7 @@ export default function DMChatArea({ conversation }: Props) {
       sendMessage();
     }
     if (e.key === "Escape") {
+      setEditingId(null);
       setReplyTo(null);
     }
   };
@@ -439,47 +497,128 @@ export default function DMChatArea({ conversation }: Props) {
           <div className="space-y-1">
             {messages.map((msg) => {
               const isSelf = msg.senderId === user?.id;
+              const isFlashing = flashId === msg.id;
               return (
                 <div
                   key={msg.id}
+                  id={msg.id.startsWith("temp-") ? undefined : `dm-message-${msg.id}`}
                   className={`group flex ${isSelf ? "justify-end" : "justify-start"}`}
                 >
-                  <div
-                    className={`max-w-[70%] ${
-                      isSelf
-                        ? "bg-accent-600 text-white"
-                        : "bg-gray-800 text-gray-200"
-                    } rounded-2xl px-4 py-2`}
-                  >
-                    {msg.replyTo && (
-                      <div className={`mb-1 rounded border-l-2 ${
-                        isSelf ? "border-accent-300 bg-accent-700/30" : "border-gray-600 bg-gray-700/50"
-                      } px-2 py-1 text-xs opacity-75`}>
-                        {msg.replyTo.sender?.username}: {msg.replyTo.content}
+                  <div className="relative max-w-[70%]">
+                    <div
+                      className={`rounded-2xl px-4 py-2 ${
+                        isFlashing ? "ring-2 ring-accent-400" : ""
+                      } ${isSelf ? "bg-accent-600 text-white" : "bg-gray-800 text-gray-200"}`}
+                    >
+                      {msg.replyTo && (
+                        <button
+                          onClick={() => scrollToMessage(msg.replyTo!.id)}
+                          className={`mb-1 block rounded border-l-2 ${
+                            isSelf
+                              ? "border-accent-300 bg-accent-700/30"
+                              : "border-gray-600 bg-gray-700/50"
+                          } px-2 py-1 text-left text-xs opacity-75 hover:opacity-100`}
+                          title={`Reply to ${msg.replyTo.sender?.username ?? ""}`}
+                        >
+                          {msg.replyTo.sender?.username}: {msg.replyTo.content}
+                        </button>
+                      )}
+                      {editingId === msg.id ? (
+                        <div className="min-w-[220px]">
+                          <input
+                            type="text"
+                            value={editContent}
+                            autoFocus
+                            onChange={(e) => setEditContent(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" && !e.shiftKey) {
+                                e.preventDefault();
+                                void editMessage(msg.id);
+                              }
+                              if (e.key === "Escape") {
+                                setEditingId(null);
+                                setEditContent("");
+                              }
+                            }}
+                            className="w-full bg-transparent py-0.5 text-sm text-white focus:outline-none"
+                          />
+                          <p className="mt-0.5 text-[10px] text-gray-300/80">
+                            <button
+                              onClick={() => {
+                                setEditingId(null);
+                                setEditContent("");
+                              }}
+                              className="underline hover:text-white"
+                            >
+                              escape
+                            </button>{" "}
+                            to cancel ·{" "}
+                            <button
+                              onClick={() => void editMessage(msg.id)}
+                              className="underline hover:text-white"
+                            >
+                              enter
+                            </button>{" "}
+                            to save
+                          </p>
+                        </div>
+                      ) : (
+                        <>
+                          {msg.content && <p className="text-sm break-words">{msg.content}</p>}
+                          {renderAttachment(msg)}
+                        </>
+                      )}
+                      <div
+                        className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${
+                          isSelf ? "text-accent-200" : "text-gray-400"
+                        }`}
+                      >
+                        {msg.edited && <span className="opacity-70">(edited)</span>}
+                        <span>{formatMessageTime(msg.createdAt)}</span>
+                        {renderReadReceipt(msg)}
+                      </div>
+                    </div>
+
+                    {editingId !== msg.id && (
+                      <div className="absolute -top-3.5 right-0 z-10 transition-opacity">
+                        <div className="flex items-center rounded-lg border border-gray-700 bg-gray-900 px-1 py-0.5 opacity-0 shadow-lg group-hover:opacity-100 focus-within:opacity-100">
+                          <button
+                            onClick={() => setReplyTo(msg)}
+                            className="rounded p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white"
+                            title="Reply"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                            </svg>
+                          </button>
+                          {isSelf && (
+                            <button
+                              onClick={() => {
+                                setEditingId(msg.id);
+                                setEditContent(msg.content);
+                              }}
+                              className="rounded p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white"
+                              title="Edit"
+                            >
+                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                              </svg>
+                            </button>
+                          )}
+                          {isSelf && (
+                            <button
+                              onClick={() => void deleteMessage(msg.id)}
+                              className="rounded p-1.5 text-gray-400 hover:bg-red-600/20 hover:text-red-400"
+                              title="Delete"
+                            >
+                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                              </svg>
+                            </button>
+                          )}
+                        </div>
                       </div>
                     )}
-                    {msg.content && (
-                      <p className="text-sm break-words">{msg.content}</p>
-                    )}
-                    {renderAttachment(msg)}
-                    <div className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${
-                      isSelf ? "text-accent-200" : "text-gray-500"
-                    }`}>
-                      <span>{formatMessageTime(msg.createdAt)}</span>
-                      {renderReadReceipt(msg)}
-                    </div>
-                  </div>
-
-                  <div className="ml-1 flex items-start opacity-0 group-hover:opacity-100">
-                    <button
-                      onClick={() => setReplyTo(msg)}
-                      className="rounded p-1 text-gray-500 hover:bg-gray-800 hover:text-white"
-                      title="Reply"
-                    >
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                      </svg>
-                    </button>
                   </div>
                 </div>
               );

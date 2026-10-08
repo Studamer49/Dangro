@@ -122,6 +122,7 @@ export interface DirectMessage {
   attachmentUrl: string | null;
   attachmentType: string | null;
   replyToId: string | null;
+  edited: boolean;
   readAt: string | null;
   deliveredAt: string | null;
   createdAt: string;

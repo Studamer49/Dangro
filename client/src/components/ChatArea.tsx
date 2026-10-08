@@ -15,6 +15,7 @@ export default function ChatArea() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [flashId, setFlashId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -132,6 +133,13 @@ export default function ChatArea() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  useEffect(() => {
+    setEditingId(null);
+    setEditContent("");
+    setReplyTo(null);
+    setFlashId(null);
+  }, [channelId]);
+
   const sendMessage = async () => {
     if (!newMessage.trim() || !channelId) return;
     const socket = getSocket();
@@ -170,9 +178,10 @@ export default function ChatArea() {
   };
 
   const editMessage = async (messageId: string) => {
-    if (!editContent.trim()) return;
+    if (!editContent.trim() || messageId.startsWith("temp-")) return;
     try {
-      await api.patch(`/messages/${messageId}`, { content: editContent });
+      const { data } = await api.patch(`/messages/${messageId}`, { content: editContent });
+      setMessages((prev) => prev.map((m) => (m.id === messageId ? data.message : m)));
       setEditingId(null);
       setEditContent("");
     } catch {
@@ -181,11 +190,20 @@ export default function ChatArea() {
   };
 
   const deleteMessage = async (messageId: string) => {
+    if (messageId.startsWith("temp-")) return;
     try {
       await api.delete(`/messages/${messageId}`);
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+      setReplyTo((cur) => (cur?.id === messageId ? null : cur));
     } catch {
       // silent
     }
+  };
+
+  const scrollToMessage = (id: string) => {
+    document.getElementById(`message-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setFlashId(id);
+    window.setTimeout(() => setFlashId((cur) => (cur === id ? null : cur)), 1500);
   };
 
   const toggleReaction = async (messageId: string, emoji: string) => {
@@ -246,7 +264,10 @@ export default function ChatArea() {
             {messages.map((message) => (
               <div
                 key={message.id}
-                className="group flex gap-3 rounded-lg px-2 py-1 hover:bg-gray-900/50"
+                id={message.id.startsWith("temp-") ? undefined : `message-${message.id}`}
+                className={`group relative flex gap-3 rounded-lg px-2 py-1 hover:bg-gray-900/50 ${
+                  flashId === message.id ? "ring-1 ring-accent-400" : ""
+                }`}
               >
                 <Avatar user={message.author} className="h-10 w-10 text-sm" />
                 <div className="flex-1 min-w-0">
@@ -262,20 +283,45 @@ export default function ChatArea() {
                     )}
                   </div>
                   {message.replyTo && (
-                    <div className="mb-1 rounded border-l-2 border-accent-600 bg-gray-900/50 px-2 py-1 text-xs text-gray-400">
+                    <button
+                      onClick={() => scrollToMessage(message.replyTo!.id)}
+                      className="mb-1 block rounded border-l-2 border-accent-600 bg-gray-900/50 px-2 py-1 text-left text-xs text-gray-400 hover:text-gray-300"
+                      title={`Reply to ${message.replyTo.author?.username ?? ""}`}
+                    >
                       Replying to {message.replyTo.author?.username}:{" "}
                       {message.replyTo.content}
-                    </div>
+                    </button>
                   )}
                   {editingId === message.id ? (
-                    <input
-                      type="text"
-                      value={editContent}
-                      onChange={(e) => setEditContent(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      className="w-full rounded border border-accent-500 bg-gray-800 px-2 py-1 text-white focus:outline-none"
-                      autoFocus
-                    />
+                    <div>
+                      <input
+                        type="text"
+                        value={editContent}
+                        onChange={(e) => setEditContent(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        className="w-full rounded border border-accent-500 bg-gray-800 px-2 py-1 text-white focus:outline-none"
+                        autoFocus
+                      />
+                      <p className="mt-1 text-[10px] text-gray-400">
+                        <button
+                          onClick={() => {
+                            setEditingId(null);
+                            setEditContent("");
+                          }}
+                          className="underline hover:text-white"
+                        >
+                          escape
+                        </button>{" "}
+                        to cancel ·{" "}
+                        <button
+                          onClick={() => void editMessage(message.id)}
+                          className="underline hover:text-white"
+                        >
+                          enter
+                        </button>{" "}
+                        to save
+                      </p>
+                    </div>
                   ) : (
                     <p className="text-gray-300 break-words">{message.content}</p>
                   )}
@@ -299,42 +345,54 @@ export default function ChatArea() {
                   )}
                 </div>
 
-                {message.authorId === user?.id && editingId !== message.id && (
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                    <button
-                      onClick={() => {
-                        setEditingId(message.id);
-                        setEditContent(message.content);
-                      }}
-                      className="rounded p-1 text-gray-500 hover:bg-gray-800 hover:text-white"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => deleteMessage(message.id)}
-                      className="rounded p-1 text-gray-500 hover:bg-red-600/20 hover:text-red-400"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                )}
-                {message.authorId !== user?.id && (
-                  <div className="flex gap-1 opacity-0 group-hover:opacity-100">
-                    {quickReactions.map((emoji) => (
+                {editingId !== message.id && (
+                  <div className="absolute -top-3 right-2 z-10 transition-opacity">
+                    <div className="flex items-center rounded-lg border border-gray-700 bg-gray-900 px-1 py-0.5 opacity-0 shadow-lg group-hover:opacity-100 focus-within:opacity-100">
+                      {quickReactions.map((emoji) => (
+                        <button
+                          key={emoji}
+                          onClick={() => toggleReaction(message.id, emoji)}
+                          className="rounded p-1.5 text-sm text-gray-400 hover:bg-gray-800 hover:text-white"
+                          title={`React ${emoji}`}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
                       <button
-                        key={emoji}
-                        onClick={() => toggleReaction(message.id, emoji)}
-                        className="rounded p-1 text-xs text-gray-500 hover:bg-gray-800 hover:text-white"
+                        onClick={() => setReplyTo(message)}
+                        className="rounded p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white"
+                        title="Reply"
                       >
-                        {emoji}
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                        </svg>
                       </button>
-                    ))}
-                    <button
-                      onClick={() => setReplyTo(message)}
-                      className="rounded p-1 text-gray-500 hover:bg-gray-800 hover:text-white"
-                    >
-                      Reply
-                    </button>
+                      {message.authorId === user?.id && (
+                        <>
+                          <button
+                            onClick={() => {
+                              setEditingId(message.id);
+                              setEditContent(message.content);
+                            }}
+                            className="rounded p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white"
+                            title="Edit"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => void deleteMessage(message.id)}
+                            className="rounded p-1.5 text-gray-400 hover:bg-red-600/20 hover:text-red-400"
+                            title="Delete"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

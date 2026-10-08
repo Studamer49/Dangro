@@ -83,8 +83,31 @@ export default function ConversationList({ activeConversation, onSelectConversat
 
     const handleConnect = () => void fetchConversations();
 
+    const handleMessageEdited = (data: { conversationId: string; message: DirectMessage }) => {
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === data.conversationId && c.lastMessage?.id === data.message.id
+            ? { ...c, lastMessage: data.message }
+            : c
+        )
+      );
+    };
+
+    const handleMessageDeleted = (data: { conversationId: string; messageId: string }) => {
+      setConversations((prev) =>
+        prev.map((c) =>
+          c.id === data.conversationId && c.lastMessage?.id === data.messageId
+            ? { ...c, lastMessage: null, lastMessageAt: null, unreadCount: 0 }
+            : c
+        )
+      );
+      void fetchConversations();
+    };
+
     socket.on("new_dm", handleNewDM);
     socket.on("dm_updated", handleDMUpdated);
+    socket.on("dm_message_edited", handleMessageEdited);
+    socket.on("dm_message_deleted", handleMessageDeleted);
     socket.on("connect", handleConnect);
 
     const pollId = setInterval(() => void fetchConversations(), 20000);
@@ -92,6 +115,8 @@ export default function ConversationList({ activeConversation, onSelectConversat
     return () => {
       socket.off("new_dm", handleNewDM);
       socket.off("dm_updated", handleDMUpdated);
+      socket.off("dm_message_edited", handleMessageEdited);
+      socket.off("dm_message_deleted", handleMessageDeleted);
       socket.off("connect", handleConnect);
       clearInterval(pollId);
     };
