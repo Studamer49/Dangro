@@ -54,14 +54,30 @@ export default function ConversationList({ activeConversation, onSelectConversat
       });
     };
 
-    const handleDMUpdated = (data: { conversationId: string }) => {
+    const handleDMUpdated = (data: {
+      conversationId: string;
+      message: DirectMessage;
+      lastMessageAt: string;
+      unreadCount: number;
+    }) => {
+      const isActive = activeConversation?.id === data.conversationId;
       setConversations((prev) => {
         if (!prev.some((c) => c.id === data.conversationId)) {
           void fetchConversations();
           return prev;
         }
-        const index = prev.findIndex((c) => c.id === data.conversationId);
-        return [prev[index], ...prev.filter((c) => c.id !== data.conversationId)];
+        const updated = prev.map((c) =>
+          c.id === data.conversationId
+            ? {
+                ...c,
+                lastMessage: data.message,
+                lastMessageAt: data.lastMessageAt,
+                unreadCount: isActive ? 0 : data.unreadCount,
+              }
+            : c
+        );
+        const index = updated.findIndex((c) => c.id === data.conversationId);
+        return [updated[index], ...updated.filter((c) => c.id !== data.conversationId)];
       });
     };
 
@@ -71,10 +87,13 @@ export default function ConversationList({ activeConversation, onSelectConversat
     socket.on("dm_updated", handleDMUpdated);
     socket.on("connect", handleConnect);
 
+    const pollId = setInterval(() => void fetchConversations(), 20000);
+
     return () => {
       socket.off("new_dm", handleNewDM);
       socket.off("dm_updated", handleDMUpdated);
       socket.off("connect", handleConnect);
+      clearInterval(pollId);
     };
   }, [activeConversation?.id, user?.id, fetchConversations]);
 

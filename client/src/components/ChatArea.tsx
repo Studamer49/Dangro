@@ -112,6 +112,8 @@ export default function ChatArea() {
     socket.on("typing_start", handleTypingStart);
     socket.on("typing_stop", handleTypingStop);
 
+    const pollId = setInterval(() => void fetchMessages(), 15000);
+
     return () => {
       socket.off("new_message", handleNewMessage);
       socket.off("message_edited", handleEdited);
@@ -120,6 +122,7 @@ export default function ChatArea() {
       socket.off("typing_start", handleTypingStart);
       socket.off("typing_stop", handleTypingStop);
       socket.off("connect", rejoin);
+      clearInterval(pollId);
     };
   }, [channelId, user?.id, fetchMessages]);
 

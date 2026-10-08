@@ -104,17 +104,40 @@ export default function DMChatArea({ conversation }: Props) {
       }
     };
 
+    const handleReadReceipt = handleRead;
+
+    const handleDMUpdated = (data: {
+      conversationId: string;
+      message: DirectMessage;
+    }) => {
+      if (data.conversationId !== conversation.id) return;
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === data.message.id)) return prev;
+        return [...prev, data.message];
+      });
+      if (data.message.senderId !== user?.id) {
+        markAsRead();
+      }
+    };
+
     socket.on("new_dm", handleNewDM);
+    socket.on("dm_updated", handleDMUpdated);
     socket.on("dm_typing_start", handleTypingStart);
     socket.on("dm_typing_stop", handleTypingStop);
     socket.on("dm_read", handleRead);
+    socket.on("dm_read_receipt", handleReadReceipt);
+
+    const pollId = setInterval(() => void fetchMessages(), 15000);
 
     return () => {
       socket.off("new_dm", handleNewDM);
+      socket.off("dm_updated", handleDMUpdated);
       socket.off("dm_typing_start", handleTypingStart);
       socket.off("dm_typing_stop", handleTypingStop);
       socket.off("dm_read", handleRead);
+      socket.off("dm_read_receipt", handleReadReceipt);
       socket.off("connect", rejoin);
+      clearInterval(pollId);
       socket.emit("dm_leave", conversation.id);
     };
   }, [conversation.id, user?.id, fetchMessages, markAsRead]);
@@ -174,6 +197,34 @@ export default function DMChatArea({ conversation }: Props) {
   const sendAttachment = async (file: File) => {
     setIsUploading(true);
     setShowAttachMenu(false);
+
+    const tempId = `temp-${Date.now()}`;
+    const previewType = file.type.startsWith("image")
+      ? "image"
+      : file.type.startsWith("video")
+      ? "video"
+      : file.type.startsWith("audio")
+      ? "audio"
+      : "file";
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: tempId,
+        content: file.name,
+        senderId: user?.id ?? "",
+        conversationId: conversation.id,
+        attachmentUrl: null,
+        attachmentType: previewType,
+        replyToId: null,
+        readAt: null,
+        deliveredAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        sender: user ?? undefined,
+        replyTo: undefined,
+      },
+    ]);
+
     try {
       const formData = new FormData();
       formData.append("file", file);
@@ -181,13 +232,21 @@ export default function DMChatArea({ conversation }: Props) {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId
+            ? { ...m, attachmentUrl: uploadData.url, attachmentType: uploadData.type }
+            : m
+        )
+      );
+
       await api.post(`/dms/${conversation.id}`, {
         content: file.name,
         attachmentUrl: uploadData.url,
         attachmentType: uploadData.type,
       });
     } catch {
-      // silent
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
     } finally {
       setIsUploading(false);
     }
@@ -195,6 +254,27 @@ export default function DMChatArea({ conversation }: Props) {
 
   const sendVoiceMessage = async (blob: Blob) => {
     setIsUploading(true);
+
+    const tempId = `temp-${Date.now()}`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: tempId,
+        content: "Voice message",
+        senderId: user?.id ?? "",
+        conversationId: conversation.id,
+        attachmentUrl: null,
+        attachmentType: "audio",
+        replyToId: null,
+        readAt: null,
+        deliveredAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        sender: user ?? undefined,
+        replyTo: undefined,
+      },
+    ]);
+
     try {
       const formData = new FormData();
       formData.append("file", new Blob([blob], { type: "audio/webm" }), "voice-message.webm");
@@ -202,13 +282,19 @@ export default function DMChatArea({ conversation }: Props) {
         headers: { "Content-Type": "multipart/form-data" },
       });
 
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === tempId ? { ...m, attachmentUrl: uploadData.url } : m
+        )
+      );
+
       await api.post(`/dms/${conversation.id}`, {
         content: "Voice message",
         attachmentUrl: uploadData.url,
         attachmentType: "audio",
       });
     } catch {
-      // silent
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
     } finally {
       setIsUploading(false);
     }

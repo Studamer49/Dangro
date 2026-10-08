@@ -168,17 +168,24 @@ router.post(
       data: { lastMessageAt: new Date() },
     });
 
+    const receiverUnread = await prisma.directMessage.count({
+      where: { conversationId, senderId: { not: otherUserId }, readAt: null },
+    });
+
     const io = getIO();
     if (io) {
       io.to(`dm:${conversationId}`).emit("new_dm", message);
       io.to(`user:${otherUserId}`).emit("dm_updated", {
         conversationId,
-        lastMessage: {
-          id: message.id,
-          content: message.content,
-          senderId: message.senderId,
-          createdAt: message.createdAt,
-        },
+        message,
+        lastMessageAt: message.createdAt,
+        unreadCount: receiverUnread,
+      });
+      io.to(`user:${userId}`).emit("dm_updated", {
+        conversationId,
+        message,
+        lastMessageAt: message.createdAt,
+        unreadCount: 0,
       });
     }
 
