@@ -13,22 +13,35 @@ export type AccentColor =
   | "cyan"
   | "yellow"
   | "teal";
-export type ChatDensity = "comfortable" | "compact";
-export type FontSize = "small" | "default" | "large";
+export type ChatDensity = "cozy" | "comfortable" | "compact";
+
+export interface CustomColors {
+  bg: string;
+  surface: string;
+  border: string;
+  text: string;
+}
 
 interface SettingsState {
   theme: Theme;
   accentColor: AccentColor;
+  customAccent: string;
   chatDensity: ChatDensity;
-  fontSize: FontSize;
+  baseFontSize: number;
+  radius: number;
+  customColors: CustomColors;
   animationsEnabled: boolean;
   developerMode: boolean;
   notificationsEnabled: boolean;
   showOnlineStatus: boolean;
   setTheme: (theme: Theme) => void;
   setAccentColor: (color: AccentColor) => void;
+  setCustomAccent: (hex: string) => void;
   setChatDensity: (density: ChatDensity) => void;
-  setFontSize: (size: FontSize) => void;
+  setBaseFontSize: (size: number) => void;
+  setRadius: (radius: number) => void;
+  setCustomColor: (key: keyof CustomColors, value: string) => void;
+  resetCustomColors: () => void;
   toggleAnimations: () => void;
   toggleDeveloperMode: () => void;
   toggleNotifications: () => void;
@@ -40,8 +53,7 @@ const ACCENTS: AccentColor[] = [
   "indigo", "blue", "green", "red", "orange",
   "pink", "purple", "cyan", "yellow", "teal",
 ];
-const DENSITIES: ChatDensity[] = ["comfortable", "compact"];
-const FONT_SIZES: FontSize[] = ["small", "default", "large"];
+const DENSITIES: ChatDensity[] = ["cozy", "comfortable", "compact"];
 
 function oneOf<T extends string>(value: unknown, allowed: T[], fallback: T): T {
   return typeof value === "string" && (allowed as string[]).includes(value) ? (value as T) : fallback;
@@ -51,11 +63,25 @@ function bool(value: unknown, fallback: boolean): boolean {
   return typeof value === "boolean" ? value : fallback;
 }
 
-const defaults = {
+function num(value: unknown, fallback: number, min: number, max: number): number {
+  const n = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(n)));
+}
+
+function hex(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return /^#[0-9a-fA-F]{6}$/.test(value) ? value : "";
+}
+
+const DEFAULTS = {
   theme: "dark" as Theme,
   accentColor: "indigo" as AccentColor,
+  customAccent: "",
   chatDensity: "comfortable" as ChatDensity,
-  fontSize: "default" as FontSize,
+  baseFontSize: 16,
+  radius: 12,
+  customColors: { bg: "", surface: "", border: "", text: "" } as CustomColors,
   animationsEnabled: true,
   developerMode: false,
   notificationsEnabled: true,
@@ -66,29 +92,44 @@ const defaults = {
  * Persisted settings are user-editable storage: any stale or hand-edited
  * value must degrade to the default instead of crashing ThemeProvider.
  */
-function sanitize(persisted: unknown): typeof defaults {
+function sanitize(persisted: unknown): typeof DEFAULTS {
   const p = (persisted ?? {}) as Record<string, unknown>;
+  const colors = (p.customColors ?? {}) as Record<string, unknown>;
   return {
-    theme: oneOf(p.theme, THEMES, defaults.theme),
-    accentColor: oneOf(p.accentColor, ACCENTS, defaults.accentColor),
-    chatDensity: oneOf(p.chatDensity, DENSITIES, defaults.chatDensity),
-    fontSize: oneOf(p.fontSize, FONT_SIZES, defaults.fontSize),
-    animationsEnabled: bool(p.animationsEnabled, defaults.animationsEnabled),
-    developerMode: bool(p.developerMode, defaults.developerMode),
-    notificationsEnabled: bool(p.notificationsEnabled, defaults.notificationsEnabled),
-    showOnlineStatus: bool(p.showOnlineStatus, defaults.showOnlineStatus),
+    theme: oneOf(p.theme, THEMES, DEFAULTS.theme),
+    accentColor: oneOf(p.accentColor, ACCENTS, DEFAULTS.accentColor),
+    customAccent: hex(p.customAccent),
+    chatDensity: oneOf(p.chatDensity, DENSITIES, DEFAULTS.chatDensity),
+    baseFontSize: num(p.baseFontSize, DEFAULTS.baseFontSize, 13, 20),
+    radius: num(p.radius, DEFAULTS.radius, 4, 28),
+    customColors: {
+      bg: hex(colors.bg),
+      surface: hex(colors.surface),
+      border: hex(colors.border),
+      text: hex(colors.text),
+    },
+    animationsEnabled: bool(p.animationsEnabled, DEFAULTS.animationsEnabled),
+    developerMode: bool(p.developerMode, DEFAULTS.developerMode),
+    notificationsEnabled: bool(p.notificationsEnabled, DEFAULTS.notificationsEnabled),
+    showOnlineStatus: bool(p.showOnlineStatus, DEFAULTS.showOnlineStatus),
   };
 }
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set) => ({
-      ...defaults,
+      ...DEFAULTS,
 
       setTheme: (theme) => set({ theme }),
-      setAccentColor: (accentColor) => set({ accentColor }),
+      setAccentColor: (accentColor) => set({ accentColor, customAccent: "" }),
+      setCustomAccent: (customAccent) => set({ customAccent: hex(customAccent) }),
       setChatDensity: (chatDensity) => set({ chatDensity }),
-      setFontSize: (fontSize) => set({ fontSize }),
+      setBaseFontSize: (baseFontSize) => set({ baseFontSize }),
+      setRadius: (radius) => set({ radius }),
+      setCustomColor: (key, value) =>
+        set((s) => ({ customColors: { ...s.customColors, [key]: hex(value) } })),
+      resetCustomColors: () =>
+        set({ customColors: { bg: "", surface: "", border: "", text: "" } }),
       toggleAnimations: () => set((s) => ({ animationsEnabled: !s.animationsEnabled })),
       toggleDeveloperMode: () => set((s) => ({ developerMode: !s.developerMode })),
       toggleNotifications: () => set((s) => ({ notificationsEnabled: !s.notificationsEnabled })),
@@ -96,13 +137,16 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "dangro-settings",
-      version: 1,
+      version: 2,
       migrate: (persisted) => sanitize(persisted),
       partialize: (state) => ({
         theme: state.theme,
         accentColor: state.accentColor,
+        customAccent: state.customAccent,
         chatDensity: state.chatDensity,
-        fontSize: state.fontSize,
+        baseFontSize: state.baseFontSize,
+        radius: state.radius,
+        customColors: state.customColors,
         animationsEnabled: state.animationsEnabled,
         developerMode: state.developerMode,
         notificationsEnabled: state.notificationsEnabled,

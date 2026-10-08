@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
-import { useSettingsStore } from "@/stores/settingsStore";
 import ServerSidebar from "@/components/ServerSidebar";
 import ChannelSidebar from "@/components/ChannelSidebar";
 import ChatArea from "@/components/ChatArea";
@@ -19,7 +18,6 @@ import NotFoundPage from "@/pages/NotFoundPage";
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
-  const fontSize = useSettingsStore((s) => s.fontSize);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -34,11 +32,8 @@ export default function DashboardPage() {
     document.title = "Dangro";
   }, []);
 
-  const fontSizeClass =
-    fontSize === "small" ? "text-chat-sm" : fontSize === "large" ? "text-chat-lg" : "text-chat-base";
-
   return (
-    <div className={`flex h-screen bg-gray-950 text-white ${fontSizeClass}`}>
+    <div className="flex h-screen bg-gray-950 text-white">
       <ServerSidebar />
       {showChannelSidebar && <ChannelSidebar />}
       <div className="flex flex-1 flex-col">

@@ -1,7 +1,12 @@
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAuthStore } from "@/stores/authStore";
 import EditProfileForm from "@/components/profile/EditProfileForm";
-import type { Theme, AccentColor, ChatDensity, FontSize } from "@/stores/settingsStore";
+import type {
+  Theme,
+  AccentColor,
+  ChatDensity,
+  CustomColors,
+} from "@/stores/settingsStore";
 
 const themes: { value: Theme; label: string; description: string }[] = [
   { value: "dark", label: "Dark", description: "Easy on the eyes" },
@@ -27,6 +32,21 @@ const accentSwatches: Record<AccentColor, string> = {
   orange: "#f97316", pink: "#ec4899", purple: "#a855f7", cyan: "#06b6d4",
   yellow: "#eab308", teal: "#14b8a6",
 };
+
+const DENSITIES: { value: ChatDensity; label: string; description: string }[] = [
+  { value: "cozy", label: "Cozy", description: "Extra breathing room" },
+  { value: "comfortable", label: "Comfortable", description: "Balanced spacing" },
+  { value: "compact", label: "Compact", description: "More messages on screen" },
+];
+
+const fontPresets = [
+  { label: "Small", value: 14 },
+  { label: "Default", value: 16 },
+  { label: "Large", value: 18 },
+];
+
+const FONT_MIN = 13;
+const FONT_MAX = 20;
 
 export default function SettingsPage() {
   const settings = useSettingsStore();
@@ -107,8 +127,8 @@ export default function SettingsPage() {
                   key={a.value}
                   onClick={() => settings.setAccentColor(a.value)}
                   className={`flex flex-col items-center gap-2 rounded-xl border-2 p-3 transition-all ${
-                    settings.accentColor === a.value
-                      ? "border-white/30 bg-white/5"
+                    settings.accentColor === a.value && !settings.customAccent
+                      ? "border-accent-500 bg-accent-600/10"
                       : "border-gray-700 bg-gray-800 hover:border-gray-600"
                   }`}
                 >
@@ -120,48 +140,126 @@ export default function SettingsPage() {
                 </button>
               ))}
             </div>
+            <div className="mt-3 flex items-center gap-3 rounded-xl bg-gray-800 p-4">
+              <input
+                type="color"
+                value={settings.customAccent || accentSwatches[settings.accentColor]}
+                onChange={(e) => settings.setCustomAccent(e.target.value)}
+                className="h-9 w-12 cursor-pointer rounded-lg border border-gray-700 bg-gray-900"
+              />
+              <div>
+                <p className="text-sm font-medium text-white">Custom accent</p>
+                <p className="text-xs text-gray-400">
+                  Pick any color to override the accent everywhere.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section>
+            <h3 className="mb-4 text-lg font-bold text-white">Custom Colors</h3>
+            <div className="grid grid-cols-2 gap-3">
+              {(
+                [
+                  { key: "bg", label: "Background" },
+                  { key: "surface", label: "Cards & overlays" },
+                  { key: "border", label: "Borders" },
+                  { key: "text", label: "Text" },
+                ] as { key: keyof CustomColors; label: string }[]
+              ).map(({ key, label }) => (
+                <div key={key} className="rounded-xl bg-gray-800 p-4">
+                  <p className="mb-2 text-sm font-medium text-white">{label}</p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={settings.customColors[key] || "#000000"}
+                      onChange={(e) => settings.setCustomColor(key, e.target.value)}
+                      className="h-9 w-12 cursor-pointer rounded-lg border border-gray-700 bg-gray-900"
+                    />
+                    {settings.customColors[key] && (
+                      <button
+                        onClick={() => settings.setCustomColor(key, "")}
+                        className="rounded-lg border border-gray-700 px-2 py-1 text-xs text-gray-400 hover:text-white"
+                      >
+                        Reset
+                      </button>
+                    )}
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500">
+                    Leave unset to use the theme&apos;s {key}.
+                  </p>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <section>
+            <h3 className="mb-4 text-lg font-bold text-white">Text Size</h3>
+            <div className="rounded-xl bg-gray-800 p-4">
+              <div className="mb-3 flex gap-2">
+                {fontPresets.map((p) => (
+                  <button
+                    key={p.value}
+                    onClick={() => settings.setBaseFontSize(p.value)}
+                    className={`rounded-lg px-3 py-1 text-sm font-medium transition-colors ${
+                      settings.baseFontSize === p.value
+                        ? "bg-accent-600 text-white"
+                        : "bg-gray-900 text-gray-400 hover:text-white"
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <Slider
+                label={`Global size — ${settings.baseFontSize}px`}
+                min={FONT_MIN}
+                max={FONT_MAX}
+                value={settings.baseFontSize}
+                onChange={settings.setBaseFontSize}
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Scales text across the entire website.
+              </p>
+            </div>
+          </section>
+
+          <section>
+            <h3 className="mb-4 text-lg font-bold text-white">Shapes</h3>
+            <div className="rounded-xl bg-gray-800 p-4">
+              <Slider
+                label={`Corner radius — ${settings.radius}px`}
+                min={4}
+                max={28}
+                value={settings.radius}
+                onChange={settings.setRadius}
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Controls how round buttons, cards, and input boxes are.
+              </p>
+            </div>
           </section>
 
           <section>
             <h3 className="mb-4 text-lg font-bold text-white">Chat</h3>
             <div className="space-y-4">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-gray-300">
+              <div className="rounded-xl bg-gray-800 p-4">
+                <p className="mb-3 text-sm font-medium text-gray-300">
                   Density
-                </label>
-                <div className="flex gap-2">
-                  {(["comfortable", "compact"] as ChatDensity[]).map((d) => (
+                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  {DENSITIES.map((d) => (
                     <button
-                      key={d}
-                      onClick={() => settings.setChatDensity(d)}
-                      className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                        settings.chatDensity === d
-                          ? "bg-accent-600 text-white"
-                          : "bg-gray-800 text-gray-400 hover:text-white"
+                      key={d.value}
+                      onClick={() => settings.setChatDensity(d.value)}
+                      className={`rounded-lg border px-3 py-2 text-sm text-left transition-colors ${
+                        settings.chatDensity === d.value
+                          ? "border-accent-500 bg-accent-600/10 text-white"
+                          : "border-gray-700 text-gray-400 hover:border-gray-600 hover:text-white"
                       }`}
                     >
-                      {d.charAt(0).toUpperCase() + d.slice(1)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="mb-2 block text-sm font-medium text-gray-300">
-                  Font Size
-                </label>
-                <div className="flex gap-2">
-                  {(["small", "default", "large"] as FontSize[]).map((s) => (
-                    <button
-                      key={s}
-                      onClick={() => settings.setFontSize(s)}
-                      className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-                        settings.fontSize === s
-                          ? "bg-accent-600 text-white"
-                          : "bg-gray-800 text-gray-400 hover:text-white"
-                      }`}
-                    >
-                      {s.charAt(0).toUpperCase() + s.slice(1)}
+                      <span className="block font-medium">{d.label}</span>
+                      <span className="block text-xs text-gray-500">{d.description}</span>
                     </button>
                   ))}
                 </div>
@@ -210,6 +308,35 @@ function SectionLink({ label }: { label: string }) {
     <button className="w-full rounded-lg px-3 py-2 text-left text-sm text-gray-400 transition-colors hover:bg-gray-800 hover:text-white">
       {label}
     </button>
+  );
+}
+
+function Slider({
+  label,
+  min,
+  max,
+  value,
+  onChange,
+}: {
+  label: string;
+  min: number;
+  max: number;
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div>
+      <p className="mb-1 text-sm font-medium text-gray-300">{label}</p>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={1}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full cursor-pointer accent-[rgb(var(--accent-500-rgb))]"
+      />
+    </div>
   );
 }
 

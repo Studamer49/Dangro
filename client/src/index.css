@@ -18,36 +18,106 @@
       Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    background-color: var(--ui-bg);
+    color: var(--ui-text);
   }
 }
 
-/* Dark theme (default) */
-.dark body {
-  @apply bg-gray-950 text-white;
+/* ---------------------------------------------------------------------------
+ * Theme variables. Every gray shade and `white` resolve to these semantic
+ * tokens, so switching theme (or overriding a color in Settings) re-skins the
+ * entire app instantly.
+ *
+ * Each color exists as a hex token (raw CSS: body, scrollbar) and as an
+ * `*-rgb` triplet consumed by tailwind.config.js via `rgb(var(…) / <alpha>)`
+ * so Tailwind opacity modifiers (bg-gray-800/50, bg-white/5 …) keep working.
+ * ------------------------------------------------------------------------- */
+:root,
+.dark {
+  --ui-radius-lg: 0.5rem;
+  --ui-radius-xl: 0.75rem;
+  --ui-radius-2xl: 1rem;
+  --ui-radius-3xl: 1.5rem;
+
+  --ui-bg: #030712;
+  --ui-bg-rgb: 3 7 18;
+  --ui-surface: #111827;
+  --ui-surface-rgb: 17 24 39;
+  --ui-surface-2: #1f2937;
+  --ui-surface-2-rgb: 31 41 55;
+  --ui-border: #374151;
+  --ui-border-rgb: 55 65 81;
+  --ui-text: #ffffff;
+  --ui-text-rgb: 255 255 255;
+  --ui-text-secondary: #d1d5db;
+  --ui-text-secondary-rgb: 209 213 219;
+  --ui-muted: #9ca3af;
+  --ui-muted-rgb: 156 163 175;
+
+  --ui-gray-950-rgb: var(--ui-bg-rgb);
+  --ui-gray-900-rgb: var(--ui-surface-rgb);
+  --ui-gray-800-rgb: var(--ui-surface-2-rgb);
+  --ui-gray-700-rgb: var(--ui-border-rgb);
+  --ui-gray-600-rgb: 75 85 99;
+  --ui-gray-500-rgb: 107 114 128;
+  --ui-gray-400-rgb: var(--ui-muted-rgb);
+  --ui-gray-300-rgb: var(--ui-text-secondary-rgb);
+  --ui-gray-200-rgb: 229 231 235;
+  --ui-gray-100-rgb: 243 244 246;
+  --ui-gray-50-rgb: 249 250 251;
 }
 
-/* Light theme */
-.light body {
-  @apply bg-gray-50 text-gray-900;
+.light {
+  --ui-bg: #eef1f6;
+  --ui-bg-rgb: 238 241 246;
+  --ui-surface: #ffffff;
+  --ui-surface-rgb: 255 255 255;
+  --ui-surface-2: #f8fafc;
+  --ui-surface-2-rgb: 248 250 252;
+  --ui-border: #cbd5e1;
+  --ui-border-rgb: 203 213 225;
+  --ui-text: #0f172a;
+  --ui-text-rgb: 15 23 42;
+  --ui-text-secondary: #334155;
+  --ui-text-secondary-rgb: 51 65 85;
+  --ui-muted: #64748b;
+  --ui-muted-rgb: 100 116 139;
+
+  --ui-gray-600-rgb: 71 85 105;
+  --ui-gray-500-rgb: 100 116 139;
+  --ui-gray-200-rgb: 226 232 240;
+  --ui-gray-100-rgb: 241 245 249;
+  --ui-gray-50-rgb: 248 250 252;
 }
 
-.light ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+.amoled {
+  --ui-bg: #000000;
+  --ui-bg-rgb: 0 0 0;
+  --ui-surface: #0a0a0a;
+  --ui-surface-rgb: 10 10 10;
+  --ui-surface-2: #141414;
+  --ui-surface-2-rgb: 20 20 20;
+  --ui-border: #2e2e2e;
+  --ui-border-rgb: 46 46 46;
+  --ui-text: #ffffff;
+  --ui-text-rgb: 255 255 255;
+  --ui-text-secondary: #d1d5db;
+  --ui-text-secondary-rgb: 209 213 219;
+  --ui-muted: #9ca3af;
+  --ui-muted-rgb: 156 163 175;
+
+  --ui-gray-600-rgb: 63 63 63;
 }
 
-.light ::-webkit-scrollbar-thumb {
-  background: #94a3b8;
-  border-radius: 4px;
+/* Message density — the chat message lists all use `.space-y-1`. */
+[data-density="cozy"] .space-y-1 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0.625rem;
 }
-
-.light ::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
+[data-density="comfortable"] .space-y-1 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0.25rem;
 }
-
-/* AMOLED theme */
-.amoled body {
-  background: #000000;
-  @apply text-white;
+[data-density="compact"] .space-y-1 > :not([hidden]) ~ :not([hidden]) {
+  margin-top: 0.0625rem;
 }
 
 /* Scrollbar */
@@ -56,62 +126,63 @@
 }
 
 ::-webkit-scrollbar-track {
-  background: #1e1b4b;
+  background: var(--ui-surface-2);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--accent-700);
+  background: rgb(var(--accent-700-rgb) / 1);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--accent-600);
+  background: rgb(var(--accent-600-rgb) / 1);
 }
 
-/* Accent utility classes */
-.bg-accent-50 { background-color: var(--accent-50); }
-.bg-accent-100 { background-color: var(--accent-100); }
-.bg-accent-200 { background-color: var(--accent-200); }
-.bg-accent-300 { background-color: var(--accent-300); }
-.bg-accent-400 { background-color: var(--accent-400); }
-.bg-accent-500 { background-color: var(--accent-500); }
-.bg-accent-600 { background-color: var(--accent-600); }
-.bg-accent-700 { background-color: var(--accent-700); }
-.bg-accent-800 { background-color: var(--accent-800); }
-.bg-accent-900 { background-color: var(--accent-900); }
-.bg-accent-950 { background-color: var(--accent-950); }
+/* Accent utility classes — static fallbacks so every accent shade exists
+ * regardless of which classes Tailwind's content scan picks up. */
+.bg-accent-50 { background-color: rgb(var(--accent-50-rgb) / 1); }
+.bg-accent-100 { background-color: rgb(var(--accent-100-rgb) / 1); }
+.bg-accent-200 { background-color: rgb(var(--accent-200-rgb) / 1); }
+.bg-accent-300 { background-color: rgb(var(--accent-300-rgb) / 1); }
+.bg-accent-400 { background-color: rgb(var(--accent-400-rgb) / 1); }
+.bg-accent-500 { background-color: rgb(var(--accent-500-rgb) / 1); }
+.bg-accent-600 { background-color: rgb(var(--accent-600-rgb) / 1); }
+.bg-accent-700 { background-color: rgb(var(--accent-700-rgb) / 1); }
+.bg-accent-800 { background-color: rgb(var(--accent-800-rgb) / 1); }
+.bg-accent-900 { background-color: rgb(var(--accent-900-rgb) / 1); }
+.bg-accent-950 { background-color: rgb(var(--accent-950-rgb) / 1); }
 
-.text-accent-50 { color: var(--accent-50); }
-.text-accent-100 { color: var(--accent-100); }
-.text-accent-200 { color: var(--accent-200); }
-.text-accent-300 { color: var(--accent-300); }
-.text-accent-400 { color: var(--accent-400); }
-.text-accent-500 { color: var(--accent-500); }
-.text-accent-600 { color: var(--accent-600); }
-.text-accent-700 { color: var(--accent-700); }
-.text-accent-800 { color: var(--accent-800); }
-.text-accent-900 { color: var(--accent-900); }
+.text-accent-50 { color: rgb(var(--accent-50-rgb) / 1); }
+.text-accent-100 { color: rgb(var(--accent-100-rgb) / 1); }
+.text-accent-200 { color: rgb(var(--accent-200-rgb) / 1); }
+.text-accent-300 { color: rgb(var(--accent-300-rgb) / 1); }
+.text-accent-400 { color: rgb(var(--accent-400-rgb) / 1); }
+.text-accent-500 { color: rgb(var(--accent-500-rgb) / 1); }
+.text-accent-600 { color: rgb(var(--accent-600-rgb) / 1); }
+.text-accent-700 { color: rgb(var(--accent-700-rgb) / 1); }
+.text-accent-800 { color: rgb(var(--accent-800-rgb) / 1); }
+.text-accent-900 { color: rgb(var(--accent-900-rgb) / 1); }
 
-.border-accent-50 { border-color: var(--accent-50); }
-.border-accent-100 { border-color: var(--accent-100); }
-.border-accent-200 { border-color: var(--accent-200); }
-.border-accent-300 { border-color: var(--accent-300); }
-.border-accent-400 { border-color: var(--accent-400); }
-.border-accent-500 { border-color: var(--accent-500); }
-.border-accent-600 { border-color: var(--accent-600); }
-.border-accent-700 { border-color: var(--accent-700); }
-.border-accent-800 { border-color: var(--accent-800); }
-.border-accent-900 { border-color: var(--accent-900); }
+.border-accent-50 { border-color: rgb(var(--accent-50-rgb) / 1); }
+.border-accent-100 { border-color: rgb(var(--accent-100-rgb) / 1); }
+.border-accent-200 { border-color: rgb(var(--accent-200-rgb) / 1); }
+.border-accent-300 { border-color: rgb(var(--accent-300-rgb) / 1); }
+.border-accent-400 { border-color: rgb(var(--accent-400-rgb) / 1); }
+.border-accent-500 { border-color: rgb(var(--accent-500-rgb) / 1); }
+.border-accent-600 { border-color: rgb(var(--accent-600-rgb) / 1); }
+.border-accent-700 { border-color: rgb(var(--accent-700-rgb) / 1); }
+.border-accent-800 { border-color: rgb(var(--accent-800-rgb) / 1); }
+.border-accent-900 { border-color: rgb(var(--accent-900-rgb) / 1); }
 
-.hover\:bg-accent-50:hover { background-color: var(--accent-50); }
-.hover\:bg-accent-100:hover { background-color: var(--accent-100); }
-.hover\:bg-accent-200:hover { background-color: var(--accent-200); }
-.hover\:bg-accent-300:hover { background-color: var(--accent-300); }
-.hover\:bg-accent-400:hover { background-color: var(--accent-400); }
-.hover\:bg-accent-500:hover { background-color: var(--accent-500); }
-.hover\:bg-accent-600:hover { background-color: var(--accent-600); }
-.hover\:bg-accent-700:hover { background-color: var(--accent-700); }
-.hover\:bg-accent-800:hover { background-color: var(--accent-800); }
-.hover\:bg-accent-900:hover { background-color: var(--accent-900); }
+.hover\:bg-accent-50:hover { background-color: rgb(var(--accent-50-rgb) / 1); }
+.hover\:bg-accent-100:hover { background-color: rgb(var(--accent-100-rgb) / 1); }
+.hover\:bg-accent-200:hover { background-color: rgb(var(--accent-200-rgb) / 1); }
+.hover\:bg-accent-300:hover { background-color: rgb(var(--accent-300-rgb) / 1); }
+.hover\:bg-accent-400:hover { background-color: rgb(var(--accent-400-rgb) / 1); }
+.hover\:bg-accent-500:hover { background-color: rgb(var(--accent-500-rgb) / 1); }
+.hover\:bg-accent-600:hover { background-color: rgb(var(--accent-600-rgb) / 1); }
+.hover\:bg-accent-700:hover { background-color: rgb(var(--accent-700-rgb) / 1); }
+.hover\:bg-accent-800:hover { background-color: rgb(var(--accent-800-rgb) / 1); }
+.hover\:bg-accent-900:hover { background-color: rgb(var(--accent-900-rgb) / 1); }
 
 .border-t-transparent { border-top-color: transparent; }
