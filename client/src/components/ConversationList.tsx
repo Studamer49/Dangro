@@ -104,10 +104,15 @@ export default function ConversationList({ activeConversation, onSelectConversat
       void fetchConversations();
     };
 
+    const handleRequestEvent = () => void fetchConversations();
+
     socket.on("new_dm", handleNewDM);
     socket.on("dm_updated", handleDMUpdated);
     socket.on("dm_message_edited", handleMessageEdited);
     socket.on("dm_message_deleted", handleMessageDeleted);
+    socket.on("dm_request", handleRequestEvent);
+    socket.on("dm_request_accepted", handleRequestEvent);
+    socket.on("dm_request_declined", handleRequestEvent);
     socket.on("connect", handleConnect);
 
     const pollId = setInterval(() => void fetchConversations(), 20000);
@@ -117,6 +122,9 @@ export default function ConversationList({ activeConversation, onSelectConversat
       socket.off("dm_updated", handleDMUpdated);
       socket.off("dm_message_edited", handleMessageEdited);
       socket.off("dm_message_deleted", handleMessageDeleted);
+      socket.off("dm_request", handleRequestEvent);
+      socket.off("dm_request_accepted", handleRequestEvent);
+      socket.off("dm_request_declined", handleRequestEvent);
       socket.off("connect", handleConnect);
       clearInterval(pollId);
     };
@@ -163,6 +171,32 @@ export default function ConversationList({ activeConversation, onSelectConversat
     }
   };
 
+  const acceptRequest = async (conversation: Conversation) => {
+    try {
+      await api.post(`/dms/${conversation.id}/accept`);
+      if (activeConversation?.id === conversation.id) {
+        onSelectConversation({ ...conversation, status: "active", requestSenderId: null });
+      }
+    } catch {
+      // silent
+    } finally {
+      void fetchConversations();
+    }
+  };
+
+  const declineRequest = async (conversation: Conversation) => {
+    if (!window.confirm(`Delete the message request from ${conversation.otherUser?.username ?? "this user"}?`)) {
+      return;
+    }
+    try {
+      await api.post(`/dms/${conversation.id}/decline`);
+    } catch {
+      // silent
+    } finally {
+      void fetchConversations();
+    }
+  };
+
   const formatTime = (dateStr: string | null) => {
     if (!dateStr) return "";
     const date = new Date(dateStr);
@@ -179,6 +213,29 @@ export default function ConversationList({ activeConversation, onSelectConversat
     }
     return date.toLocaleDateString([], { month: "short", day: "numeric" });
   };
+
+  const messagePreview = (conv: Conversation, selfId?: string) => {
+    const lastMsg = conv.lastMessage;
+    if (!lastMsg) return "No messages yet";
+    const prefix = lastMsg.senderId === selfId ? "You: " : "";
+    const text =
+      lastMsg.content ||
+      (lastMsg.attachmentType === "image"
+        ? "📷 Image"
+        : lastMsg.attachmentType === "video"
+          ? "🎥 Video"
+          : lastMsg.attachmentType === "audio"
+            ? "🎵 Voice message"
+            : "Attachment");
+    return prefix + (text.length > 40 ? text.substring(0, 40) + "..." : text);
+  };
+
+  const myRequests = conversations.filter(
+    (c) => c.status === "pending" && c.requestSenderId !== user?.id
+  );
+  const regular = conversations.filter(
+    (c) => c.status !== "pending" || c.requestSenderId === user?.id
+  );
 
   return (
     <div className="flex w-80 flex-col border-r border-gray-800 bg-gray-900">
@@ -227,62 +284,119 @@ export default function ConversationList({ activeConversation, onSelectConversat
             No conversations yet
           </div>
         ) : (
-          conversations.map((conv) => {
-            const isActive = activeConversation?.id === conv.id;
-            const lastMsg = conv.lastMessage;
-            let preview = "No messages yet";
-            if (lastMsg) {
-              const isSelf = lastMsg.senderId === user?.id;
-              const prefix = isSelf ? "You: " : "";
-              const text = lastMsg.content || (lastMsg.attachmentType === "image" ? "📷 Image" : lastMsg.attachmentType === "video" ? "🎥 Video" : lastMsg.attachmentType === "audio" ? "🎵 Voice message" : "Attachment");
-              preview = prefix + (text.length > 40 ? text.substring(0, 40) + "..." : text);
-            }
-
-            return (
-              <button
-                key={conv.id}
-                onClick={() => onSelectConversation(conv)}
-                className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${
-                  isActive
-                    ? "bg-accent-600/20 text-white"
-                    : "text-gray-300 hover:bg-gray-800/50"
-                }`}
-              >
-                <div className="relative flex-shrink-0">
-                  <Avatar user={conv.otherUser} className="h-10 w-10 text-sm" />
-                  <div
-                    className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-gray-900 ${
-                      conv.otherUser?.status === "online"
-                        ? "bg-green-500"
-                        : conv.otherUser?.status === "idle"
-                        ? "bg-yellow-500"
-                        : conv.otherUser?.status === "dnd"
-                        ? "bg-red-500"
-                        : "bg-gray-500"
-                    }`}
-                  />
+          <>
+            {myRequests.length > 0 && (
+              <div className="border-b border-gray-800/60">
+                <div className="flex items-center gap-2 px-4 pt-3 pb-1">
+                  <h3 className="text-xs font-semibold uppercase text-amber-400">
+                    Message Requests
+                  </h3>
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-600 px-1 text-[10px] font-bold text-white">
+                    {myRequests.length}
+                  </span>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between">
-                    <span className="truncate text-sm font-medium">
-                      {conv.otherUser?.username}
-                    </span>
-                    <span className="ml-2 flex-shrink-0 text-xs text-gray-500">
-                      {formatTime(conv.lastMessageAt)}
-                    </span>
+                {myRequests.map((conv) => {
+                  const preview = messagePreview(conv, user?.id);
+                  return (
+                    <div
+                      key={conv.id}
+                      className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-gray-800/50"
+                    >
+                      <Avatar user={conv.otherUser} className="h-10 w-10 text-sm" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between">
+                          <span className="truncate text-sm font-medium text-white">
+                            {conv.otherUser?.username}
+                          </span>
+                          <span className="ml-2 flex-shrink-0 text-xs text-gray-500">
+                            {formatTime(conv.lastMessageAt)}
+                          </span>
+                        </div>
+                        <p className="truncate text-xs text-gray-400">{preview}</p>
+                        <div className="mt-2 flex gap-2">
+                          <button
+                            onClick={() => void acceptRequest(conv)}
+                            className="rounded-lg bg-green-600/20 px-3 py-1 text-xs font-medium text-green-400 transition-colors hover:bg-green-600/30"
+                          >
+                            Accept
+                          </button>
+                          <button
+                            onClick={() => void declineRequest(conv)}
+                            className="rounded-lg bg-gray-800 px-3 py-1 text-xs text-gray-300 transition-colors hover:bg-red-600/20 hover:text-red-400"
+                          >
+                            Decline
+                          </button>
+                          <button
+                            onClick={() => onSelectConversation(conv)}
+                            className="ml-auto rounded-lg bg-gray-800 px-3 py-1 text-xs text-gray-300 transition-colors hover:bg-gray-700"
+                          >
+                            View
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {regular.map((conv) => {
+              const isActive = activeConversation?.id === conv.id;
+              const preview = messagePreview(conv, user?.id);
+              const awaitingAccept =
+                conv.status === "pending" && conv.requestSenderId === user?.id;
+
+              return (
+                <button
+                  key={conv.id}
+                  onClick={() => onSelectConversation(conv)}
+                  className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${
+                    isActive
+                      ? "bg-accent-600/20 text-white"
+                      : "text-gray-300 hover:bg-gray-800/50"
+                  }`}
+                >
+                  <div className="relative flex-shrink-0">
+                    <Avatar user={conv.otherUser} className="h-10 w-10 text-sm" />
+                    <div
+                      className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-gray-900 ${
+                        conv.otherUser?.status === "online"
+                          ? "bg-green-500"
+                          : conv.otherUser?.status === "idle"
+                          ? "bg-yellow-500"
+                          : conv.otherUser?.status === "dnd"
+                          ? "bg-red-500"
+                          : "bg-gray-500"
+                      }`}
+                    />
                   </div>
-                  <div className="flex items-center justify-between">
-                    <p className="truncate text-xs text-gray-400">{preview}</p>
-                    {conv.unreadCount > 0 && (
-                      <span className="ml-2 flex-shrink-0 flex h-5 min-w-5 items-center justify-center rounded-full bg-accent-600 px-1.5 text-[10px] font-bold text-white">
-                        {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="truncate text-sm font-medium">
+                        {conv.otherUser?.username}
                       </span>
+                      <span className="ml-2 flex-shrink-0 text-xs text-gray-500">
+                        {formatTime(conv.lastMessageAt)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <p className="truncate text-xs text-gray-400">{preview}</p>
+                      {conv.unreadCount > 0 && (
+                        <span className="ml-2 flex-shrink-0 flex h-5 min-w-5 items-center justify-center rounded-full bg-accent-600 px-1.5 text-[10px] font-bold text-white">
+                          {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
+                        </span>
+                      )}
+                    </div>
+                    {awaitingAccept && (
+                      <p className="mt-0.5 text-[10px] text-amber-400/90">
+                        Waiting for them to accept your message request
+                      </p>
                     )}
                   </div>
-                </div>
-              </button>
-            );
-          })
+                </button>
+              );
+            })}
+          </>
         )}
       </div>
     </div>

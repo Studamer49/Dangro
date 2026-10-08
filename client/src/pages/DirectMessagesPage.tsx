@@ -14,7 +14,10 @@ export default function DirectMessagesPage() {
       />
       <div className="flex-1">
         {activeConversation ? (
-          <DMChatArea conversation={activeConversation} />
+          <DMChatArea
+            conversation={activeConversation}
+            onConversationUpdated={setActiveConversation}
+          />
         ) : (
           <div className="flex h-full items-center justify-center">
             <div className="text-center">

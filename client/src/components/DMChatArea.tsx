@@ -9,11 +9,14 @@ import type { Conversation, DirectMessage } from "@/types";
 
 interface Props {
   conversation: Conversation;
+  onConversationUpdated?: (conversation: Conversation) => void;
 }
 
-export default function DMChatArea({ conversation }: Props) {
+export default function DMChatArea({ conversation, onConversationUpdated }: Props) {
   const user = useAuthStore((s) => s.user);
   const initiateCall = useCallStore((s) => s.initiateCall);
+  const isPendingRequest = conversation.status === "pending";
+  const amRequester = conversation.requestSenderId === user?.id;
   const [messages, setMessages] = useState<DirectMessage[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [typingUsers, setTypingUsers] = useState<string[]>([]);
@@ -219,9 +222,21 @@ export default function DMChatArea({ conversation }: Props) {
         content,
         replyToId: replyTo?.id || null,
       });
+      if (isPendingRequest && !amRequester) {
+        onConversationUpdated?.({ ...conversation, status: "active", requestSenderId: null });
+      }
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setNewMessage(content);
+    }
+  };
+
+  const acceptRequestInline = async () => {
+    try {
+      await api.post(`/dms/${conversation.id}/accept`);
+      onConversationUpdated?.({ ...conversation, status: "active", requestSenderId: null });
+    } catch {
+      // silent
     }
   };
 
@@ -483,6 +498,24 @@ export default function DMChatArea({ conversation }: Props) {
           </button>
         </div>
       </div>
+
+      {isPendingRequest && (
+        <div className="flex items-center justify-between gap-3 border-b border-gray-800 bg-amber-500/10 px-4 py-2">
+          <p className="text-xs text-amber-300">
+            {amRequester
+              ? `Waiting for ${conversation.otherUser?.username ?? "them"} to accept your message request.`
+              : `Message request from ${conversation.otherUser?.username ?? "this user"}. Replying will accept it.`}
+          </p>
+          {!amRequester && (
+            <button
+              onClick={() => void acceptRequestInline()}
+              className="shrink-0 rounded-lg bg-green-600/20 px-3 py-1 text-xs font-medium text-green-400 transition-colors hover:bg-green-600/30"
+            >
+              Accept
+            </button>
+          )}
+        </div>
+      )}
 
       <div
         ref={chatContainerRef}

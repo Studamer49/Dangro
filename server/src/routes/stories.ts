@@ -34,12 +34,29 @@ router.get(
   "/",
   authenticate,
   asyncHandler(async (req: AuthRequest, res) => {
-    requireUser(req);
+    const userId = requireUser(req);
 
     await prisma.story.deleteMany({ where: { expiresAt: { lt: new Date() } } });
 
+    const [following, friendships] = await Promise.all([
+      prisma.follow.findMany({ where: { followerId: userId }, select: { followingId: true } }),
+      prisma.friend.findMany({
+        where: { OR: [{ userId }, { friendId: userId }] },
+        select: { userId: true, friendId: true },
+      }),
+    ]);
+
+    const visibleIds = new Set<string>([userId, ...following.map((f) => f.followingId)]);
+    for (const f of friendships) {
+      visibleIds.add(f.userId);
+      visibleIds.add(f.friendId);
+    }
+
     const stories = await prisma.story.findMany({
-      where: { expiresAt: { gt: new Date() } },
+      where: {
+        expiresAt: { gt: new Date() },
+        authorId: { in: [...visibleIds] },
+      },
       include: { author: { select: { id: true, username: true, avatar: true } } },
       orderBy: { createdAt: "desc" },
       take: 200,

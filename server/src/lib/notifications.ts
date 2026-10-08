@@ -3,7 +3,7 @@ import { getIO } from "../socket/io.js";
 
 export interface CreateNotificationInput {
   userId: string;
-  type: "friend_request" | "friend_accept" | "server_invite" | "follow" | "mention";
+  type: "friend_request" | "friend_accept" | "server_invite" | "follow" | "mention" | "message_request" | "message_request_accepted";
   message: string;
   fromUserId?: string;
   serverId?: string;

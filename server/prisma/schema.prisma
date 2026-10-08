@@ -200,11 +200,13 @@ model Notification {
 }
 
 model Conversation {
-  id           String   @id @default(uuid())
-  user1Id      String
-  user2Id      String
-  lastMessageAt DateTime?
-  createdAt    DateTime @default(now())
+  id             String    @id @default(uuid())
+  user1Id        String
+  user2Id        String
+  lastMessageAt  DateTime?
+  status         String    @default("active") // active, pending (message request awaiting accept)
+  requestSenderId String?  // who sent the pending message request
+  createdAt      DateTime  @default(now())
 
   user1  User           @relation("ConversationUser1", fields: [user1Id], references: [id], onDelete: Cascade)
   user2  User           @relation("ConversationUser2", fields: [user2Id], references: [id], onDelete: Cascade)

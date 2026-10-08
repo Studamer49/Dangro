@@ -5,6 +5,7 @@ import { getIO } from "../socket/io.js";
 import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { assertConversationMember, assertDirectMessageReply, paramId } from "../lib/access.js";
+import { createNotification } from "../lib/notifications.js";
 
 const router = Router();
 
@@ -25,6 +26,36 @@ const dmInclude = {
   sender: { select: { id: true, username: true, avatar: true, status: true } },
   replyTo: { include: { sender: { select: { id: true, username: true } } } },
 } as const;
+
+const otherUserSelect = {
+  id: true,
+  username: true,
+  avatar: true,
+  status: true,
+  bio: true,
+} as const;
+
+/**
+ * A user may message someone directly (no request gate) when they are friends
+ * or when the recipient follows them (the recipient opted in to their content).
+ */
+async function canMessageDirectly(senderId: string, candidateId: string): Promise<boolean> {
+  const friendship = await prisma.friend.findFirst({
+    where: {
+      OR: [
+        { userId: senderId, friendId: candidateId },
+        { userId: candidateId, friendId: senderId },
+      ],
+    },
+    select: { id: true },
+  });
+  if (friendship) return true;
+
+  const follow = await prisma.follow.findUnique({
+    where: { followerId_followingId: { followerId: candidateId, followingId: senderId } },
+  });
+  return !!follow;
+}
 
 router.get(
   "/",
@@ -63,6 +94,8 @@ router.get(
           lastMessage,
           lastMessageAt: c.lastMessageAt,
           unreadCount,
+          status: c.status,
+          requestSenderId: c.requestSenderId,
         };
       })
     );
@@ -92,19 +125,29 @@ router.post(
     let conversation = await prisma.conversation.findUnique({
       where: { user1Id_user2Id: { user1Id: sortedIds[0], user2Id: sortedIds[1] } },
       include: {
-        user1: { select: { id: true, username: true, avatar: true, status: true } },
-        user2: { select: { id: true, username: true, avatar: true, status: true } },
+        user1: { select: otherUserSelect },
+        user2: { select: otherUserSelect },
       },
     });
 
     if (!conversation) {
+      const canDirect = await canMessageDirectly(userId, otherUserId);
       conversation = await prisma.conversation.create({
-        data: { user1Id: sortedIds[0], user2Id: sortedIds[1] },
+        data: {
+          user1Id: sortedIds[0],
+          user2Id: sortedIds[1],
+          status: canDirect ? "active" : "pending",
+          requestSenderId: canDirect ? null : userId,
+        },
         include: {
-          user1: { select: { id: true, username: true, avatar: true, status: true } },
-          user2: { select: { id: true, username: true, avatar: true, status: true } },
+          user1: { select: otherUserSelect },
+          user2: { select: otherUserSelect },
         },
       });
+
+      if (!canDirect) {
+        getIO()?.to(`user:${otherUserId}`).emit("dm_request", { conversationId: conversation.id });
+      }
     }
 
     const other = conversation.user1Id === userId ? conversation.user2 : conversation.user1;
@@ -116,6 +159,8 @@ router.post(
         lastMessage: null,
         lastMessageAt: conversation.lastMessageAt,
         unreadCount: 0,
+        status: conversation.status,
+        requestSenderId: conversation.requestSenderId,
       },
     });
   })
@@ -153,6 +198,41 @@ router.post(
     await assertDirectMessageReply(replyToId, conversationId);
 
     const otherUserId = conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
+    const isPending = conversation.status === "pending";
+    const amRequester = conversation.requestSenderId === userId;
+    const requesterId = conversation.requestSenderId;
+    const io = getIO();
+
+    if (isPending && !amRequester) {
+      // Replying to a message request accepts it.
+      await prisma.conversation.update({
+        where: { id: conversationId },
+        data: { status: "active", requestSenderId: null },
+      });
+      if (io && requesterId) {
+        io.to(`user:${requesterId}`).emit("dm_request_accepted", { conversationId });
+      }
+      if (requesterId) {
+        const me = await prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
+        void createNotification({
+          userId: requesterId,
+          type: "message_request_accepted",
+          message: `${me?.username ?? "Someone"} accepted your message request`,
+          fromUserId: userId,
+        });
+      }
+    } else if (isPending && amRequester) {
+      const firstMessage = (await prisma.directMessage.count({ where: { conversationId } })) === 0;
+      if (firstMessage) {
+        const me = await prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
+        void createNotification({
+          userId: otherUserId,
+          type: "message_request",
+          message: `${me?.username ?? "Someone"} sent you a message request`,
+          fromUserId: userId,
+        });
+      }
+    }
 
     const message = await prisma.directMessage.create({
       data: {
@@ -176,7 +256,6 @@ router.post(
       where: { conversationId, senderId: { not: otherUserId }, readAt: null },
     });
 
-    const io = getIO();
     if (io) {
       io.to(`dm:${conversationId}`).emit("new_dm", message);
       io.to(`user:${otherUserId}`).emit("dm_updated", {
@@ -273,6 +352,74 @@ router.delete(
     }
 
     ok(res, { message: "Message deleted" });
+  })
+);
+
+/** Recipient accepts a pending message request. */
+router.post(
+  "/:conversationId/accept",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const conversationId = paramId(req.params.conversationId, "conversation id");
+
+    const conversation = await assertConversationMember(conversationId, userId);
+    if (conversation.status !== "pending") {
+      throw AppError.of("CONFLICT", "No pending message request");
+    }
+    if (conversation.requestSenderId === userId) {
+      throw AppError.of("FORBIDDEN", "You cannot accept your own message request");
+    }
+
+    await prisma.conversation.update({
+      where: { id: conversationId },
+      data: { status: "active", requestSenderId: null },
+    });
+
+    const io = getIO();
+    if (io && conversation.requestSenderId) {
+      io.to(`user:${conversation.requestSenderId}`).emit("dm_request_accepted", { conversationId });
+    }
+
+    const me = await prisma.user.findUnique({ where: { id: userId }, select: { username: true } });
+    if (conversation.requestSenderId) {
+      void createNotification({
+        userId: conversation.requestSenderId,
+        type: "message_request_accepted",
+        message: `${me?.username ?? "Someone"} accepted your message request`,
+        fromUserId: userId,
+      });
+    }
+
+    ok(res, { message: "Message request accepted", conversationId });
+  })
+);
+
+/** Recipient declines a pending message request (removes the thread). */
+router.post(
+  "/:conversationId/decline",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const conversationId = paramId(req.params.conversationId, "conversation id");
+
+    const conversation = await assertConversationMember(conversationId, userId);
+    if (conversation.status !== "pending") {
+      throw AppError.of("CONFLICT", "No pending message request");
+    }
+    if (conversation.requestSenderId === userId) {
+      throw AppError.of("FORBIDDEN", "You cannot decline your own message request");
+    }
+
+    const requesterId = conversation.requestSenderId;
+    await prisma.conversation.delete({ where: { id: conversationId } });
+
+    const io = getIO();
+    if (io && requesterId) {
+      io.to(`user:${requesterId}`).emit("dm_request_declined", { conversationId });
+    }
+
+    ok(res, { message: "Message request declined", conversationId });
   })
 );
 

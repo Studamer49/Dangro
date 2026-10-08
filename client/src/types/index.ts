@@ -112,6 +112,8 @@ export interface Conversation {
   lastMessage: DirectMessage | null;
   lastMessageAt: string | null;
   unreadCount: number;
+  status: "active" | "pending";
+  requestSenderId: string | null;
 }
 
 export interface DirectMessage {

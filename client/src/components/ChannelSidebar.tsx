@@ -93,18 +93,22 @@ export default function ChannelSidebar() {
 
   const copyInvite = async () => {
     if (!server || busy) return;
-    try {
-      const { data } = await api.post(`/servers/${server.id}/invite`);
-      const code = data.inviteCode;
-      setServer((prev) => (prev ? { ...prev, inviteCode: code } : prev));
+    let code = server.inviteCode;
+    if (isModerator) {
       try {
-        await navigator.clipboard.writeText(`${window.location.origin}/invite/${code}`);
-        toast.success("Invite link copied");
-      } catch {
-        toast.info(`Invite code: ${code}`);
+        const { data } = await api.post(`/servers/${server.id}/invite`);
+        code = data.inviteCode;
+        setServer((prev) => (prev ? { ...prev, inviteCode: code } : prev));
+      } catch (err: unknown) {
+        toast.error(apiErrorMessage(err, "Could not create invite"));
+        return;
       }
-    } catch (err: unknown) {
-      toast.error(apiErrorMessage(err, "Could not create invite"));
+    }
+    try {
+      await navigator.clipboard.writeText(`${window.location.origin}/invite/${code}`);
+      toast.success("Invite link copied");
+    } catch {
+      toast.info(`Invite code: ${code}`);
     }
   };
 
@@ -363,7 +367,9 @@ export default function ChannelSidebar() {
                   Copy
                 </button>
               </div>
-              <p className="mt-1 text-xs text-gray-500">http://localhost:5173/invite/{server.inviteCode}</p>
+              <p className="mt-1 truncate text-xs text-gray-500">
+                {window.location.origin}/invite/{server.inviteCode}
+              </p>
             </div>
 
             <div className="space-y-2 border-t border-gray-800 pt-4">
