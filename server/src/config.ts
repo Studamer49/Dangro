@@ -70,6 +70,47 @@ if (databaseProvider !== "postgres" && databaseProvider !== "mongo") {
 }
 const usesMongo = databaseProvider === "mongo";
 
+// Where uploaded media is stored. Defaults follow the database choice, and
+// can be overridden so media can live somewhere other than the database.
+//   disk   - server/uploads, served by express.static (PostgreSQL default)
+//   gridfs - GridFS inside MongoDB (MongoDB default)
+//   remote - a separate media host; the API redirects to it
+const mediaProvider = optional(
+  "MEDIA_PROVIDER",
+  usesMongo ? "gridfs" : "disk"
+);
+if (!["disk", "gridfs", "remote"].includes(mediaProvider)) {
+  fail(
+    `MEDIA_PROVIDER must be "disk", "gridfs" or "remote", received "${mediaProvider}"`,
+    'Set MEDIA_PROVIDER in server/.env, or remove it to use the default for your database.'
+  );
+}
+if (mediaProvider === "gridfs" && !usesMongo) {
+  console.warn("[config] MEDIA_PROVIDER=gridfs but DATABASE_PROVIDER is not mongo — falling back to disk.");
+}
+
+const mediaPublicUrl = optional("MEDIA_PUBLIC_URL", "");
+const mediaIngestUrl = optional("MEDIA_INGEST_URL", mediaPublicUrl || "http://127.0.0.1:8081");
+const mediaIngestKey = optional("MEDIA_INGEST_KEY", "");
+
+if (mediaProvider === "remote") {
+  if (!mediaPublicUrl) {
+    fail(
+      "MEDIA_PUBLIC_URL is required when MEDIA_PROVIDER=remote",
+      "Set MEDIA_PUBLIC_URL to the public base URL of your media host, e.g. https://host.tailnet.ts.net"
+    );
+  }
+  if (!mediaIngestKey) {
+    fail(
+      "MEDIA_INGEST_KEY is required when MEDIA_PROVIDER=remote",
+      "It must match MEDIA_KEY on the media host and is the only thing guarding write access."
+    );
+  }
+  if (mediaIngestKey.length < 32) {
+    console.warn("[config] WARNING: MEDIA_INGEST_KEY is shorter than 32 characters.");
+  }
+}
+
 const mongoUri = optional("MONGODB_URI", "mongodb://127.0.0.1:27017");
 const mongoDbName = optional("MONGODB_DB_NAME", "dangro");
 
@@ -98,6 +139,10 @@ export const config = {
   usesMongo,
   mongoUri,
   mongoDbName,
+  mediaProvider,
+  mediaPublicUrl,
+  mediaIngestUrl,
+  mediaIngestKey,
   databaseUrl,
   jwtSecret,
   jwtRefreshSecret: optional("JWT_REFRESH_SECRET", jwtSecret + "_refresh"),

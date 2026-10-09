@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "media:dev": "tsx watch src/media-service/index.ts",
+    "media:start": "node dist/media-service/index.js",
     "build": "tsc",
     "start": "node dist/index.js",
     "lint": "eslint src",

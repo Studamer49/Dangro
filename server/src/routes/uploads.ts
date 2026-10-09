@@ -5,7 +5,7 @@ import { v4 as uuidv4 } from "uuid";
 import { authenticate } from "../middleware/auth.js";
 import { config } from "../config.js";
 import { AppError, asyncHandler, ok, toErrorBody } from "../lib/http.js";
-import { getMediaStore } from "../db/storage.js";
+import { getMediaStore, MediaIngestError } from "../db/storage.js";
 import { mongoClient } from "../prisma.js";
 
 const router = Router();
@@ -161,10 +161,26 @@ router.post(
 
     const finalName = `${file.filename}${MIME_TO_EXT[file.mimetype]}`;
 
-    // Postgres keeps media on disk; MongoDB keeps it in GridFS. Both hand
-    // back the same `/uploads/<uuid>.<ext>` URL.
+    // Media lands on disk (PostgreSQL), in GridFS (MongoDB), or on a remote
+    // media host. All three hand back the same `/uploads/<uuid>.<ext>` URL.
     const store = getMediaStore(mongoClient);
-    const stored = await store.save(file.path, finalName, file.mimetype);
+
+    let stored: Awaited<ReturnType<typeof store.save>>;
+    try {
+      stored = await store.save(file.path, finalName, file.mimetype);
+    } catch (err) {
+      // Disk and remote stores leave the spool file behind on failure.
+      await cleanup();
+      if (err instanceof MediaIngestError) {
+        // 502: the API is fine, the media host is not.
+        throw new AppError(
+          `Media could not be stored: ${err.message}`,
+          502,
+          "INTERNAL_ERROR"
+        );
+      }
+      throw err;
+    }
 
     const mimeType = file.mimetype;
     let type = "file";

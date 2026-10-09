@@ -165,16 +165,19 @@ so media cannot live in a normal field. MongoDB's answer is **GridFS**, which
 splits a file into 255 KB chunks across two collections (`media.files` and
 `media.chunks`) and streams it back on read.
 
-| | PostgreSQL | MongoDB |
-|---|---|---|
-| Where bytes live | `server/uploads/` on disk | GridFS in the database |
-| Served by | `express.static` | `GET /uploads/:name` → GridFS stream |
-| Public URL | `/uploads/<uuid>.<ext>` | `/uploads/<uuid>.<ext>` (identical) |
+Media storage is chosen independently of the database via `MEDIA_PROVIDER`, so
+you can keep a MongoDB database and still store media elsewhere:
 
-The URL shape is identical on both backends, so no stored `attachmentUrl`,
-`mediaUrl` or `icon` value changes meaning when you switch providers. Magic-byte
-validation still runs before anything is written, on both backends — the temp
-file is validated first and only then streamed into GridFS.
+| `MEDIA_PROVIDER` | Bytes live in | Served by |
+|---|---|---|
+| `disk` (default for postgres) | `server/uploads` on disk | `express.static` |
+| `gridfs` (default for mongo) | GridFS in the database | `GET /uploads/:name` |
+| `remote` | a separate media host | `302` redirect to that host |
+
+The public URL is `/uploads/<uuid>.<ext>` in all three cases, so no stored
+`attachmentUrl`, `mediaUrl` or `icon` value changes meaning. Magic-byte
+validation runs before anything is written, on every backend. See
+[MEDIA.md](./MEDIA.md) for the remote host setup.
 
 ## Deploying to production with MongoDB
 
@@ -287,6 +290,11 @@ at least once against that cluster.
   writes, `createMany`, `aggregate`, and any field missing from
   `mongoSchema.ts`. That last one is deliberate — it catches drift between the
   two schema files at the first request that touches the new field.
+
+## Where to read more
+
+- [MEDIA.md](./MEDIA.md) — serving images and videos from a separate host
+- [DEPLOYMENT.md](./DEPLOYMENT.md) — Render deploy details
 
 ## Switching back
 

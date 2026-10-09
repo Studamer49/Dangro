@@ -13,6 +13,7 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { setupSocketHandlers } from "./socket/index.js";
 import { setIO } from "./socket/io.js";
 import { ensureIndexes } from "./db/mongoIndexes.js";
+import { getMediaStore } from "./db/storage.js";
 import { mongoClient } from "./prisma.js";
 
 import authRoutes from "./routes/auth.js";
@@ -126,9 +127,10 @@ app.use("/api", (req, res) => {
   res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: `Cannot ${req.method} ${req.path}` } });
 });
 
-// On the MongoDB backend, media is streamed out of GridFS instead of disk.
-// Mounted before the static handler so database-backed files win.
-if (config.usesMongo) {
+// Media that is not on this machine's disk is streamed (GridFS) or
+// redirected (remote host) rather than served by express.static. Mounted
+// first so it wins over the static handler.
+if (getMediaStore(mongoClient).redirects || config.usesMongo) {
   app.use("/uploads", mediaRoutes);
 }
 app.use("/uploads", express.static(config.uploadDir, { fallthrough: true, maxAge: "1d" }));
