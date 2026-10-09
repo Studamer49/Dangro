@@ -40,18 +40,19 @@ Start the service in its own terminal — the port has to exist before you
 expose it:
 
 ```bash
-cd ~/Documents/Dangro/server
-set -a; . ~/.dangro-media.env; set +a
-npm run media:start
+bash scripts/run-media-service.sh --foreground
 ```
 
 It logs `[media] serving … on 127.0.0.1:8081` and refuses to start without
-`MEDIA_KEY`.
+`MEDIA_KEY`. Once it is working, `bash scripts/run-media-service.sh` (no flag)
+starts it detached instead, logging to `~/dangro-media.log`, so closing the
+terminal or dropping an SSH session does not take uploads down.
 
-Verify locally:
+Verify:
 
 ```bash
 curl -s http://127.0.0.1:8081/health
+tail -f ~/dangro-media.log    # when running detached
 ```
 
 `server/media.env.example` documents the three variables if you'd rather write
