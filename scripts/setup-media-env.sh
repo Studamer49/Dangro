@@ -2,7 +2,7 @@
 #
 # Creates ~/.dangro-media.env for the media service.
 #
-#   bash scripts/setup-media-env.sh [path]
+#   bash scripts/setup-media-env.sh [target-path] [--force]
 #
 # Writes MEDIA_KEY (a fresh random secret), MEDIA_DIR and MEDIA_PORT with
 # owner-only permissions, then prints what to do next. Refuses to overwrite an
@@ -11,14 +11,20 @@
 
 set -euo pipefail
 
-TARGET="${1:-$HOME/.dangro-media.env}"
-MEDIA_DIR="${MEDIA_DIR:-$HOME/dangro-media}"
-MEDIA_PORT="${MEDIA_PORT:-8081}"
+TARGET="$HOME/.dangro-media.env"
 FORCE=0
 
-if [ "${2:-}" = "--force" ] || [ "${1:-}" = "--force" ]; then
-  FORCE=1
-fi
+# Usage: setup-media-env.sh [target-path] [--force]
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE=1 ;;
+    -*) echo "Unknown option: $arg" >&2; exit 1 ;;
+    *) TARGET="$arg" ;;
+  esac
+done
+
+MEDIA_DIR="${MEDIA_DIR:-$HOME/dangro-media}"
+MEDIA_PORT="${MEDIA_PORT:-8081}"
 
 if [ -e "$TARGET" ] && [ "$FORCE" -eq 0 ]; then
   echo "Refusing to overwrite $TARGET (it already exists)."
