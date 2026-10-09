@@ -24,30 +24,38 @@ in `attachmentUrl` / `mediaUrl` / `icon` are identical on every backend.
 
 ## 1. Start the media service
 
-On the machine that will hold the files:
+On the machine that will hold the files, create the key file once:
+
+```bash
+cd ~/Documents/Dangro
+bash scripts/setup-media-env.sh
+```
+
+That writes `~/.dangro-media.env` (mode 0600) with a fresh random `MEDIA_KEY`,
+and prints it once so you can copy it into the API host as
+`MEDIA_INGEST_KEY`. Re-run with `--force` to rotate; that invalidates whatever
+is currently set on the API.
+
+Start the service in its own terminal — the port has to exist before you
+expose it:
 
 ```bash
 cd ~/Documents/Dangro/server
-npm run build          # once, or after pulling changes
-```
-
-Set three variables (`MEDIA_KEY` is the shared secret the API presents):
-
-```bash
-export MEDIA_DIR="$HOME/dangro-media"
-export MEDIA_PORT=8081
-export MEDIA_KEY="$(openssl rand -base64 48)"
-echo "$MEDIA_KEY"    # keep this — you will put the same value on the API
+set -a; . ~/.dangro-media.env; set +a
 npm run media:start
 ```
 
-It logs `serving … on 127.0.0.1:8081` and refuses to start without `MEDIA_KEY`.
+It logs `[media] serving … on 127.0.0.1:8081` and refuses to start without
+`MEDIA_KEY`.
 
 Verify locally:
 
 ```bash
 curl -s http://127.0.0.1:8081/health
 ```
+
+`server/media.env.example` documents the three variables if you'd rather write
+the file by hand.
 
 ## 2. Expose it with Tailscale Funnel
 
@@ -126,6 +134,10 @@ curl -s http://localhost:3001/api/health
 ```
 
 ## 4. Run it permanently
+
+`npm run media:start` runs through `tsx`, which is fine for a foreground
+session but is a development path. For the systemd service, compile once
+(`npm run build` in `server/`) so it can run plain JavaScript from `dist/`.
 
 With a UPS the machine survives outages, but a reboot still stops the service.
 A systemd unit on the laptop:
