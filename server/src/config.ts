@@ -56,12 +56,32 @@ if (isProduction && jwtSecret.length < 32) {
   console.warn("[config] WARNING: JWT_SECRET is shorter than 32 characters. Use a long random string in production.");
 }
 
-const databaseUrl = required(
-  "DATABASE_URL",
-  isProduction
-    ? "Set DATABASE_URL in the Render service environment to your Neon connection string."
-    : "Add DATABASE_URL to server/.env — see server/.env.example."
-);
+/**
+ * Which database backs the server. "postgres" (Prisma, the default) or
+ * "mongo" (the MongoDB engine in `src/db`). Both expose the same client
+ * surface, so no route changes either way.
+ */
+const databaseProvider = optional("DATABASE_PROVIDER", "postgres");
+if (databaseProvider !== "postgres" && databaseProvider !== "mongo") {
+  fail(
+    `DATABASE_PROVIDER must be "postgres" or "mongo", received "${databaseProvider}"`,
+    'Set DATABASE_PROVIDER="postgres" or "mongo" in server/.env.'
+  );
+}
+const usesMongo = databaseProvider === "mongo";
+
+const mongoUri = optional("MONGODB_URI", "mongodb://127.0.0.1:27017");
+const mongoDbName = optional("MONGODB_DB_NAME", "dangro");
+
+// Only the PostgreSQL backend needs a connection string.
+const databaseUrl = usesMongo
+  ? optional("DATABASE_URL", "")
+  : required(
+      "DATABASE_URL",
+      isProduction
+        ? "Set DATABASE_URL in the Render service environment to your Neon connection string."
+        : "Add DATABASE_URL to server/.env — see server/.env.example."
+    );
 
 /** Comma-separated list of allowed browser origins (CORS + Socket.IO). */
 const clientUrls = optional("CLIENT_URL", "http://localhost:5173")
@@ -74,6 +94,10 @@ export const config = {
   isProduction,
   isTest,
   port,
+  databaseProvider,
+  usesMongo,
+  mongoUri,
+  mongoDbName,
   databaseUrl,
   jwtSecret,
   jwtRefreshSecret: optional("JWT_REFRESH_SECRET", jwtSecret + "_refresh"),

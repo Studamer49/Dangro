@@ -1,11 +1,12 @@
 import { Request, Response, Router } from "express";
 import multer from "multer";
 import fs from "fs";
-import path from "path";
 import { v4 as uuidv4 } from "uuid";
 import { authenticate } from "../middleware/auth.js";
 import { config } from "../config.js";
 import { AppError, asyncHandler, ok, toErrorBody } from "../lib/http.js";
+import { getMediaStore } from "../db/storage.js";
+import { mongoClient } from "../prisma.js";
 
 const router = Router();
 
@@ -159,17 +160,11 @@ router.post(
     }
 
     const finalName = `${file.filename}${MIME_TO_EXT[file.mimetype]}`;
-    const finalPath = path.join(config.uploadDir, finalName);
-    let renamed = true;
-    try {
-      await fs.promises.rename(file.path, finalPath);
-    } catch {
-      renamed = false;
-    }
-    if (!renamed) {
-      await cleanup();
-      throw AppError.of("INTERNAL_ERROR", "Could not store uploaded file");
-    }
+
+    // Postgres keeps media on disk; MongoDB keeps it in GridFS. Both hand
+    // back the same `/uploads/<uuid>.<ext>` URL.
+    const store = getMediaStore(mongoClient);
+    const stored = await store.save(file.path, finalName, file.mimetype);
 
     const mimeType = file.mimetype;
     let type = "file";
@@ -180,9 +175,9 @@ router.post(
     ok(
       res,
       {
-        url: `/uploads/${finalName}`,
+        url: stored.url,
         filename: safeDisplayName(file.originalname),
-        size: file.size,
+        size: stored.size,
         mimeType,
         type,
       },

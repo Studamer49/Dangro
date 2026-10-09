@@ -21,6 +21,7 @@ import channelRoutes from "./routes/channels.js";
 import messageRoutes from "./routes/messages.js";
 import dmRoutes from "./routes/dms.js";
 import uploadRoutes from "./routes/uploads.js";
+import mediaRoutes from "./routes/media.js";
 import postRoutes from "./routes/posts.js";
 import storyRoutes from "./routes/stories.js";
 import followRoutes from "./routes/follows.js";
@@ -116,6 +117,11 @@ app.use("/api", (req, res) => {
   res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: `Cannot ${req.method} ${req.path}` } });
 });
 
+// On the MongoDB backend, media is streamed out of GridFS instead of disk.
+// Mounted before the static handler so database-backed files win.
+if (config.usesMongo) {
+  app.use("/uploads", mediaRoutes);
+}
 app.use("/uploads", express.static(config.uploadDir, { fallthrough: true, maxAge: "1d" }));
 
 const clientDistPath = path.resolve(__dirname, "../../client/dist");
@@ -142,7 +148,9 @@ setupSocketHandlers(io);
 async function main(): Promise<void> {
   try {
     await prisma.$connect();
-    console.log("Connected to database");
+    console.log(
+      `Connected to database (${config.usesMongo ? `MongoDB ${config.mongoDbName} @ ${config.mongoUri}` : "PostgreSQL via Prisma"})`
+    );
 
     httpServer.listen(config.port, () => {
       console.log(`Server running on port ${config.port}`);
