@@ -24,8 +24,22 @@ services:
         value: mongo
       - key: MONGODB_DB_NAME
         value: dangro
+      # Media lives on a separate host (see MEDIA.md); the API 302-redirects
+      # browsers there so video never passes through Render.
+      - key: MEDIA_PROVIDER
+        value: remote
       # Set these in the Render Dashboard (Environment tab), never in the repo:
+      #   MONGODB_URI      the mongodb+srv:// string from Atlas
+      #   MEDIA_PUBLIC_URL public base URL of the media host
+      #   MEDIA_INGEST_URL where the API pushes uploads (defaults to the above)
+      #   MEDIA_INGEST_KEY must match MEDIA_KEY on the media host
       - key: MONGODB_URI
+        sync: false
+      - key: MEDIA_PUBLIC_URL
+        sync: false
+      - key: MEDIA_INGEST_URL
+        sync: false
+      - key: MEDIA_INGEST_KEY
         sync: false
       - key: JWT_SECRET
         generateValue: true
