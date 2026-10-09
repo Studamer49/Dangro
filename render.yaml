@@ -9,7 +9,8 @@ services:
       npm run build --prefix client
       npm --prefix server run db:generate
       npm run build --prefix server
-    preDeployCommand: npm run db:deploy
+    # No preDeployCommand: Prisma migrations need DATABASE_URL, and this
+    # service is backed by MongoDB, whose schema needs no migration step.
     startCommand: npm start
     healthCheckPath: /api/health
     envVars:
@@ -19,8 +20,12 @@ services:
         value: 3001
       - key: CLIENT_URL
         value: https://dangro.onrender.com
+      - key: DATABASE_PROVIDER
+        value: mongo
+      - key: MONGODB_DB_NAME
+        value: dangro
       # Set these in the Render Dashboard (Environment tab), never in the repo:
-      - key: DATABASE_URL
+      - key: MONGODB_URI
         sync: false
       - key: JWT_SECRET
         generateValue: true

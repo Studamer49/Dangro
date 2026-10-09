@@ -176,15 +176,105 @@ The URL shape is identical on both backends, so no stored `attachmentUrl`,
 validation still runs before anything is written, on both backends — the temp
 file is validated first and only then streamed into GridFS.
 
+## Deploying to production with MongoDB
+
+**Do not run `mongod` on Render.** Free web services have an *ephemeral
+filesystem*, so the database would be wiped on every deploy, restart, and
+15-minute spin-down — and free services cannot attach a persistent disk at all.
+Keep the API on Render and put the database on **MongoDB Atlas**, which is
+separate infrastructure and always on.
+
+This works cleanly because Dangro keeps no durable state on the API host:
+uploads live in GridFS, so the ephemeral disk holds nothing that matters.
+
+### 1. Create the cluster
+
+- [cloud.mongodb.com](https://cloud.mongodb.com) → **Create** → tier **M0 (Free)**.
+- Pick AWS region **Oregon (us-west)**, the same region Render runs in, to
+  minimise latency.
+- A free cluster is a replica set, so transactions are available. Note that
+  free/shared tiers historically varied here; if transactions are refused, the
+  server logs a warning and falls back to sequential automatically.
+
+### 2. Create the database user
+
+**Database Access** → *Add New Database User*:
+
+| Field | Value |
+|---|---|
+| Username | `dangro` |
+| Password | a long random string — this is the only thing protecting the DB once step 3 opens it to the internet |
+| Database User Privileges | *Read and write to any database* |
+
+### 3. Allow Render to connect
+
+**Network Access** → *Add IP Address*.
+
+Render's outbound IPs are not static on the free tier, so pinning them is not
+possible — the practical choice is `0.0.0.0/0`, which relies entirely on the
+credentials from step 2. Make that password long and random; anyone who guesses
+it gets full read/write access.
+
+### 4. Configure Render
+
+In the Render dashboard → your service → **Environment**, add:
+
+| Key | Value |
+|---|---|
+| `MONGODB_URI` | the `mongodb+srv://...` string Atlas shows after step 3 |
+| `MONGODB_DB_NAME` | `dangro` |
+
+`DATABASE_PROVIDER: mongo` and `NODE_ENV: production` come from `render.yaml`.
+Delete `DATABASE_URL` if it is still set — the MongoDB backend ignores it, but
+leaving a stale Postgres string around invites confusion.
+
+Then **Save and Deploy**. Watch the deploy log for:
+
+```
+Connected to database (MongoDB dangro @ mongodb+srv://...)
+MongoDB indexes verified
+```
+
+### 5. Verify before retiring the old database
+
+```bash
+curl -s https://dangro.onrender.com/api/health
+# {"success":true,"data":{"status":"ok","uptime":..,"database":"mongo"}}
+```
+
+Then in the browser: sign up, create a server and channel, send a message, and
+**upload an image** — the last one matters, because it proves GridFS writes and
+the `/uploads/...` read path work in production. Check that a second browser
+sees the message arrive in realtime (Socket.IO).
+
+Only once that all works, back up and delete the old database:
+
+```bash
+pg_dump "$NEON_URL" > dangro-backup.sql
+```
+
+Keep that dump (and the Neon project) for a week before deleting anything —
+deleting a database is not reversible.
+
+### 6. Indexes are created automatically
+
+`server/src/db/mongoIndexes.ts` runs on every boot and creates the unique and
+foreign-key indexes declared in `mongoSchema.ts`, so there is no migration step.
+Note the consequence: unique constraints only exist once the server has started
+at least once against that cluster.
+
+---
+
 ## Behaviour differences from the PostgreSQL backend
 
 - **No migrations.** Schemas come from `server/src/db/mongoSchema.ts`, which
-  mirrors `prisma/schema.prisma`. Changing a model means editing that file.
-- **`$transaction` is sequential, not atomic.** Only `friends.ts` uses it
-  (accepting a friend request). MongoDB multi-document transactions require a
-  replica set; a plain local `mongod` is a standalone node and cannot do it. To
-  get real atomicity, run a replica set (e.g. `mongod --replSet rs0` plus
-  `rs.initiate()`) and switch `$transaction` to `session.withTransaction`.
+  mirrors `prisma/schema.prisma`. Indexes (unique + foreign key) are created
+  automatically at startup by `mongoIndexes.ts`.
+- **`$transaction` degrades gracefully.** It runs a real MongoDB transaction
+  where the deployment supports one, and falls back to running the operations in
+  order when it does not (a standalone local `mongod`, or a tier that refuses
+  transaction commands). The one call site is friend-request acceptance in
+  `friends.ts`.
 - **Relations are loaded with batched extra queries**, one per relation per
   page, rather than SQL joins. This is invisible at API level but produces more
   round trips than Postgres does.

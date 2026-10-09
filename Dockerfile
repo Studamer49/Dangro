@@ -39,4 +39,6 @@ RUN apk add --no-cache openssl libc6-compat
 
 EXPOSE 3001
 
-CMD ["sh", "-c", "npm --prefix server run db:deploy && npm start"]
+# No `prisma migrate deploy` here: the MongoDB backend has no migrations to
+# apply, and the command would fail without a PostgreSQL connection string.
+CMD ["npm", "start"]

@@ -12,6 +12,8 @@ import { prisma } from "./prisma.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { setupSocketHandlers } from "./socket/index.js";
 import { setIO } from "./socket/io.js";
+import { ensureIndexes } from "./db/mongoIndexes.js";
+import { mongoClient } from "./prisma.js";
 
 import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/users.js";
@@ -93,7 +95,14 @@ const authLimiter = rateLimit({
 });
 
 app.get("/api/health", (_req, res) => {
-  res.json({ success: true, data: { status: "ok", uptime: process.uptime() } });
+  res.json({
+    success: true,
+    data: {
+      status: "ok",
+      uptime: process.uptime(),
+      database: config.usesMongo ? "mongo" : "postgres",
+    },
+  });
 });
 
 app.use("/api", globalLimiter);
@@ -151,6 +160,13 @@ async function main(): Promise<void> {
     console.log(
       `Connected to database (${config.usesMongo ? `MongoDB ${config.mongoDbName} @ ${config.mongoUri}` : "PostgreSQL via Prisma"})`
     );
+
+    if (config.usesMongo && mongoClient) {
+      // MongoDB enforces nothing on its own, so the unique and foreign-key
+      // indexes declared in mongoSchema.ts are applied on every boot.
+      await ensureIndexes(mongoClient.db(config.mongoDbName));
+      console.log("MongoDB indexes verified");
+    }
 
     httpServer.listen(config.port, () => {
       console.log(`Server running on port ${config.port}`);

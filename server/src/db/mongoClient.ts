@@ -1,5 +1,6 @@
-import type { Collection, Db, Document, Filter } from "mongodb";
+import type { ClientSession, Collection, Db, Document, Filter } from "mongodb";
 import { MODELS, getModel, type ModelDef } from "./mongoSchema.js";
+import { runWithSession, sessionOpts } from "./session.js";
 import { buildFilter, buildSort, type QueryContext } from "./mongoWhere.js";
 import { shapeDocuments, type ShapeArgs } from "./mongoPopulate.js";
 
@@ -158,6 +159,31 @@ export interface MongoDelegate {
   createMany(args: unknown): never;
 }
 
+/**
+ * True when the deployment cannot run multi-document transactions —
+ * a standalone `mongod`, or a shared cluster tier that refuses them.
+ *
+ * Exported for tests: misclassifying this would either break a working
+ * transaction or silently downgrade a real error into a partial write.
+ */
+export function transactionsUnsupported(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err);
+  if (!/transaction/i.test(message)) return false;
+  return (
+    /transaction numbers are only allowed/i.test(message) ||
+    /transactions are not supported/i.test(message) ||
+    /transaction numbers/i.test(message) ||
+    /not supported/i.test(message)
+  );
+}
+
+/** The part of the driver's MongoClient this module relies on. */
+export interface MongoClientDriver {
+  connect(): Promise<unknown>;
+  close(): Promise<void>;
+  startSession(): ClientSession;
+}
+
 function createDelegate(modelName: string, db: Db): MongoDelegate {
   const model = getModel(modelName);
   const collection = (): Collection<Document> => db.collection(model.collection);
@@ -188,7 +214,7 @@ function createDelegate(modelName: string, db: Db): MongoDelegate {
   const delegate: MongoDelegate = {
     findUnique({ where, ...shape }) {
       return new LazyOp(async () => {
-        const doc = await collection().findOne(uniqueFilter(model, where));
+        const doc = await collection().findOne(uniqueFilter(model, where), sessionOpts());
         if (!doc) return null;
         const [shaped] = await applyShape([doc], shape);
         return shaped;
@@ -200,7 +226,7 @@ function createDelegate(modelName: string, db: Db): MongoDelegate {
         const filter = await buildFilter(model, args.where, ctx);
         const sort = buildSort(model, args.orderBy) ?? defaultSort(model);
         const docs = await collection()
-          .find(filter)
+          .find(filter, sessionOpts())
           .sort(sort)
           .limit(1)
           .toArray();
@@ -214,7 +240,7 @@ function createDelegate(modelName: string, db: Db): MongoDelegate {
       return new LazyOp(async () => {
         const filter = await buildFilter(model, args.where, ctx);
         const sort = buildSort(model, args.orderBy) ?? defaultSort(model);
-        let cursor = collection().find(filter).sort(sort);
+        let cursor = collection().find(filter, sessionOpts()).sort(sort);
         if (args.skip) cursor = cursor.skip(args.skip);
         if (typeof args.take === "number") cursor = cursor.limit(args.take);
         return applyShape(await cursor.toArray(), args);
@@ -225,7 +251,7 @@ function createDelegate(modelName: string, db: Db): MongoDelegate {
       return new LazyOp(async () => {
         const doc = buildData(data, true);
         if (doc._id === undefined) doc._id = crypto.randomUUID();
-        await collection().insertOne(doc);
+        await collection().insertOne(doc, sessionOpts());
         const [shaped] = await applyShape([doc], shape);
         return shaped;
       });
@@ -235,9 +261,11 @@ function createDelegate(modelName: string, db: Db): MongoDelegate {
       return new LazyOp(async () => {
         const filter = uniqueFilter(model, where);
         const update = buildData(data, false);
-        const result = await collection().findOneAndUpdate(filter, { $set: update }, {
-          returnDocument: "after",
-        });
+        const result = await collection().findOneAndUpdate(
+          filter,
+          { $set: update },
+          sessionOpts({ returnDocument: "after" })
+        );
         if (!result) throw new PrismaNotFoundError(model.name);
         const [shaped] = await applyShape([result], shape);
         return shaped;
@@ -246,19 +274,19 @@ function createDelegate(modelName: string, db: Db): MongoDelegate {
 
     upsert({ where, data, ...shape }) {
       return new LazyOp(async () => {
-        const existing = await collection().findOne(uniqueFilter(model, where));
+        const existing = await collection().findOne(uniqueFilter(model, where), sessionOpts());
         if (existing) {
           const result = await collection().findOneAndUpdate(
             { _id: existing._id },
             { $set: buildData(data, false) },
-            { returnDocument: "after" }
+            sessionOpts({ returnDocument: "after" })
           );
           const [shaped] = await applyShape([result as Document], shape);
           return shaped;
         }
         const doc = buildData(data, true);
         if (doc._id === undefined) doc._id = crypto.randomUUID();
-        await collection().insertOne(doc);
+        await collection().insertOne(doc, sessionOpts());
         const [shaped] = await applyShape([doc], shape);
         return shaped;
       });
@@ -268,7 +296,7 @@ function createDelegate(modelName: string, db: Db): MongoDelegate {
       return new LazyOp(async () => {
         const filter = await buildFilter(model, where, ctx);
         const update = buildData(data, false);
-        const result = await collection().updateMany(filter, { $set: update });
+        const result = await collection().updateMany(filter, { $set: update }, sessionOpts());
         return { count: result.modifiedCount };
       });
     },
@@ -276,7 +304,7 @@ function createDelegate(modelName: string, db: Db): MongoDelegate {
     delete({ where, ...shape }) {
       return new LazyOp(async () => {
         const filter = uniqueFilter(model, where);
-        const doc = await collection().findOneAndDelete(filter);
+        const doc = await collection().findOneAndDelete(filter, sessionOpts());
         if (!doc) throw new PrismaNotFoundError(model.name);
         const [shaped] = await applyShape([doc], shape);
         return shaped;
@@ -286,7 +314,7 @@ function createDelegate(modelName: string, db: Db): MongoDelegate {
     deleteMany({ where } = {}) {
       return new LazyOp(async () => {
         const filter = await buildFilter(model, where, ctx);
-        const result = await collection().deleteMany(filter);
+        const result = await collection().deleteMany(filter, sessionOpts());
         return { count: result.deletedCount };
       });
     },
@@ -294,7 +322,7 @@ function createDelegate(modelName: string, db: Db): MongoDelegate {
     count({ where } = {}) {
       return new LazyOp(async () => {
         const filter = await buildFilter(model, where, ctx);
-        return collection().countDocuments(filter);
+        return collection().countDocuments(filter, sessionOpts());
       });
     },
 
@@ -318,12 +346,13 @@ export interface MongoClient {
   $transaction(ops: LazyOp<unknown>[]): Promise<unknown[]>;
 }
 
-export interface MongoLifecycle {
-  connect(): Promise<void>;
-  close(): Promise<void>;
+export interface MongoClient {
+  $connect(): Promise<void>;
+  $disconnect(): Promise<void>;
+  $transaction(ops: LazyOp<unknown>[]): Promise<unknown[]>;
 }
 
-export function createMongoClient(db: Db, lifecycle?: MongoLifecycle): MongoClient {
+export function createMongoClient(db: Db, driver: MongoClientDriver): MongoClient {
   const client: Record<string, unknown> = {};
 
   for (const name of Object.keys(MODELS)) {
@@ -331,22 +360,53 @@ export function createMongoClient(db: Db, lifecycle?: MongoLifecycle): MongoClie
   }
 
   client.$connect = async () => {
-    await lifecycle?.connect();
+    await driver.connect();
   };
   client.$disconnect = async () => {
-    await lifecycle?.close();
+    await driver.close();
   };
 
   /**
-   * Executes operations in order. This is deliberately sequential rather than
-   * a true MongoDB transaction: multi-document transactions need a replica
-   * set, which a plain local `mongod` is not. See MONGODB.md for how to get
-   * atomicity if you need it.
+   * Runs the operations atomically inside a MongoDB transaction.
+   *
+   * Deployments that cannot do multi-document transactions — a standalone
+   * `mongod`, or a shared tier that refuses them — fall back to running the
+   * operations in order. The route cannot tell the difference, which keeps
+   * development and production on one code path.
    */
   client.$transaction = async (ops: LazyOp<unknown>[]) => {
-    const results: unknown[] = [];
-    for (const op of ops) results.push(await op);
-    return results;
+    const runSequentially = async (): Promise<unknown[]> => {
+      const results: unknown[] = [];
+      for (const op of ops) results.push(await op);
+      return results;
+    };
+
+    let session: ClientSession | undefined;
+    try {
+      session = driver.startSession();
+    } catch {
+      return runSequentially();
+    }
+
+    try {
+      let results: unknown[] = [];
+      // withTransaction may retry the callback, so results is replaced (not
+      // appended to) on each attempt.
+      await session.withTransaction(async () => {
+        results = await runWithSession(session as ClientSession, runSequentially);
+      });
+      return results;
+    } catch (err) {
+      if (transactionsUnsupported(err)) {
+        console.warn(
+          "[db] this MongoDB deployment does not support transactions; running the operations sequentially."
+        );
+        return runSequentially();
+      }
+      throw err;
+    } finally {
+      await session.endSession().catch(() => undefined);
+    }
   };
 
   return client as unknown as MongoClient;

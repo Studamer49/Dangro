@@ -1,6 +1,7 @@
 import type { Document } from "mongodb";
 import { getModel, type ModelDef, type RelationDef } from "./mongoSchema.js";
 import { buildFilter, buildSort, type QueryContext } from "./mongoWhere.js";
+import { sessionOpts } from "./session.js";
 
 /**
  * Shapes raw Mongo documents into the payload Prisma would have returned:
@@ -128,7 +129,7 @@ async function loadRelation(
     const keys = [...new Set(parentIds.map(String))];
     const childIds = await ctx
       .collectionFor(rel.target)
-      .find({ _id: { $in: keys } })
+      .find({ _id: { $in: keys } }, sessionOpts())
       .toArray();
     const byId = new Map(childIds.map((doc: Document) => [String(doc._id), doc]));
     for (const key of keys) out.set(key, byId.get(key) ?? null);
@@ -144,7 +145,7 @@ async function loadRelation(
   const sort = buildSort(target, nested.orderBy) ?? buildSort(target, target.defaultOrder);
   const children = await ctx
     .collectionFor(rel.target)
-    .find(filter)
+    .find(filter, sessionOpts())
     .sort(sort ?? { _id: 1 })
     .toArray();
 
@@ -201,7 +202,7 @@ async function countRelation(
     const target = getModel(rel.target);
     const children = await ctx
       .collectionFor(rel.target)
-      .find({ _id: { $in: parentIds } })
+      .find({ _id: { $in: parentIds } }, sessionOpts())
       .toArray();
     for (const child of children) out.set(String(child._id), 1);
     void target;
@@ -212,10 +213,13 @@ async function countRelation(
 
   const rows = await ctx
     .collectionFor(rel.target)
-    .aggregate([
-      { $match: { [rel.backKey]: { $in: parentIds } } },
-      { $group: { _id: `$${rel.backKey}`, count: { $sum: 1 } } },
-    ])
+    .aggregate(
+      [
+        { $match: { [rel.backKey]: { $in: parentIds } } },
+        { $group: { _id: `$${rel.backKey}`, count: { $sum: 1 } } },
+      ],
+      sessionOpts()
+    )
     .toArray();
 
   for (const row of rows) out.set(String(row._id), row.count as number);

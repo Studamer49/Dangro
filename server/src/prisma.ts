@@ -40,6 +40,7 @@ if (config.usesMongo) {
     close: async () => {
       await client.close();
     },
+    startSession: () => client.startSession(),
   }) as unknown as PrismaClient;
 } else {
   prisma = globalForDb.prisma || new PrismaClient();
