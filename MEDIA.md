@@ -55,15 +55,20 @@ Tailscale Funnel publishes the local port over HTTPS on a stable
 `*.ts.net` hostname — no port forwarding, no public IP, no domain purchase,
 and it works behind CGNAT.
 
+**Start the media service first**, so the port exists when you expose it:
+
 ```bash
-curl -fsSL https://tailscale.com/install.sh | sh
-sudo tailscale up
+cd ~/Documents/Dangro/server
+set -a; . ~/.dangro-media.env; set +a
+npm run media:start          # leave this running
 ```
 
-In the admin console (<https://login.tailscale.com/admin/dns>):
+In a **second terminal**:
 
-1. Enable **MagicDNS** and **HTTPS** (both default on for new tailnets)
-2. Toggle **Funnel** on the DNS page
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up            # opens a browser to authorise this machine
+```
 
 Then expose the port:
 
@@ -71,20 +76,29 @@ Then expose the port:
 tailscale funnel --bg 8081
 ```
 
-It prints something like:
+The first run opens a browser asking you to **approve enabling Funnel**. Approve
+it, and Tailscale automatically provisions the HTTPS certificate and adds the
+required `nodeAttrs` policy entry — you do not need to edit the tailnet policy
+or toggle anything on the DNS page yourself.
+
+It then prints something like:
 
 ```
 Available on the internet:
 |-- proxy https://ab-macbook.xxxxxxxxx.ts.net
 ```
 
-That HTTPS URL is your `MEDIA_PUBLIC_URL`. Confirm it from outside:
+That HTTPS URL (public port 443) forwards to your local 8081, and is your
+`MEDIA_PUBLIC_URL`. Confirm it works:
 
 ```bash
 curl -I https://ab-macbook.xxxxxxxxx.ts.net/health
 ```
 
-> **Bandwidth:** Funnel applies non-configurable bandwidth limits and may relay
+> **DNS can take up to 10 minutes** to propagate the first time, so a failure
+> straight after setup does not necessarily mean it is misconfigured.
+
+> **Bandwidth:** Funnel applies non-configurable bandwidth limits and relays
 > traffic through Tailscale infrastructure. Fine for images; large video may be
 > slow. If that proves a problem, the alternatives are Cloudflare R2 (10 GB
 > free) or a DuckDNS + Caddy setup with port forwarding — both are pure

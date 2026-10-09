@@ -168,7 +168,7 @@ app.put(
 
 const server = app.listen(port, "127.0.0.1", () => {
   console.log(`[media] serving ${mediaDir} on 127.0.0.1:${port}`);
-  console.log("[media] expose this port with `tailscale funnel --bg " + port + "`");
+  console.log(`[media] expose it publicly with: tailscale funnel --bg ${port}`);
 });
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {
