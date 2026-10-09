@@ -29,8 +29,10 @@ brew services start mongodb-community
 your distro, then `sudo systemctl start mongod`.
 
 **Atlas (no install)** — create a free M0 cluster and use its
-`mongodb+srv://...` URI. Free M0 clusters do not support GridFS writes on some
-tiers, so prefer a local `mongod` if you want to test uploads.
+`mongodb+srv://...` URI. GridFS uploads work fine there; note that free and
+shared tiers do **not** support multi-document transactions, so `$transaction`
+stays sequential on Atlas M0 too. M0 also has a small shared storage limit
+(500 MB), which uploads will eventually fill.
 
 ## 2. Point the server at MongoDB
 
