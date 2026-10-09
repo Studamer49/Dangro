@@ -14,7 +14,9 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    host: "0.0.0.0",   // Exposes Vite to your local network (LAN)
+    port: 5173,        // Targets port 5173
+    strictPort: true,  // Fails with an error if 5173 is busy instead of silently changing ports
     proxy: {
       "/api": {
         target: "http://localhost:3001",
