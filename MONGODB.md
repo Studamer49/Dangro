@@ -49,9 +49,64 @@ CLIENT_URL=http://localhost:5173
 `DATABASE_URL` is no longer required in this mode — the server only demands it
 when `DATABASE_PROVIDER=postgres`.
 
-> Put each variable on its own line. `dotenv` reads one assignment per line, so
-> two variables on one line produce a corrupted `DATABASE_URL` and an undefined
+> Put each variable on one line. `dotenv` reads one assignment per line, so two
+> variables on one line produce a corrupted `DATABASE_URL` and an undefined
 > `JWT_SECRET`.
+
+### If MongoDB is on a different machine
+
+`mongod` listens on `127.0.0.1` only, so a MongoDB on another machine is
+unreachable until you change three things **on the machine running MongoDB**:
+
+1. **Bind to the network.** `/etc/mongod.conf` (Linux) or
+   `/etc/mongod.conf` (macOS Homebrew):
+
+   ```yaml
+   net:
+     port: 27017
+     bindIp: 0.0.0.0     # was 127.0.0.1
+   ```
+
+   Restart it: `sudo systemctl restart mongod` or `brew services restart mongodb-community`.
+
+2. **Allow the port through the firewall** on that machine.
+
+3. **Turn on authentication.** This is the important one — a `mongod` reachable
+   from the network with authorization disabled lets anyone on that network read
+   or delete your whole database. In `/etc/mongod.conf`:
+
+   ```yaml
+   security:
+     authorization: enabled
+   ```
+
+   Create a user, then connect with credentials:
+
+   ```js
+   use admin
+   db.createUser({ user: "dangro", pwd: "<long random password>", roles: [{ role: "readWrite", db: "dangro" }] })
+   ```
+
+   ```bash
+   mongod --config /etc/mongod.conf --auth
+   ```
+
+Then point the server at it:
+
+```
+MONGODB_URI=mongodb://dangro:<password>@<mongo-host-ip>:27017/?authSource=dangro
+```
+
+On the machine running Dangro, `mongodb://127.0.0.1:27017` still works when
+MongoDB is local — no configuration difference beyond the URI.
+
+### Media follows the database
+
+Because uploads live in GridFS rather than on disk, any machine running Dangro
+against the same MongoDB serves the same images and videos. The second machine
+needs no shared folder and no copied uploads — `/uploads/<uuid>.<ext>` is read
+from the database on each request. (With the PostgreSQL backend, by contrast,
+each machine only sees the files in its own `server/uploads` directory.)
 
 ## 3. Run it
 
