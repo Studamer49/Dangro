@@ -2,6 +2,7 @@ import { PrismaClient } from "@prisma/client";
 import { MongoClient } from "mongodb";
 import { config } from "./config.js";
 import { createMongoClient } from "./db/mongoClient.js";
+import { describeMongoUri, explainMongoError } from "./db/mongoUri.js";
 
 /**
  * The application's single database client.
@@ -28,10 +29,20 @@ let prisma: PrismaClient;
 
 if (config.usesMongo) {
   const client = mongoClient as MongoClient;
+  const target = describeMongoUri(config.mongoUri);
   // The driver connects lazily on first use; this surfaces an unreachable
   // MongoDB immediately instead of on the first request.
   void client.connect().catch((err) => {
-    console.error("[db] could not connect to MongoDB:", err instanceof Error ? err.message : err);
+    console.error("[db] could not connect to MongoDB:");
+    // Log the target without its password, so the next deploy log shows
+    // exactly which user, host and database were attempted.
+    console.error(`[db] target: ${target.redacted}`);
+    console.error(
+      `[db] selected: user=${target.user ?? "(none)"} host=${target.host ?? "(none)"} ` +
+        `database=${target.database ?? "(none)"} authSource=${target.authSource ?? "(defaults to admin)"}`
+    );
+    console.error("[db] error:", err instanceof Error ? err.message : err);
+    for (const note of explainMongoError(err)) console.error(`[db] hint: ${note}`);
   });
   prisma = createMongoClient(client.db(config.mongoDbName), {
     connect: async () => {
