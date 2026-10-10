@@ -299,13 +299,15 @@ export default function FriendsPage() {
                   <div className="space-y-2">
                     {incoming.map((r) => {
                       const sender = r.sender;
-                      if (!sender) return null;
+                      // Fall back to the id from the request itself rather
+                      // than dropping the row: a pending request must never
+                      // be invisible while the tab still counts it.
                       return (
                         <UserRow
                           key={r.id}
-                          username={sender.username}
-                          avatar={sender.avatar}
-                          status={sender.status}
+                          username={sender?.username ?? "Deleted user"}
+                          avatar={sender?.avatar ?? null}
+                          status={sender?.status ?? "offline"}
                           meta="Sent you a friend request"
                           actions={
                             <>
@@ -342,13 +344,12 @@ export default function FriendsPage() {
                   <div className="space-y-2">
                     {sent.map((r) => {
                       const receiver = r.receiver;
-                      if (!receiver) return null;
                       return (
                         <UserRow
                           key={r.id}
-                          username={receiver.username}
-                          avatar={receiver.avatar}
-                          status={receiver.status}
+                          username={receiver?.username ?? "Deleted user"}
+                          avatar={receiver?.avatar ?? null}
+                          status={receiver?.status ?? "offline"}
                           meta="Waiting for a response"
                           actions={
                             <button
