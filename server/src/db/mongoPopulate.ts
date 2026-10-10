@@ -86,7 +86,7 @@ export async function shapeDocuments(
   // selected other columns, so links stay navigable.
   for (const [name, rel] of requested) {
     const nested = relationArgs(args, name);
-    const loaded = await loadRelation(rel, parentIds, nested, ctx);
+    const loaded = await loadRelation(rel, docs, parentIds, nested, ctx);
 
     results.forEach((shaped, index) => {
       const value = loaded.get(String(parentIds[index]));
@@ -117,6 +117,7 @@ export async function shapeDocuments(
 /** Loads one relation for every parent id at once. */
 async function loadRelation(
   rel: RelationDef,
+  parents: Document[],
   parentIds: unknown[],
   nested: ShapeArgs,
   ctx: QueryContext
@@ -125,21 +126,28 @@ async function loadRelation(
   const out = new Map<string, unknown>();
 
   if (rel.ownKey) {
-    // Belongs-to: the foreign key sits on the parent document.
-    const keys = [...new Set(parentIds.map(String))];
-    const childDocs = await ctx
-      .collectionFor(rel.target)
-      .find({ _id: { $in: keys } }, sessionOpts())
-      .toArray();
+    // Belongs-to: the foreign key sits on the parent, so it must be read off
+    // each parent document. The key point that a lookup by the parent's own
+    // id would never match a related document.
+    const foreignKeys = parents
+      .map((parent) => parent[rel.ownKey as string])
+      .filter((value): value is string => typeof value === "string" && value.length > 0);
+
+    const childDocs = foreignKeys.length
+      ? await ctx.collectionFor(rel.target).find({ _id: { $in: [...new Set(foreignKeys)] } }, sessionOpts()).toArray()
+      : [];
+
     const byId = new Map(childDocs.map((doc: Document) => [String(doc._id), doc]));
 
-    for (const key of keys) {
+    for (let index = 0; index < parents.length; index += 1) {
+      const foreignKey = parents[index][rel.ownKey as string];
       // Must be shaped like every other relation: this applies `select`
       // (so a user is never returned with its password hash), renames _id to
       // id, and resolves any nested include.
-      const doc = byId.get(key);
-      out.set(key, doc ? await shapeSingle(target, doc, nested, ctx) : null);
+      const doc = typeof foreignKey === "string" ? byId.get(foreignKey) : undefined;
+      out.set(String(parentIds[index]), doc ? await shapeSingle(target, doc, nested, ctx) : null);
     }
+
     return out;
   }
 
