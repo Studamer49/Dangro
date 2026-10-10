@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { getSocket } from "@/lib/socket";
 import { useCallStore } from "@/stores/callStore";
 
@@ -62,12 +62,19 @@ export function useWebRTC() {
       setLocalStream(stream);
       return stream;
     } catch {
-      const audioOnly = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video: false,
-      });
-      setLocalStream(audioOnly);
-      return audioOnly;
+      // Camera denied or unavailable: fall back to audio only.
+      try {
+        const audioOnly = await navigator.mediaDevices.getUserMedia({
+          audio: true,
+          video: false,
+        });
+        setLocalStream(audioOnly);
+        return audioOnly;
+      } catch {
+        // The fallback used to reject unhandled, leaving the call UI showing
+        // a live call with no microphone and nothing in the console.
+        throw new Error("Microphone access was denied");
+      }
     }
   }, [setLocalStream]);
 
@@ -119,29 +126,44 @@ export function useWebRTC() {
     setRemoteStream(null);
   }, [setLocalStream, setRemoteStream]);
 
+  const [callError, setCallError] = useState<string | null>(null);
+
+  /** Ends the call and surfaces why, instead of rejecting into the void. */
+  const failCall = useCallback((err: unknown) => {
+    const message = err instanceof Error ? err.message : "The call could not be set up";
+    setCallError(message);
+    cleanup();
+    useCallStore.getState().resetCall();
+  }, [cleanup]);
+
   useEffect(() => {
     if (!isInCall) return;
 
     if (isCaller) {
-      void startLocalStream(callType === "video");
+      // Pre-acquire the local stream so permission is requested immediately;
+      // a denial has to end the call rather than surface as an unhandled
+      // rejection.
+      startLocalStream(callType === "video").catch(failCall);
     }
 
     const socket = getSocket();
 
     socket.on("call_accept", () => {
-      createOffer();
+      createOffer().catch(failCall);
     });
 
-    socket.on("webrtc_offer", async (data: { offer: RTCSessionDescriptionInit; userId: string }) => {
-      await handleOffer(data.offer, data.userId);
+    socket.on("webrtc_offer", (data: { offer: RTCSessionDescriptionInit; userId: string }) => {
+      handleOffer(data.offer, data.userId).catch(failCall);
     });
 
-    socket.on("webrtc_answer", async (data: { answer: RTCSessionDescriptionInit }) => {
-      await handleAnswer(data.answer);
+    socket.on("webrtc_answer", (data: { answer: RTCSessionDescriptionInit }) => {
+      handleAnswer(data.answer).catch(failCall);
     });
 
-    socket.on("ice_candidate", async (data: { candidate: RTCIceCandidateInit }) => {
-      await handleIceCandidate(data.candidate);
+    socket.on("ice_candidate", (data: { candidate: RTCIceCandidateInit }) => {
+      handleIceCandidate(data.candidate).catch(() => {
+        // A candidate that arrives after teardown is expected and harmless.
+      });
     });
 
     socket.on("call_end", () => {
@@ -163,7 +185,7 @@ export function useWebRTC() {
       socket.off("call_reject");
       cleanup();
     };
-  }, [isInCall, isCaller, callType, createOffer, handleOffer, handleAnswer, handleIceCandidate, cleanup, startLocalStream]);
+  }, [isInCall, isCaller, callType, createOffer, handleOffer, handleAnswer, handleIceCandidate, cleanup, startLocalStream, failCall]);
 
-  return { createOffer };
+  return { createOffer, callError };
 }

@@ -145,10 +145,15 @@ router.post(
     let header: Buffer;
     try {
       const handle = await fs.promises.open(file.path, "r");
-      header = Buffer.alloc(32);
-      const { bytesRead } = await handle.read(header, 0, 32, 0);
-      header = header.subarray(0, bytesRead);
-      await handle.close();
+      try {
+        header = Buffer.alloc(32);
+        const { bytesRead } = await handle.read(header, 0, 32, 0);
+        header = header.subarray(0, bytesRead);
+      } finally {
+        // A read failure used to leak the descriptor: the catch around this
+        // block deleted the file but never closed the handle.
+        await handle.close();
+      }
     } catch {
       await cleanup();
       throw AppError.of("BAD_REQUEST", "File could not be read");
@@ -169,7 +174,8 @@ router.post(
     try {
       stored = await store.save(file.path, finalName, file.mimetype);
     } catch (err) {
-      // Disk and remote stores leave the spool file behind on failure.
+      // Every store is responsible for clearing its own spool file; this is
+      // the backstop for one that failed before it could.
       await cleanup();
       if (err instanceof MediaIngestError) {
         // 502: the API is fine, the media host is not.

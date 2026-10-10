@@ -18,6 +18,7 @@ export default function ChatArea() {
   const [flashId, setFlashId] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const flashTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const fetchMessages = useCallback(async () => {
     if (!channelId) return;
@@ -126,6 +127,11 @@ export default function ChatArea() {
       socket.off("typing_stop", handleTypingStop);
       socket.off("connect", rejoin);
       clearInterval(pollId);
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+      // Without this the socket stayed joined to every channel visited this
+      // session and kept receiving its broadcasts.
+      socket.emit("leave_channel", { channelId });
     };
   }, [channelId, user?.id, fetchMessages]);
 
@@ -203,7 +209,10 @@ export default function ChatArea() {
   const scrollToMessage = (id: string) => {
     document.getElementById(`message-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     setFlashId(id);
-    window.setTimeout(() => setFlashId((cur) => (cur === id ? null : cur)), 1500);
+    // Tracked so switching channels or unmounting cannot leave a timer
+    // pointing at state that has moved on.
+    if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+    flashTimeoutRef.current = setTimeout(() => setFlashId((cur) => (cur === id ? null : cur)), 1500);
   };
 
   const toggleReaction = async (messageId: string, emoji: string) => {

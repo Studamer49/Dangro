@@ -1,5 +1,6 @@
 import type { Filter, Document } from "mongodb";
 import { getModel, type ModelDef } from "./mongoSchema.js";
+import { sessionOpts } from "./session.js";
 
 /** Anything the query engine needs to resolve a `where` clause. */
 export interface QueryContext {
@@ -96,7 +97,13 @@ export async function buildFilter(
 
       const target = getModel(relationDef.target);
       const childFilter = await buildFilter(target, spec.some as Where, ctx);
-      const children = await ctx.collectionFor(relationDef.target).find(childFilter).toArray();
+      // Must join the transaction session like every other read: inside a
+      // `$transaction` this subquery would otherwise read outside it and not
+      // see the transaction's own uncommitted writes.
+      const children = await ctx
+        .collectionFor(relationDef.target)
+        .find(childFilter, sessionOpts())
+        .toArray();
       // The foreign key lives on the child, so a parent matches when its own
       // id appears in the foreign key of at least one matching child.
       clauses.push({
@@ -137,69 +144,92 @@ function scalarFilter(field: string, value: unknown): Filter<Document> {
   }
 
   const spec = value as Record<string, unknown>;
-  const filter: Record<string, unknown> = {};
+  const insensitive = spec.mode === "insensitive";
+
+  // Prisma ANDs sibling operators on the same field: `{ gte: a, lt: b }` is a
+  // range. Collecting them and assigning per operator, rather than per
+  // clause, is what keeps a range from collapsing to its last bound.
+  const ops: Record<string, unknown> = {};
+  let literal: unknown;
+  let isLiteral = false;
+
+  const exact = (operand: unknown): boolean =>
+    insensitive && typeof operand === "string" && !ops.$regex && ops.$options === undefined;
 
   for (const [op, operand] of Object.entries(spec)) {
     // Prisma puts `mode` next to the string operator it applies to.
     if (op === "mode") continue;
 
     switch (op) {
-      case "equals":
-        filter[field] = operand as never;
+      case "equals": {
+        // `mode: "insensitive"` has to become an anchored case-insensitive
+        // regex. Assigning the operand directly would ignore `mode` entirely,
+        // so a differently-cased email would fail to match its own account.
+        if (exact(operand)) {
+          ops.$regex = `^${escapeRegex(String(operand))}$`;
+          ops.$options = "i";
+        } else {
+          literal = operand;
+          isLiteral = true;
+        }
         break;
-      case "not":
-        filter[field] = { $ne: operand };
+      }
+      case "not": {
+        if (exact(operand)) {
+          ops.$not = { $regex: `^${escapeRegex(String(operand))}$`, $options: "i" };
+        } else {
+          ops.$ne = operand;
+        }
         break;
-      case "in":
-        filter[field] = { $in: operand };
+      }
+      case "in": {
+        ops.$in = insensitive && Array.isArray(operand)
+          ? operand.map((v) => (typeof v === "string" ? new RegExp(`^${escapeRegex(v)}$`, "i") : v))
+          : operand;
         break;
-      case "notIn":
-        filter[field] = { $nin: operand };
+      }
+      case "notIn": {
+        ops.$nin = insensitive && Array.isArray(operand)
+          ? operand.map((v) => (typeof v === "string" ? new RegExp(`^${escapeRegex(v)}$`, "i") : v))
+          : operand;
         break;
+      }
       case "gt":
-        filter[field] = { $gt: operand };
+        ops.$gt = operand;
         break;
       case "gte":
-        filter[field] = { $gte: operand };
+        ops.$gte = operand;
         break;
       case "lt":
-        filter[field] = { $lt: operand };
+        ops.$lt = operand;
         break;
       case "lte":
-        filter[field] = { $lte: operand };
+        ops.$lte = operand;
         break;
       case "contains": {
-        const insensitive = spec.mode === "insensitive";
-        filter[field] = {
-          $regex: escapeRegex(String(operand)),
-          ...(insensitive ? { $options: "i" } : {}),
-        };
+        ops.$regex = escapeRegex(String(operand));
+        if (insensitive) ops.$options = "i";
         break;
       }
       case "startsWith": {
-        const insensitive = spec.mode === "insensitive";
-        filter[field] = {
-          $regex: `^${escapeRegex(String(operand))}`,
-          ...(insensitive ? { $options: "i" } : {}),
-        };
+        ops.$regex = `^${escapeRegex(String(operand))}`;
+        if (insensitive) ops.$options = "i";
         break;
       }
       case "endsWith": {
-        const insensitive = spec.mode === "insensitive";
-        filter[field] = {
-          $regex: `${escapeRegex(String(operand))}$`,
-          ...(insensitive ? { $options: "i" } : {}),
-        };
+        ops.$regex = `${escapeRegex(String(operand))}$`;
+        if (insensitive) ops.$options = "i";
         break;
       }
       default:
         // Unknown operator: fall back to equality so a new Prisma call
         // degrades to an exact match instead of silently matching nothing.
-        filter[field] = operand as never;
+        literal = operand;
+        isLiteral = true;
     }
   }
 
-  return filter as Filter<Document>;
+  return { [field]: (isLiteral ? literal : ops) as never };
 }
 
 /** Translates `orderBy`, including the `{ field: "asc" }` shorthand. */

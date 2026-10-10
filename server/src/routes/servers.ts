@@ -82,6 +82,9 @@ router.get(
 
     if (!existingMember) {
       await prisma.member.create({ data: { userId, serverId: server.id } });
+      // The count was read before this insert, so responding with `server`
+      // would always exclude the person who just joined.
+      server._count.members += 1;
     }
 
     ok(res, { server });

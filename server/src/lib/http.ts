@@ -112,6 +112,21 @@ function prismaKnownError(err: unknown): PrismaKnownError | null {
 }
 
 /**
+ * MongoDB's duplicate-key failure.
+ *
+ * The Mongo engine inserts documents directly, so a unique-index violation
+ * arrives as a driver error rather than Prisma's P2002. Without this mapping
+ * the same double-click that returns 409 on PostgreSQL returns 500 on
+ * MongoDB — a 500 for what is a conflict the caller can act on.
+ */
+function isDuplicateKeyError(err: unknown): boolean {
+  if (typeof err !== "object" || err === null) return false;
+  const maybe = err as { name?: unknown; code?: unknown; message?: unknown };
+  if (maybe.code === 11000) return true;
+  return typeof maybe.message === "string" && maybe.message.includes("E11000");
+}
+
+/**
  * Maps any thrown value onto the API error envelope.
  * Express detects 4-arity functions as error handlers, so this must
  * always keep its four parameters.
@@ -131,6 +146,10 @@ export function toErrorBody(err: unknown): ApiErrorBody {
   }
   if (prismaError?.code === "P2025") {
     return { success: false, error: { code: "NOT_FOUND", message: "The requested resource does not exist." } };
+  }
+
+  if (isDuplicateKeyError(err)) {
+    return { success: false, error: { code: "CONFLICT", message: "That value is already taken." } };
   }
 
   const anyErr = err as { type?: string; status?: number; statusCode?: number; message?: string } | null;

@@ -1,4 +1,5 @@
 import fs from "fs";
+import path from "path";
 import { Readable } from "node:stream";
 import { GridFSBucket, MongoClient, type GridFSFile } from "mongodb";
 import { config } from "../config.js";
@@ -57,7 +58,29 @@ export function diskMediaStore(): MediaStore {
     redirects: false,
 
     async save(tempPath: string, filename: string): Promise<StoredMedia> {
-      return { url: `/uploads/${filename}`, filename, size: fs.statSync(tempPath).size };
+      // Multer spools the upload under a bare uuid with no extension; the
+      // extension is only assigned once the magic bytes have been verified.
+      // The file therefore has to be moved to its final name here — without
+      // this the stored file keeps the spool name while the URL handed back
+      // (and persisted as `avatar`/`mediaUrl`) carries the extension, so
+      // express.static is asked for a path that does not exist and every
+      // upload 404s into the SPA shell.
+      const target = path.join(config.uploadDir, filename);
+      const size = fs.statSync(tempPath).size;
+
+      if (path.resolve(tempPath) !== path.resolve(target)) {
+        try {
+          await fs.promises.rename(tempPath, target);
+        } catch (err) {
+          // EXDEV: the spool landed on a different filesystem than the
+          // upload directory. Copy, then drop the spool file.
+          if ((err as NodeJS.ErrnoException).code !== "EXDEV") throw err;
+          await fs.promises.copyFile(tempPath, target);
+          await fs.promises.unlink(tempPath).catch(() => undefined);
+        }
+      }
+
+      return { url: `/uploads/${filename}`, filename, size };
     },
 
     async resolve() {
@@ -172,6 +195,12 @@ export class RemoteMediaStore implements MediaStore {
         `Media host rejected the upload with ${response.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`
       );
     }
+
+    // The spool file is this host's staging copy only. It is already on the
+    // media host by now, so leaving it behind would leak a full copy of every
+    // upload onto the API's disk — on Render that fills the free tier, and on
+    // a persistent disk it doubles the storage for no reason.
+    await fs.promises.unlink(tempPath).catch(() => undefined);
 
     return { url: `/uploads/${filename}`, filename, size };
   }

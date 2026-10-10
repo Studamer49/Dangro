@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
 interface Props {
   onRecordingComplete: (blob: Blob) => void;
@@ -11,6 +11,25 @@ export default function VoiceRecorder({ onRecordingComplete, disabled }: Props) 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
+
+  // Navigating away mid-recording used to leave the microphone open and the
+  // duration timer running: the browser's recording indicator stayed on and
+  // setInterval kept firing against a component that no longer exists.
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        // Drop the handler first so cancelling does not upload a note the
+        // user never finished recording.
+        recorder.ondataavailable = null;
+        recorder.onstop = null;
+        recorder.stream.getTracks().forEach((track) => track.stop());
+        recorder.stop();
+      }
+      mediaRecorderRef.current = null;
+    };
+  }, []);
 
   const startRecording = useCallback(async () => {
     try {

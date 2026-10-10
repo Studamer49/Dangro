@@ -13,6 +13,56 @@ const requestIdSchema = z.object({ requestId: z.string().uuid() });
 
 const userSelect = { id: true, username: true, avatar: true, status: true } as const;
 
+interface FriendUser {
+  id: string;
+  username: string;
+  avatar: string | null;
+  status: string;
+}
+
+interface FriendshipRow {
+  id: string;
+  userId: string;
+  friendId: string;
+  createdAt: Date;
+  user: FriendUser | null;
+  friend: FriendUser | null;
+}
+
+/**
+ * Collapses a friendship into a single entry.
+ *
+ * Accepting a request writes two directed rows — `A→B` and `B→A` — so either
+ * side can find the friendship without a second query. A lookup for
+ * "everyone I am friends with" therefore matches both rows and yields the
+ * same person twice, which is what the friends list rendered before this
+ * collapse existed.
+ *
+ * Keyed by the *other* user's id rather than the row id, so the identity of
+ * an entry does not depend on which of the two rows happened to come back
+ * first. Rows whose other user could not be loaded are skipped: a person who
+ * cannot be rendered is not a friend row worth showing.
+ */
+export function toFriendList(
+  rows: FriendshipRow[],
+  userId: string
+): Array<{ id: string; friend: FriendUser; createdAt: Date }> {
+  const seen = new Set<string>();
+  const friends: Array<{ id: string; friend: FriendUser; createdAt: Date }> = [];
+
+  for (const row of rows) {
+    const outgoing = row.userId === userId;
+    const otherId = outgoing ? row.friendId : row.userId;
+    const other = outgoing ? row.friend : row.user;
+    if (!other || seen.has(otherId)) continue;
+
+    seen.add(otherId);
+    friends.push({ id: otherId, friend: other, createdAt: row.createdAt });
+  }
+
+  return friends;
+}
+
 router.get(
   "/",
   authenticate,
@@ -24,13 +74,7 @@ router.get(
       include: { user: { select: userSelect }, friend: { select: userSelect } },
     });
 
-    const friends = friendships.map((f) => ({
-      id: f.id,
-      friend: f.userId === userId ? f.friend : f.user,
-      createdAt: f.createdAt,
-    }));
-
-    ok(res, { friends });
+    ok(res, { friends: toFriendList(friendships, userId) });
   })
 );
 

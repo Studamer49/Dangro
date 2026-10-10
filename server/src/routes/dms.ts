@@ -77,16 +77,36 @@ router.get(
       orderBy: { lastMessageAt: "desc" },
     });
 
+    // One query for every conversation's unread count.
+    //
+    // This used to run a COUNT per conversation, and worse, it was guarded by
+    // "is the newest message unread?". Replied-to but never-opened threads
+    // reported 0 because the newest message was the viewer's own, however
+    // many older ones were still waiting.
+    const unreadByConversation = new Map<string, number>();
+    if (conversations.length > 0) {
+      const unread = await prisma.directMessage.findMany({
+        where: {
+          conversationId: { in: conversations.map((c) => c.id) },
+          senderId: { not: userId },
+          readAt: null,
+        },
+        select: { conversationId: true },
+      });
+
+      for (const message of unread) {
+        unreadByConversation.set(
+          message.conversationId,
+          (unreadByConversation.get(message.conversationId) ?? 0) + 1
+        );
+      }
+    }
+
     const result = await Promise.all(
       conversations.map(async (c) => {
         const otherUser = c.user1Id === userId ? c.user2 : c.user1;
         const lastMessage = c.messages[0] || null;
-        const unreadCount =
-          lastMessage && lastMessage.senderId !== userId && !lastMessage.readAt
-            ? await prisma.directMessage.count({
-                where: { conversationId: c.id, senderId: { not: userId }, readAt: null },
-              })
-            : 0;
+        const unreadCount = unreadByConversation.get(c.id) ?? 0;
 
         return {
           id: c.id,
@@ -432,10 +452,18 @@ router.patch(
 
     const conversation = await assertConversationMember(conversationId, userId);
 
-    await prisma.directMessage.updateMany({
+    const result = await prisma.directMessage.updateMany({
       where: { conversationId, senderId: { not: userId }, readAt: null },
       data: { readAt: new Date() },
     });
+
+    // Nothing was unread, so there is nothing to tell anyone. The client
+    // polls this endpoint; broadcasting regardless made every idle tick wake
+    // the other user's socket for a state it was already in.
+    if (result.count === 0) {
+      ok(res, { message: "Messages marked as read" });
+      return;
+    }
 
     const otherUserId = conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
 

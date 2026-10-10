@@ -43,12 +43,19 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   const fetchMessages = useCallback(async () => {
     try {
       const { data } = await api.get(`/dms/${conversation.id}`);
-      setMessages(data.messages);
-      markAsRead();
+      const next = data.messages as DirectMessage[];
+      setMessages(next);
+
+      // Only write when something is actually unread. This runs on a 15s
+      // poll, so an unconditional PATCH meant a database write plus two
+      // socket broadcasts every tick, forever, even for a quiet thread.
+      if (next.some((m) => m.senderId !== user?.id && !m.readAt)) {
+        void markAsRead();
+      }
     } catch {
       // silent
     }
-  }, [conversation.id, markAsRead]);
+  }, [conversation.id, markAsRead, user?.id]);
 
   useEffect(() => {
     fetchMessages();

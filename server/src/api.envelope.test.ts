@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import request from "supertest";
 import express from "express";
 import { app } from "./index.js";
-import { ok } from "./lib/http.js";
+import { ok, toErrorBody } from "./lib/http.js";
 
 describe("API envelope contract", () => {
   it("GET /api/health returns the success envelope", async () => {
@@ -79,6 +79,17 @@ describe("input validation", () => {
   });
 });
 
+describe("media routing", () => {
+  it("leaves /uploads to express.static on the disk provider", async () => {
+    // The media router answers from GridFS or a redirect target. Mounted for
+    // the disk provider it would return its JSON 404 for every real upload and
+    // never let express.static serve the file, because it never calls next().
+    const res = await request(app).get("/uploads/3f2a1b4c-1111-2222-3333-444455556666.png");
+
+    expect(res.body).not.toMatchObject({ success: false });
+  });
+});
+
 describe("envelope helpers", () => {
   it("ok() emits { success, data }", async () => {
     const probe = express();
@@ -86,5 +97,39 @@ describe("envelope helpers", () => {
     await request(probe)
       .get("/")
       .expect(201);
+  });
+});
+
+describe("error mapping", () => {
+  it("maps a Prisma unique-constraint failure to CONFLICT", () => {
+    const err = Object.assign(new Error("unique"), {
+      name: "PrismaClientKnownRequestError",
+      code: "P2002",
+    });
+    expect(toErrorBody(err)).toEqual({
+      success: false,
+      error: { code: "CONFLICT", message: expect.any(String) },
+    });
+  });
+
+  it("maps a MongoDB duplicate-key failure to CONFLICT, not INTERNAL_ERROR", () => {
+    // The Mongo engine writes documents directly, so a unique-index
+    // violation reaches the error handler as a driver error. Returning 500
+    // here would turn an ordinary double-click race into a server error.
+    const err = Object.assign(new Error("E11000 duplicate key error collection"), {
+      name: "MongoServerError",
+      code: 11000,
+    });
+    expect(toErrorBody(err)).toEqual({
+      success: false,
+      error: { code: "CONFLICT", message: expect.any(String) },
+    });
+  });
+
+  it("still maps unrelated errors to INTERNAL_ERROR", () => {
+    expect(toErrorBody(new Error("boom"))).toEqual({
+      success: false,
+      error: { code: "INTERNAL_ERROR", message: "Internal server error" },
+    });
   });
 });

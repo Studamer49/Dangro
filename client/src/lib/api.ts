@@ -56,22 +56,12 @@ api.interceptors.response.use(
       original._retry = true;
 
       try {
-        const refreshed = await axios.post<ApiSuccessEnvelope<{ accessToken: string }>>(
-          `${API_BASE}/auth/refresh`,
-          {},
-          { withCredentials: true }
-        );
-        const accessToken = refreshed.data?.data?.accessToken;
-        if (!accessToken) throw new Error("Refresh returned no token");
-
-        localStorage.setItem("accessToken", accessToken);
+        const accessToken = await refreshAccessToken();
         original.headers = original.headers ?? {};
         original.headers.Authorization = `Bearer ${accessToken}`;
-        onTokenRefreshed?.(accessToken);
 
         return api(original);
       } catch {
-        localStorage.removeItem("accessToken");
         onSessionExpired?.();
         return Promise.reject(error);
       }
@@ -80,6 +70,42 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+/**
+ * Single-flight token refresh.
+ *
+ * When the access token expires, every in-flight request 401s at once — a
+ * tab with a few pollers produces several. Without sharing one promise each
+ * of them fired its own POST /auth/refresh, which is exactly the traffic the
+ * auth rate limiter exists to cap.
+ */
+let inFlightRefresh: Promise<string> | null = null;
+
+function refreshAccessToken(): Promise<string> {
+  if (!inFlightRefresh) {
+    inFlightRefresh = axios
+      .post<ApiSuccessEnvelope<{ accessToken: string }>>(
+        `${API_BASE}/auth/refresh`,
+        {},
+        { withCredentials: true }
+      )
+      .then((refreshed) => {
+        const accessToken = refreshed.data?.data?.accessToken;
+        if (!accessToken) throw new Error("Refresh returned no token");
+
+        localStorage.setItem("accessToken", accessToken);
+        onTokenRefreshed?.(accessToken);
+        return accessToken;
+      })
+      .finally(() => {
+        // Cleared either way: a later 401 must be able to retry rather than
+        // replay a rejected promise forever.
+        inFlightRefresh = null;
+      });
+  }
+
+  return inFlightRefresh;
+}
 
 interface NormalizedApiError {
   code?: string;

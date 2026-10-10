@@ -12,6 +12,15 @@ export default function JoinServerPage() {
   const [error, setError] = useState("");
   const started = useRef(false);
 
+  // useToast() returns a new wrapper object on every render, so depending on
+  // it would re-run this effect on every render. The `started` guard would
+  // stop the refetch, but the re-run is still a trap for whoever edits this
+  // next; mirror it into a ref instead.
+  const toastRef = useRef(toast);
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
+
   useEffect(() => {
     if (!inviteCode || started.current) return;
     started.current = true;
@@ -25,12 +34,12 @@ export default function JoinServerPage() {
         } else {
           navigate("/explore", { replace: true });
         }
-        toast.success(`Joined ${data.server.name}`);
+        toastRef.current.success(`Joined ${data.server.name}`);
       } catch (err: unknown) {
         setError(apiErrorMessage(err, "Invalid invite"));
       }
     })();
-  }, [inviteCode, navigate, toast]);
+  }, [inviteCode, navigate]);
 
   return (
     <div className="flex h-full items-center justify-center px-4">

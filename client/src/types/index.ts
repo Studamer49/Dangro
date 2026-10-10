@@ -99,9 +99,8 @@ export interface FriendRequest {
 }
 
 export interface Friend {
+  /** The other user's id — a friendship is stored as two directed rows. */
   id: string;
-  userId: string;
-  friendId: string;
   createdAt: string;
   friend?: User;
 }

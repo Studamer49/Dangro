@@ -10,10 +10,10 @@ import rateLimit from "express-rate-limit";
 import { config, isAllowedOrigin } from "./config.js";
 import { prisma } from "./prisma.js";
 import { errorHandler } from "./middleware/errorHandler.js";
+import { buildCspDirectives } from "./lib/csp.js";
 import { setupSocketHandlers } from "./socket/index.js";
 import { setIO } from "./socket/io.js";
 import { ensureIndexes } from "./db/mongoIndexes.js";
-import { getMediaStore } from "./db/storage.js";
 import { mongoClient } from "./prisma.js";
 
 import authRoutes from "./routes/auth.js";
@@ -54,6 +54,14 @@ app.use(
     // Uploaded media must be embeddable by the app itself.
     crossOriginResourcePolicy: { policy: "cross-origin" },
     crossOriginEmbedderPolicy: false,
+    contentSecurityPolicy: {
+      // helmet's defaults only allow this origin. The remote media host is a
+      // different origin, so it has to be named explicitly or every image and
+      // video is blocked in the browser while the request itself succeeds.
+      directives: buildCspDirectives(
+        config.mediaProvider === "remote" ? config.mediaPublicUrl : ""
+      ),
+    },
   })
 );
 
@@ -107,7 +115,13 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api", globalLimiter);
-app.use("/api/auth", authLimiter);
+
+// Only the endpoints that take a password are limited. Covering the whole
+// /api/auth prefix also counted /auth/me and /auth/refresh, which a client
+// with a few tabs polling hits constantly — enough to exhaust the budget and
+// then lock the same user out of both login and silent refresh.
+app.use("/api/auth/login", authLimiter);
+app.use("/api/auth/register", authLimiter);
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
@@ -129,8 +143,11 @@ app.use("/api", (req, res) => {
 
 // Media that is not on this machine's disk is streamed (GridFS) or
 // redirected (remote host) rather than served by express.static. Mounted
-// first so it wins over the static handler.
-if (getMediaStore(mongoClient).redirects || config.usesMongo) {
+// first so it wins over the static handler — but only when the active store
+// actually needs it. The disk store returns null from `resolve`, so mounting
+// this for it would answer every real upload with a JSON 404 and never let
+// express.static see the file.
+if (config.mediaProvider !== "disk") {
   app.use("/uploads", mediaRoutes);
 }
 app.use("/uploads", express.static(config.uploadDir, { fallthrough: true, maxAge: "1d" }));

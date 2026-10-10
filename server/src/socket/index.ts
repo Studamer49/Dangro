@@ -47,6 +47,83 @@ async function isConversationParticipant(conversationId: string, userId: string)
   return conversation.user1Id === userId || conversation.user2Id === userId;
 }
 
+/**
+ * Whether `fromUserId` is allowed to reach `toUserId` at all.
+ *
+ * This is the same rule the DM routes use (see `canMessageDirectly`): two
+ * people who are friends, or where the recipient follows the sender. A call
+ * is a direct message with media attached, so it has to obey the same rule.
+ */
+async function canContact(fromUserId: string, toUserId: string): Promise<boolean> {
+  if (fromUserId === toUserId) return false;
+
+  const friendship = await prisma.friend.findFirst({
+    where: {
+      OR: [
+        { userId: fromUserId, friendId: toUserId },
+        { userId: toUserId, friendId: fromUserId },
+      ],
+    },
+    select: { id: true },
+  });
+  if (friendship) return true;
+
+  const follow = await prisma.follow.findUnique({
+    where: { followerId_followingId: { followerId: toUserId, followingId: fromUserId } },
+    select: { id: true },
+  });
+  return !!follow;
+}
+
+/**
+ * Calls that have been authorised and are still live, keyed by room.
+ *
+ * Signalling is relayed only between the two participants named in the
+ * entry, so `webrtc_*` and `ice_candidate` need no database round trip per
+ * event — which matters, because a single call emits dozens of ICE
+ * candidates.
+ */
+interface ActiveCall {
+  callerId: string;
+  calleeId: string;
+  startedAt: number;
+}
+
+const activeCalls = new Map<string, ActiveCall>();
+const CALL_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+
+function pruneCalls(now: number): void {
+  for (const [roomId, call] of activeCalls) {
+    if (now - call.startedAt > CALL_TIMEOUT_MS) activeCalls.delete(roomId);
+  }
+}
+
+/** The live call between two users, with the room that identifies it. */
+function callBetween(a: string, b: string): { roomId: string; call: ActiveCall } | undefined {
+  for (const [roomId, call] of activeCalls) {
+    if ((call.callerId === a && call.calleeId === b) || (call.callerId === b && call.calleeId === a)) {
+      return { roomId, call };
+    }
+  }
+  return undefined;
+}
+
+/** Exposed for tests: drops all in-flight call state. */
+export function resetActiveCalls(): void {
+  activeCalls.clear();
+}
+
+/**
+ * Sliding-window rate limit, so one socket cannot ring another user forever.
+ * Returns true when the event should be dropped.
+ */
+function rateLimited(hits: number[], limit: number, windowMs: number, now: number): boolean {
+  while (hits.length > 0 && now - hits[0] > windowMs) hits.shift();
+  if (hits.length >= limit) return true;
+  hits.push(now);
+  return false;
+}
+
 function parse<T extends z.ZodType>(schema: T, data: unknown): z.output<T> | null {
   const result = schema.safeParse(data);
   return result.success ? result.data : null;
@@ -72,6 +149,8 @@ export function setupSocketHandlers(io: SocketServer): void {
 
   io.on("connection", (socket: Socket) => {
     const userId = socket.data.userId as string;
+    // Per-socket invite timestamps for the sliding-window rate limit.
+    const inviteHits: number[] = [];
 
     socket.join(`user:${userId}`);
 
@@ -178,9 +257,20 @@ export function setupSocketHandlers(io: SocketServer): void {
       socket.to(`voice:${data.channelId}`).emit("voice_user_leave", { userId, channelId: data.channelId });
     });
 
-    socket.on("voice_signal", (payload: unknown) => {
+    socket.on("voice_signal", async (payload: unknown) => {
       const data = parse(signalTarget, payload);
       if (!data) return;
+      // Voice-channel signalling is only meaningful between two people in
+      // the same voice room, and `voice_join` already verified channel
+      // membership before anyone could enter one.
+      if (data.targetUserId === userId) return;
+      const voiceRooms = [...socket.rooms].filter((room) => room.startsWith("voice:"));
+      if (voiceRooms.length === 0) return;
+
+      const targets = await io.in(`user:${data.targetUserId}`).fetchSockets();
+      const sharesVoiceRoom = targets.some((peer) => voiceRooms.some((room) => peer.rooms.has(room)));
+      if (!sharesVoiceRoom) return;
+
       io.to(`user:${data.targetUserId}`).emit("voice_signal", { userId, signal: data.signal });
     });
 
@@ -210,9 +300,26 @@ export function setupSocketHandlers(io: SocketServer): void {
       socket.to(`dm:${data.conversationId}`).emit("dm_typing_stop", { userId, conversationId: data.conversationId });
     });
 
-    socket.on("call_invite", (payload: unknown) => {
+    // A call is only ever relayed between its two participants. Without these
+    // checks any authenticated user could ring, interrupt or tear down anyone
+    // else's call simply by naming their id.
+    socket.on("call_invite", async (payload: unknown) => {
       const data = parse(callInvite, payload);
       if (!data) return;
+
+      const now = Date.now();
+      pruneCalls(now);
+      // A ringtone is an interruption to a real person, so an invite is rate
+      // limited as well as authorised.
+      if (rateLimited(inviteHits, 5, 60_000, now)) return;
+      if (!(await canContact(userId, data.targetUserId))) return;
+
+      activeCalls.set(data.roomId, {
+        callerId: userId,
+        calleeId: data.targetUserId,
+        startedAt: now,
+      });
+
       io.to(`user:${data.targetUserId}`).emit("call_invite", {
         callerId: userId,
         callType: data.callType,
@@ -223,36 +330,48 @@ export function setupSocketHandlers(io: SocketServer): void {
     socket.on("call_accept", (payload: unknown) => {
       const data = parse(roomTarget, payload);
       if (!data) return;
+      const call = activeCalls.get(data.roomId);
+      if (!call) return;
+      if (call.calleeId !== userId || call.callerId !== data.targetUserId) return;
       io.to(`user:${data.targetUserId}`).emit("call_accept", { accepterId: userId, roomId: data.roomId });
     });
 
     socket.on("call_reject", (payload: unknown) => {
       const data = parse(targetRef, payload);
       if (!data) return;
+      const live = callBetween(userId, data.targetUserId);
+      if (!live) return;
+      activeCalls.delete(live.roomId);
       io.to(`user:${data.targetUserId}`).emit("call_reject", { rejecterId: userId });
     });
 
     socket.on("call_end", (payload: unknown) => {
       const data = parse(targetRef, payload);
       if (!data) return;
+      const live = callBetween(userId, data.targetUserId);
+      if (!live) return;
+      activeCalls.delete(live.roomId);
       io.to(`user:${data.targetUserId}`).emit("call_end", { enderId: userId });
     });
 
     socket.on("webrtc_offer", (payload: unknown) => {
       const data = parse(signalTarget, payload);
       if (!data) return;
+      if (!callBetween(userId, data.targetUserId)) return;
       io.to(`user:${data.targetUserId}`).emit("webrtc_offer", { userId, offer: data.signal });
     });
 
     socket.on("webrtc_answer", (payload: unknown) => {
       const data = parse(signalTarget, payload);
       if (!data) return;
+      if (!callBetween(userId, data.targetUserId)) return;
       io.to(`user:${data.targetUserId}`).emit("webrtc_answer", { userId, answer: data.signal });
     });
 
     socket.on("ice_candidate", (payload: unknown) => {
       const data = parse(signalTarget, payload);
       if (!data) return;
+      if (!callBetween(userId, data.targetUserId)) return;
       io.to(`user:${data.targetUserId}`).emit("ice_candidate", { userId, candidate: data.signal });
     });
 
@@ -261,6 +380,13 @@ export function setupSocketHandlers(io: SocketServer): void {
       // room size is the count of OTHER live connections for this user
       // (e.g. a second tab). Only go offline when the last one closes.
       const remaining = io.sockets.adapter.rooms.get(`user:${userId}`)?.size ?? 0;
+
+      // Nobody is left to talk to on this user's calls, so stop relaying
+      // signalling for them.
+      for (const [roomId, call] of activeCalls) {
+        if (call.callerId === userId || call.calleeId === userId) activeCalls.delete(roomId);
+      }
+
       if (remaining > 0) return;
       prisma.user
         .update({ where: { id: userId }, data: { status: "offline", lastSeen: new Date() } })

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useCallStore } from "@/stores/callStore";
 import { useWebRTC } from "@/hooks/useWebRTC";
+import { useToast } from "@/stores/toastStore";
 import { startRingtone } from "@/lib/ringtone";
 import Avatar from "@/components/Avatar";
 
@@ -19,9 +20,25 @@ export default function VideoCallModal() {
     endCall,
   } = useCallStore();
 
-  useWebRTC();
+  const toast = useToast();
+  const { callError } = useWebRTC();
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+
+  // useToast() returns a new wrapper object every render. Depending on it
+  // here would re-run this effect on every render and, with a persistent
+  // error, raise a toast on each one.
+  const toastRef = useRef(toast);
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
+
+  // A call that cannot be set up (no microphone, blocked peer) used to fail
+  // silently, leaving the user staring at a call that never connects.
+  useEffect(() => {
+    if (!callError) return;
+    toastRef.current.error(callError);
+  }, [callError]);
 
   useEffect(() => {
     if (localVideoRef.current && localStream) {

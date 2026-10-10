@@ -75,18 +75,24 @@ const usesMongo = databaseProvider === "mongo";
 //   disk   - server/uploads, served by express.static (PostgreSQL default)
 //   gridfs - GridFS inside MongoDB (MongoDB default)
 //   remote - a separate media host; the API redirects to it
-const mediaProvider = optional(
+const requestedMediaProvider = optional(
   "MEDIA_PROVIDER",
   usesMongo ? "gridfs" : "disk"
 );
-if (!["disk", "gridfs", "remote"].includes(mediaProvider)) {
+if (!["disk", "gridfs", "remote"].includes(requestedMediaProvider)) {
   fail(
-    `MEDIA_PROVIDER must be "disk", "gridfs" or "remote", received "${mediaProvider}"`,
+    `MEDIA_PROVIDER must be "disk", "gridfs" or "remote", received "${requestedMediaProvider}"`,
     'Set MEDIA_PROVIDER in server/.env, or remove it to use the default for your database.'
   );
 }
-if (mediaProvider === "gridfs" && !usesMongo) {
-  console.warn("[config] MEDIA_PROVIDER=gridfs but DATABASE_PROVIDER is not mongo — falling back to disk.");
+// GridFS lives inside MongoDB, so with the PostgreSQL backend it cannot be
+// used at all. Resolve it to the effective value here rather than only
+// warning, so nothing downstream acts on a provider that cannot work.
+const mediaProvider = requestedMediaProvider === "gridfs" && !usesMongo ? "disk" : requestedMediaProvider;
+if (requestedMediaProvider !== mediaProvider) {
+  console.warn(
+    `[config] MEDIA_PROVIDER=${requestedMediaProvider} but DATABASE_PROVIDER is not mongo — using "${mediaProvider}" instead.`
+  );
 }
 
 const mediaPublicUrl = optional("MEDIA_PUBLIC_URL", "");

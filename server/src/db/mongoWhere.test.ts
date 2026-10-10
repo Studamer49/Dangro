@@ -86,6 +86,47 @@ describe("buildFilter", () => {
     expect(filter.username.$options).toBe("i");
   });
 
+  it("applies mode: insensitive to equals, not just the substring operators", async () => {
+    // Login looks the account up with `equals` + `mode: "insensitive"`. When
+    // `mode` was dropped for equals, a differently-cased email missed its own
+    // account on MongoDB while still working on PostgreSQL.
+    const filter = (await buildFilter(
+      getModel("user"),
+      { email: { equals: "USER@Example.com", mode: "insensitive" } },
+      emptyCtx
+    )) as { email: { $regex: string; $options: string } };
+
+    expect(filter.email.$regex).toBe("^USER@Example\\.com$");
+    expect(filter.email.$options).toBe("i");
+  });
+
+  it("leaves a plain equals as an exact match", async () => {
+    expect(await buildFilter(getModel("user"), { email: { equals: "a@b.c" } }, emptyCtx)).toEqual({
+      email: "a@b.c",
+    });
+  });
+
+  it("keeps every operator when several are given for one field", async () => {
+    // A range. Assigning per clause instead of per operator kept only the
+    // last bound, silently widening or narrowing the window.
+    const from = new Date("2026-01-01T00:00:00Z");
+    const to = new Date("2026-02-01T00:00:00Z");
+
+    expect(await buildFilter(getModel("story"), { expiresAt: { gte: from, lt: to } }, emptyCtx)).toEqual({
+      expiresAt: { $gte: from, $lt: to },
+    });
+  });
+
+  it("escapes regex metacharacters in an insensitive equals", async () => {
+    const filter = (await buildFilter(
+      getModel("user"),
+      { username: { equals: "a.b*", mode: "insensitive" } },
+      emptyCtx
+    )) as { username: { $regex: string } };
+
+    expect(filter.username.$regex).toBe("^a\\.b\\*$");
+  });
+
   it("resolves relation `some` filters through the child's foreign key", async () => {
     // `user.memberships` is a has-many via Member.userId, so matching members
     // select their parent user ids.

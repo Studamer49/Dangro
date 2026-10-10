@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { getSocket } from "@/lib/socket";
 import api from "@/lib/api";
@@ -17,6 +17,16 @@ export default function ConversationList({ activeConversation, onSelectConversat
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [showSearch, setShowSearch] = useState(false);
 
+  // Mirrors the loaded conversation ids so a socket handler can tell an
+  // unknown conversation from a known one *before* calling setState.
+  // React replays updaters (StrictMode does it on every render), so a
+  // setState callback has to stay pure — issuing a fetch from inside one ran
+  // the request twice per event.
+  const knownIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    knownIdsRef.current = new Set(conversations.map((c) => c.id));
+  }, [conversations]);
+
   const fetchConversations = useCallback(async () => {
     try {
       const { data } = await api.get("/dms");
@@ -33,11 +43,15 @@ export default function ConversationList({ activeConversation, onSelectConversat
     const handleNewDM = (message: DirectMessage) => {
       const isActive = activeConversation?.id === message.conversationId;
       const isSelf = message.senderId === user?.id;
+
+      // A conversation this client has never loaded: refresh rather than
+      // patching a list that does not contain it.
+      if (!knownIdsRef.current.has(message.conversationId)) {
+        void fetchConversations();
+        return;
+      }
+
       setConversations((prev) => {
-        if (!prev.some((c) => c.id === message.conversationId)) {
-          void fetchConversations();
-          return prev;
-        }
         const unreadDelta = !isSelf && !isActive ? 1 : 0;
         const updated = prev.map((c) =>
           c.id === message.conversationId
@@ -61,11 +75,13 @@ export default function ConversationList({ activeConversation, onSelectConversat
       unreadCount: number;
     }) => {
       const isActive = activeConversation?.id === data.conversationId;
+
+      if (!knownIdsRef.current.has(data.conversationId)) {
+        void fetchConversations();
+        return;
+      }
+
       setConversations((prev) => {
-        if (!prev.some((c) => c.id === data.conversationId)) {
-          void fetchConversations();
-          return prev;
-        }
         const updated = prev.map((c) =>
           c.id === data.conversationId
             ? {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import api, { apiErrorMessage } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
@@ -21,18 +21,28 @@ export default function ChannelSidebar() {
   const [joinedVoiceId, setJoinedVoiceId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // useToast() builds a fresh wrapper object on every render. Listing it in
+  // the fetcher's dependency array would give that fetcher a new identity on
+  // every render, the effect below would re-run, and the resulting setState
+  // would render again — refetching the server forever. Mirror it into a ref;
+  // every wrapper closes over the same stable push().
+  const toastRef = useRef(toast);
+  useEffect(() => {
+    toastRef.current = toast;
+  }, [toast]);
+
   const fetchServerForChannel = useCallback(async (cId: string) => {
     try {
       const { data } = await api.get(`/channels/${cId}/server`);
       setServer(data.server);
       setChannels(data.server.channels || []);
     } catch (err: unknown) {
-      toast.error(apiErrorMessage(err, "Could not load this server"));
+      toastRef.current.error(apiErrorMessage(err, "Could not load this server"));
       setServer(null);
       setChannels([]);
       navigate("/explore", { replace: true });
     }
-  }, [navigate, toast]);
+  }, [navigate]);
 
   useEffect(() => {
     if (channelId) {
