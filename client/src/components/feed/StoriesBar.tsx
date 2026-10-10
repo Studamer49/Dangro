@@ -18,11 +18,17 @@ export default function StoriesBar({ groups, viewer, onAdded }: StoriesBarProps)
   const [viewingId, setViewingId] = useState<string | null>(null);
   const [storyIndex, setStoryIndex] = useState(0);
 
-  const myGroup = viewer ? (groups.find((group) => group.author.id === viewer.id) ?? null) : null;
-  const otherGroups = viewer ? groups.filter((group) => group.author.id !== viewer.id) : groups;
-  const viewingGroup = viewingId
-    ? (groups.find((group) => group.author.id === viewingId) ?? null)
-    : null;
+// A group without a resolvable author cannot be rendered or acted on, so it
+// is dropped here rather than crashing the whole bar.
+const renderableGroups = groups.filter((group) => Boolean(group?.author?.id));
+
+const myGroup = viewer ? (renderableGroups.find((group) => group.author.id === viewer.id) ?? null) : null;
+const otherGroups = viewer
+  ? renderableGroups.filter((group) => group.author.id !== viewer.id)
+  : renderableGroups;
+const viewingGroup = viewingId
+  ? (renderableGroups.find((group) => group.author.id === viewingId) ?? null)
+  : null;
   const viewingStory = viewingGroup
     ? (viewingGroup.stories[storyIndex] ?? null)
     : null;

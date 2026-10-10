@@ -68,6 +68,10 @@ router.get(
       { author: (typeof stories)[number]["author"]; stories: (typeof stories)[number][] }
     >();
     for (const story of stories) {
+      // A story whose author could not be loaded (deleted account) would
+      // otherwise produce a group with a null author, which the client then
+      // dereferences. Skip them rather than emit an unusable group.
+      if (!story.author) continue;
       let group = byAuthor.get(story.authorId);
       if (!group) {
         group = { author: story.author, stories: [] };

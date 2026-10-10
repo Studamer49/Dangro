@@ -127,12 +127,19 @@ async function loadRelation(
   if (rel.ownKey) {
     // Belongs-to: the foreign key sits on the parent document.
     const keys = [...new Set(parentIds.map(String))];
-    const childIds = await ctx
+    const childDocs = await ctx
       .collectionFor(rel.target)
       .find({ _id: { $in: keys } }, sessionOpts())
       .toArray();
-    const byId = new Map(childIds.map((doc: Document) => [String(doc._id), doc]));
-    for (const key of keys) out.set(key, byId.get(key) ?? null);
+    const byId = new Map(childDocs.map((doc: Document) => [String(doc._id), doc]));
+
+    for (const key of keys) {
+      // Must be shaped like every other relation: this applies `select`
+      // (so a user is never returned with its password hash), renames _id to
+      // id, and resolves any nested include.
+      const doc = byId.get(key);
+      out.set(key, doc ? await shapeSingle(target, doc, nested, ctx) : null);
+    }
     return out;
   }
 
