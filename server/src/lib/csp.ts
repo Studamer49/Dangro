@@ -1,4 +1,5 @@
 import helmet from "helmet";
+import { publicOrigin } from "./publicHost.js";
 
 /** Whatever shape helmet's directive map uses for this version. */
 type HelmetDirectives = ReturnType<typeof helmet.contentSecurityPolicy.getDefaultDirectives>;
@@ -9,17 +10,13 @@ type HelmetDirectives = ReturnType<typeof helmet.contentSecurityPolicy.getDefaul
  * CSP source expressions are matched against scheme, host and port, so the
  * path in `MEDIA_PUBLIC_URL` must be stripped — `https://host/media` would
  * never match anything the browser requests.
+ *
+ * A host that is not publicly routable is never named here. Whitelisting
+ * `http://192.168.1.50:8081` in `img-src` would actively authorise the browser
+ * to make local-network requests the visitor has to approve.
  */
 export function mediaOrigin(mediaPublicUrl: string): string | null {
-  const trimmed = mediaPublicUrl.trim();
-  if (!trimmed) return null;
-
-  try {
-    const { origin } = new URL(trimmed);
-    return origin === "null" ? null : origin;
-  } catch {
-    return null;
-  }
+  return publicOrigin(mediaPublicUrl);
 }
 
 /**

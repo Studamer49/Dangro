@@ -25,8 +25,19 @@ describe("mediaOrigin", () => {
     expect(mediaOrigin(`${MEDIA_HOST}/media`)).toBe(MEDIA_HOST);
   });
 
-  it("preserves a non-default port", () => {
-    expect(mediaOrigin("http://127.0.0.1:8081")).toBe("http://127.0.0.1:8081");
+  it("refuses a loopback origin rather than whitelisting it", () => {
+    // Whitelisting a LAN/loopback origin in img-src actively authorises the
+    // browser to make the local-network request that triggers the permission
+    // prompt, so it must be dropped.
+    expect(mediaOrigin("http://127.0.0.1:8081")).toBeNull();
+  });
+
+  it("refuses a plain-http origin, which is downgradable and mixed content", () => {
+    expect(mediaOrigin("http://media.example.ts.net")).toBeNull();
+  });
+
+  it("keeps a public https origin, including a non-default port", () => {
+    expect(mediaOrigin("https://media.example.ts.net:8443")).toBe("https://media.example.ts.net:8443");
   });
 
   it("returns null for unset, blank or unparseable values", () => {

@@ -24,22 +24,15 @@ services:
         value: mongo
       - key: MONGODB_DB_NAME
         value: dangro
-      # Media lives on a separate host (see MEDIA.md); the API 302-redirects
-      # browsers there so video never passes through Render.
+      # Media is served from THIS origin out of MongoDB GridFS. Nothing is
+      # hosted on a separate machine, so no image load ever leaves the site,
+      # nothing is exposed to the LAN, and there is no 302 to a raw IP address.
+      # Atlas M0's free tier covers this; see MEDIA.md.
       - key: MEDIA_PROVIDER
-        value: remote
+        value: gridfs
       # Set these in the Render Dashboard (Environment tab), never in the repo:
-      #   MONGODB_URI      the mongodb+srv:// string from Atlas
-      #   MEDIA_PUBLIC_URL public base URL of the media host
-      #   MEDIA_INGEST_URL where the API pushes uploads (defaults to the above)
-      #   MEDIA_INGEST_KEY must match MEDIA_KEY on the media host
+      #   MONGODB_URI  the mongodb+srv:// string from Atlas
       - key: MONGODB_URI
-        sync: false
-      - key: MEDIA_PUBLIC_URL
-        sync: false
-      - key: MEDIA_INGEST_URL
-        sync: false
-      - key: MEDIA_INGEST_KEY
         sync: false
       - key: JWT_SECRET
         generateValue: true

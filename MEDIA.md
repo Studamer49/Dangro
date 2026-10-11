@@ -1,14 +1,58 @@
-# Media storage on a separate host
+# Media storage
 
-Dangro can keep uploaded images and videos on a machine other than the API
-host. The API stores nothing itself: it pushes each upload to a small media
-service and replies to browsers with a **302 redirect** to that service.
+Dangro has three interchangeable media backends, chosen by `MEDIA_PROVIDER`:
+
+| `MEDIA_PROVIDER` | Bytes live in | Served by | Cost |
+|---|---|---|---|
+| `gridfs` (default for MongoDB) | GridFS in the database | `GET /uploads/:name` | free, Atlas M0 |
+| `disk` (default for PostgreSQL) | `server/uploads` | `express.static` | free |
+| `remote` | a separate media host | `302` redirect to that host | free, but see below |
+
+**Use `gridfs` or `disk`.** Both serve media from the app's own origin, so the
+browser makes an ordinary same-origin request: no permission prompt, no
+cross-origin redirect, and nothing of yours is exposed to your LAN.
+
+---
+
+## Why `remote` is not recommended
+
+`remote` keeps files on a separate machine and answers `/uploads/:name` with a
+**302 redirect** to that host:
 
 ```
-browser ──POST /api/uploads──▶ API (Render) ──PUT──▶ media service (your laptop)
-        ◀──── /uploads/<id>.png ────                    │
-        ───────GET /uploads/<id>.png──▶ 302 ──────────▶ GET /media/<id>.png
+browser ──GET /uploads/x.png──▶ API ──302──▶ http://192.168.1.50:8081/media/x.png
 ```
+
+If that host is on a LAN address — a home machine, a `*.local` name, `localhost`
+— the browser treats the image as a **local-network request** and stops to ask
+the visitor to allow it:
+
+> dangro.onrender.com wants to see devices on your local network
+
+That prompt is the bug. It is unrelated to what the page is doing, it trains
+people to approve local-network access out of habit, and if they decline, no
+image ever loads. A public page has no legitimate reason to pull media from a
+visitor's own network.
+
+Two consequences, both now prevented in code:
+
+- **`config.ts` refuses to boot** when `MEDIA_PUBLIC_URL` is not a public
+  `https://` origin. Loopback, RFC 1918 (`10/8`, `172.16/12`, `192.168/16`),
+  `169.254/16`, CGNAT, `*.local`, `*.internal` and bare hostnames are all
+  rejected, as is plain `http://`. See `server/src/lib/publicHost.ts`.
+- **The CSP will not whitelist it.** `img-src`/`media-src` are only widened to
+  an origin that passes the same check, so a private host cannot be authorised
+  even if one is reached some other way.
+
+If you still need `remote`, it works — but the media host must be a **public
+HTTPS** endpoint, and the sections below explain how to set one up.
+
+---
+
+## Setting up the separate host (only if you need `remote`)
+
+The API stores nothing itself: it pushes each upload to a small media service
+and replies to browsers with a **302 redirect** to that service.
 
 Two things this buys you:
 
@@ -103,6 +147,13 @@ That HTTPS URL (public port 443) forwards to your local 8081, and is your
 ```bash
 curl -I https://ab-macbook.xxxxxxxxx.ts.net/health
 ```
+
+> **`MEDIA_PUBLIC_URL` must be the full `https://….ts.net` URL above.**
+> Never put your LAN IP, your `.local` name, or `http://127.0.0.1:8081` there.
+> The media service binds `127.0.0.1` only, so a LAN address cannot reach it
+> from Render anyway — but before the guard below existed it was still accepted
+> and sent to the browser, which is exactly what produced the "wants to see
+> devices on your local network" prompt on every image.
 
 > **DNS can take up to 10 minutes** to propagate the first time, so a failure
 > straight after setup does not necessarily mean it is misconfigured.
@@ -206,3 +257,10 @@ working.
 Set `MEDIA_PROVIDER=gridfs` (or `disk` for the PostgreSQL backend) and restart.
 Stored `/uploads/...` values are unchanged, but any media that only exists on
 the media host becomes unreachable until it is copied over.
+
+## Choosing again, in one line
+
+| If you want | Use |
+|---|---|
+| No permission prompts, nothing exposed to your LAN, zero cost | `gridfs` (MongoDB) or `disk` (PostgreSQL) |
+| Video to bypass the API entirely | `remote`, with a **public https** `MEDIA_PUBLIC_URL` |

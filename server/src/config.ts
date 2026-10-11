@@ -1,5 +1,6 @@
 import dotenv from "dotenv";
 import path from "path";
+import { publicOrigin } from "./lib/publicHost.js";
 
 /**
  * Environment loading order (first file wins, later files only fill gaps):
@@ -22,9 +23,18 @@ if (isTest) {
   process.env.DATABASE_URL ??= "postgresql://test:test@localhost:5432/dangro-test";
 }
 
+/** Thrown instead of exiting when the module is under test, so the test can assert the failure. */
+export class ConfigError extends Error {}
+
 function fail(message: string, hint: string): never {
   console.error(`\n[fatal] ${message}`);
   console.error(`        ${hint}\n`);
+
+  // config.test.ts imports this module with bad values on purpose. Calling
+  // process.exit there would take the whole test runner down with it, so the
+  // throw surfaces the same failure to the caller instead.
+  if (isTest) throw new ConfigError(message);
+
   process.exit(1);
 }
 
@@ -37,6 +47,15 @@ function required(name: string, hint: string): string {
 function optional(name: string, fallback: string): string {
   const value = process.env[name];
   return value && value.trim() ? value.trim() : fallback;
+}
+
+/** Best-effort hostname for an error message; never throws on a malformed URL. */
+function safeHostname(value: string): string {
+  try {
+    return new URL(value.trim()).hostname;
+  } catch {
+    return value.trim();
+  }
 }
 
 const rawPort = process.env.PORT ?? "3001";
@@ -104,6 +123,19 @@ if (mediaProvider === "remote") {
     fail(
       "MEDIA_PUBLIC_URL is required when MEDIA_PROVIDER=remote",
       "Set MEDIA_PUBLIC_URL to the public base URL of your media host, e.g. https://host.tailnet.ts.net"
+    );
+  }
+  // The browser follows this URL for every image, video and audio clip. A value
+  // that is not https, or that points inside the visitor's own network, makes
+  // the browser ask "wants to see devices on your local network" and then fail
+  // to load the image — so refuse to boot rather than serve a site like that.
+  if (!publicOrigin(mediaPublicUrl)) {
+    const reason = !/^https:\/\//i.test(mediaPublicUrl.trim())
+      ? "it is not an https:// URL"
+      : `its host "${safeHostname(mediaPublicUrl)}" is private, loopback or LAN-only`;
+    fail(
+      `MEDIA_PUBLIC_URL is not usable as a browser-facing origin: ${reason}`,
+      "Use the public https:// address of the media host (e.g. https://host.tailnet.ts.net), or set MEDIA_PROVIDER=gridfs to serve media from this app's own origin at no extra cost."
     );
   }
   if (!mediaIngestKey) {

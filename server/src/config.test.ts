@@ -75,6 +75,44 @@ describe("effective media provider", () => {
     expect(config.mediaProvider).toBe("remote");
   });
 
+  it("refuses to boot with a LAN media URL, which is what caused the prompt", async () => {
+    // Every /uploads request would 302 to this address, so the browser asks the
+    // visitor to expose their local network and then fails to load the image.
+    await expect(
+      loadConfig({
+        ...BASE,
+        DATABASE_PROVIDER: "mongo",
+        MEDIA_PROVIDER: "remote",
+        MEDIA_PUBLIC_URL: "http://192.168.1.50:8081",
+        MEDIA_INGEST_KEY: "k".repeat(40),
+      })
+    ).rejects.toThrow(/not usable as a browser-facing origin/i);
+  });
+
+  it("refuses to boot with a loopback media URL", async () => {
+    await expect(
+      loadConfig({
+        ...BASE,
+        DATABASE_PROVIDER: "mongo",
+        MEDIA_PROVIDER: "remote",
+        MEDIA_PUBLIC_URL: "http://127.0.0.1:8081",
+        MEDIA_INGEST_KEY: "k".repeat(40),
+      })
+    ).rejects.toThrow(/not usable as a browser-facing origin/i);
+  });
+
+  it("refuses to boot with a plain-http public media URL", async () => {
+    await expect(
+      loadConfig({
+        ...BASE,
+        DATABASE_PROVIDER: "mongo",
+        MEDIA_PROVIDER: "remote",
+        MEDIA_PUBLIC_URL: "http://media.example.ts.net",
+        MEDIA_INGEST_KEY: "k".repeat(40),
+      })
+    ).rejects.toThrow(/not usable as a browser-facing origin/i);
+  });
+
   it("keeps an explicit disk provider on MongoDB", async () => {
     const config = await loadConfig({ ...BASE, DATABASE_PROVIDER: "mongo", MEDIA_PROVIDER: "disk" });
     expect(config.mediaProvider).toBe("disk");
