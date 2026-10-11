@@ -72,10 +72,20 @@ describe("buildCspDirectives", () => {
     expect(directives["media-src"]).toContain(MEDIA_HOST);
   });
 
-  it("does not widen img-src when no media host is configured", () => {
+  it("does not widen img-src beyond the origins the app actually uses", () => {
     const directives = buildCspDirectives("");
     expect(directives["img-src"]).not.toContain("*");
-    expect(directives["img-src"]).toHaveLength(3);
+    // 'self', data:, blob:, and the Cloudinary delivery host. Nothing else.
+    expect(directives["img-src"]).toHaveLength(4);
+    expect(directives["img-src"]).toContain("https://res.cloudinary.com");
+  });
+
+  it("allows the Cloudinary delivery host even with no media host configured", () => {
+    // Images are fetched cross-origin from Cloudinary. Without this every
+    // uploaded image is blocked while the upload reports success.
+    const directives = buildCspDirectives("");
+    expect(directives["img-src"]).toContain("https://res.cloudinary.com");
+    expect(directives["media-src"]).toContain("https://res.cloudinary.com");
   });
 
   it("ignores an unparseable media URL instead of emitting a broken policy", () => {

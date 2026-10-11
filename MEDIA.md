@@ -1,70 +1,76 @@
 # Media storage
 
-Dangro has three interchangeable media backends, chosen by `MEDIA_PROVIDER`:
+Dangro stores **images on Cloudinary** and everything else (voice notes,
+video, documents) through one of the backends below.
 
-| `MEDIA_PROVIDER` | Bytes live in | Served by | Cost |
+| Media | Where bytes live | Served by | Cost |
 |---|---|---|---|
-| `gridfs` (default for MongoDB) | GridFS in the database | `GET /uploads/:name` | free, Atlas M0 |
-| `disk` (default for PostgreSQL) | `server/uploads` | `express.static` | free |
-| `remote` | a separate media host | `302` redirect to that host | free, but see below |
+| Images (JPEG/PNG/WebP/GIF) | Cloudinary | `https://res.cloudinary.com/...` | free tier |
+| Voice, video, docs | `MEDIA_PROVIDER` backend | `/uploads/...` | free |
 
-**Use `gridfs` or `disk`.** Both serve media from the app's own origin, so the
-browser makes an ordinary same-origin request: no permission prompt, no
-cross-origin redirect, and nothing of yours is exposed to your LAN.
+Images always go to Cloudinary regardless of `MEDIA_PROVIDER`; the setting
+below only chooses where non-image media is kept.
 
----
+## Why images use Cloudinary
 
-## Why `remote` is not recommended
+- **No local-network prompt.** Images load from a public https origin, so the
+  browser never asks the visitor to expose their LAN. This is what the previous
+  remote-media-host setup got wrong.
+- **No storage on the API host.** Render's filesystem is ephemeral, so images
+  kept there disappear on every deploy.
+- **Optimised on delivery.** `f_auto` and `q_auto` pick the best format and
+  quality per browser; `c_limit,w_1920` caps the width **without** upscaling or
+  cropping, so small images and aspect ratios are preserved. Animated GIFs skip
+  `f_auto` so the animation survives.
+- **Deletion by public ID.** Deleting a DM message destroys the asset, after the
+  existing authorisation checks and only when no other message references it.
 
-`remote` keeps files on a separate machine and answers `/uploads/:name` with a
-**302 redirect** to that host:
+### Configure it
+
+In `server/.env` locally, or **Render → Environment** in production:
 
 ```
-browser ──GET /uploads/x.png──▶ API ──302──▶ http://192.168.1.50:8081/media/x.png
+CLOUDINARY_CLOUD_NAME="your-cloud-name"
+CLOUDINARY_API_KEY="your-api-key"
+CLOUDINARY_API_SECRET="your-api-secret"
 ```
 
-If that host is on a LAN address — a home machine, a `*.local` name, `localhost`
-— the browser treats the image as a **local-network request** and stops to ask
-the visitor to allow it:
+Get them from the Cloudinary dashboard → Settings → Account → API Keys.
 
-> dangro.onrender.com wants to see devices on your local network
+All three are required. If any is missing an image upload fails with **503**
+and names the missing variable — it is never quietly written somewhere else.
+All three are server-only: never prefix them with `VITE_`, which would inline
+the secret into the browser bundle.
 
-That prompt is the bug. It is unrelated to what the page is doing, it trains
-people to approve local-network access out of habit, and if they decline, no
-image ever loads. A public page has no legitimate reason to pull media from a
-visitor's own network.
+Optional: `CLOUDINARY_IMAGE_MAX_BYTES` (default 8 MB), `CLOUDINARY_FOLDER`
+(default `dangro`), `CLOUDINARY_TIMEOUT_MS` (default 30000).
 
-Two consequences, both now prevented in code:
-
-- **`config.ts` refuses to boot** when `MEDIA_PUBLIC_URL` is not a public
-  `https://` origin. Loopback, RFC 1918 (`10/8`, `172.16/12`, `192.168/16`),
-  `169.254/16`, CGNAT, `*.local`, `*.internal` and bare hostnames are all
-  rejected, as is plain `http://`. See `server/src/lib/publicHost.ts`.
-- **The CSP will not whitelist it.** `img-src`/`media-src` are only widened to
-  an origin that passes the same check, so a private host cannot be authorised
-  even if one is reached some other way.
-
-If you still need `remote`, it works — but the media host must be a **public
-HTTPS** endpoint, and the sections below explain how to set one up.
+> **Existing images are not migrated.** Files uploaded before this change live
+> in the old backend and keep resolving from it. Re-upload anything you want to
+> have optimised.
 
 ---
 
-## Setting up the separate host (only if you need `remote`)
+## Non-image media backends
 
-The API stores nothing itself: it pushes each upload to a small media service
-and replies to browsers with a **302 redirect** to that service.
+Chosen by `MEDIA_PROVIDER`:
 
-Two things this buys you:
+| `MEDIA_PROVIDER` | Bytes live in | Served by |
+|---|---|---|
+| `gridfs` (default for MongoDB) | GridFS in the database | `GET /uploads/:name` |
+| `disk` (default for PostgreSQL) | `server/uploads` | `express.static` |
+| `remote` | a separate media host | `302` redirect to that host |
 
-- **Video never passes through the API.** Only a 302 crosses Render, so your
-  home uplink — not the API host — is the limit for large files.
-- **The API stays stateless.** Its ephemeral disk holds nothing that matters,
-  which is what makes the Render free tier viable.
-
-The client needs no changes: `<img src="/uploads/…">` and the URL shape stored
-in `attachmentUrl` / `mediaUrl` / `icon` are identical on every backend.
+**Prefer `gridfs`/`disk`.** `remote` sends the browser to another host; on a
+LAN address that is what produced the permission prompt, and `config.ts` now
+refuses to boot if `MEDIA_PUBLIC_URL` is not a public https origin.
 
 ---
+
+# Media storage on a separate host
+
+The rest of this document covers the `remote` backend, which is **not**
+recommended. It is retained for existing deployments.
 
 ## 1. Start the media service
 

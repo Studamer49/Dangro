@@ -1,4 +1,5 @@
 import helmet from "helmet";
+import { config } from "../config.js";
 import { publicOrigin } from "./publicHost.js";
 
 /** Whatever shape helmet's directive map uses for this version. */
@@ -39,6 +40,14 @@ export function buildCspDirectives(mediaPublicUrl: string): HelmetDirectives {
   const asStrings = (values: Iterable<unknown> | undefined): string[] =>
     [...(values ?? ["'self'"])].map(String);
 
+  const withSource = (
+    values: Iterable<unknown> | undefined,
+    source: string
+  ): string[] => {
+    const list = asStrings(values);
+    return list.includes(source) ? list : [...list, source];
+  };
+
   const allowBlob = (values: Iterable<unknown> | undefined): string[] => {
     const list = asStrings(values);
     return list.includes("blob:") ? list : [...list, "blob:"];
@@ -52,6 +61,18 @@ export function buildCspDirectives(mediaPublicUrl: string): HelmetDirectives {
   const origin = mediaOrigin(mediaPublicUrl);
   directives["img-src"] = origin ? [...imgSrc, origin] : imgSrc;
   directives["media-src"] = origin ? [...mediaSrc, origin] : mediaSrc;
+
+  // Cloudinary serves images from its own public https origin, so without
+  // this every uploaded image is refused by the browser while the upload
+  // itself reports success. The host is a Cloudinary-controlled domain and
+  // passes the same public-origin check as the media host above.
+  //
+  // Added unconditionally: naming the delivery host grants no access to
+  // anything by itself, and skipping it when credentials happen to be absent
+  // would make a page silently break the moment they were added.
+  const delivery = config.cloudinary.deliveryHost;
+  directives["img-src"] = withSource(directives["img-src"], delivery);
+  directives["media-src"] = withSource(directives["media-src"], delivery);
 
   return directives;
 }

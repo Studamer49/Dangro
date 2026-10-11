@@ -190,6 +190,8 @@ export interface DirectMessage {
   conversationId: string;
   attachmentUrl: string | null;
   attachmentType: string | null;
+  /** Cloudinary asset id, present only for images uploaded through Cloudinary. */
+  attachmentPublicId?: string | null;
   replyToId: string | null;
   edited: boolean;
   readAt: string | null;

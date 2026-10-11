@@ -1,11 +1,13 @@
 import { Request, Response, Router } from "express";
 import multer from "multer";
 import fs from "fs";
+import rateLimit from "express-rate-limit";
 import { v4 as uuidv4 } from "uuid";
 import { authenticate } from "../middleware/auth.js";
 import { config } from "../config.js";
 import { AppError, asyncHandler, ok, toErrorBody } from "../lib/http.js";
-import { getMediaStore, MediaIngestError } from "../db/storage.js";
+import { getImageMediaStore, getMediaStore, MediaIngestError } from "../db/storage.js";
+import { isCloudinaryConfigured } from "../lib/cloudinary.js";
 import { mongoClient } from "../prisma.js";
 
 const router = Router();
@@ -99,6 +101,42 @@ const upload = multer({
   },
 });
 
+/** Raster formats Cloudinary accepts. GIF is kept so animated images survive. */
+const IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+
+/**
+ * Images are limited separately from the 50 MB media ceiling. An 8 MB photo
+ * is already generous, and every byte here becomes a stored Cloudinary
+ * asset that costs quota — so the limit is enforced before the upload is
+ * attempted rather than after.
+ */
+const imageMaxBytes = config.cloudinary.imageMaxBytes;
+
+/**
+ * Per-route upload budget. The global limiter allows 300 requests per 15
+ * minutes across the whole API, which for uploads alone is 300 x 50 MB.
+ * Skipped under NODE_ENV=test so the suite is not rate limited.
+ */
+const uploadLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  // Identified by user when authenticated, by IP otherwise, so one user
+  // cannot exhaust the shared bucket for everyone else.
+  keyGenerator: (req) => {
+    const userId = (req as { userId?: string }).userId;
+    return userId ?? req.ip ?? "unknown";
+  },
+  skip: () => config.isTest,
+  handler: (_req, res) => {
+    res.status(429).json({
+      success: false,
+      error: { code: "RATE_LIMITED", message: "Too many uploads. Please try again shortly." },
+    });
+  },
+});
+
 function runUpload(req: Request, res: Response): Promise<void> {
   return new Promise((resolve, reject) => {
     upload.single("file")(req, res, (err?: unknown) => {
@@ -121,6 +159,7 @@ function safeDisplayName(name: string): string {
 router.post(
   "/",
   authenticate,
+  uploadLimiter,
   asyncHandler(async (req, res) => {
     try {
       await runUpload(req, res);
@@ -165,20 +204,42 @@ router.post(
     }
 
     const finalName = `${file.filename}${MIME_TO_EXT[file.mimetype]}`;
+    const isImage = IMAGE_MIME.has(file.mimetype);
 
-    // Media lands on disk (PostgreSQL), in GridFS (MongoDB), or on a remote
-    // media host. All three hand back the same `/uploads/<uuid>.<ext>` URL.
-    const store = getMediaStore(mongoClient);
+    // Images are rejected before contacting Cloudinary when it is not
+    // configured. Falling back to the disk/GridFS store here would report a
+    // successful upload for bytes that did not go where the operator set the
+    // app up to store them.
+    if (isImage && !isCloudinaryConfigured()) {
+      await cleanup();
+      throw new AppError(
+        "Image uploads are unavailable: Cloudinary is not configured.",
+        503,
+        "INTERNAL_ERROR"
+      );
+    }
+
+    if (isImage && file.size > imageMaxBytes) {
+      await cleanup();
+      throw AppError.of(
+        "PAYLOAD_TOO_LARGE",
+        `Image too large. Maximum size is ${Math.round(imageMaxBytes / (1024 * 1024))}MB.`
+      );
+    }
+
+    // Images go to Cloudinary; video, audio and documents keep using whichever
+    // store MEDIA_PROVIDER selects, so voice notes are unaffected.
+    const store = isImage ? getImageMediaStore() : getMediaStore(mongoClient);
 
     let stored: Awaited<ReturnType<typeof store.save>>;
     try {
       stored = await store.save(file.path, finalName, file.mimetype);
     } catch (err) {
-      // Every store is responsible for clearing its own spool file; this is
-      // the backstop for one that failed before it could.
+      // Every store is responsible for clearing its own spool file; this is the
+      // backstop for one that failed before it could.
       await cleanup();
       if (err instanceof MediaIngestError) {
-        // 502: the API is fine, the media host is not.
+        // 502: the API is fine, the upstream media service is not.
         throw new AppError(
           `Media could not be stored: ${err.message}`,
           502,
@@ -202,6 +263,11 @@ router.post(
         size: stored.size,
         mimeType,
         type,
+        // Cloudinary's canonical identifier. Callers persist this so a later
+        // delete can remove the asset; it is undefined for the other stores.
+        publicId: stored.publicId ?? null,
+        width: stored.width ?? null,
+        height: stored.height ?? null,
       },
       201
     );

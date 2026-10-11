@@ -2,9 +2,10 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { useCallStore } from "@/stores/callStore";
 import { getSocket } from "@/lib/socket";
-import api from "@/lib/api";
+import api, { apiErrorMessage } from "@/lib/api";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import Avatar from "@/components/Avatar";
+import { useToast } from "@/stores/toastStore";
 import type { Conversation, DirectMessage } from "@/types";
 
 interface Props {
@@ -26,6 +27,9 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   const [flashId, setFlashId] = useState<string | null>(null);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  // 0-100 while an upload is in flight; reset to 0 when idle.
+  const [uploadPercent, setUploadPercent] = useState(0);
+  const toast = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const flashTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -273,6 +277,10 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   };
 
   const sendAttachment = async (file: File) => {
+    // One upload at a time: a second click while the first is in flight would
+    // otherwise send the same file twice.
+    if (isUploading) return;
+
     setIsUploading(true);
     setShowAttachMenu(false);
 
@@ -284,6 +292,12 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
       : file.type.startsWith("audio")
       ? "audio"
       : "file";
+
+    // A local object URL shows the image immediately instead of waiting for
+    // the round trip. It is revoked below in a finally block so the blob is
+    // not retained for the life of the tab.
+    const objectUrl = previewType === "image" ? URL.createObjectURL(file) : null;
+
     setMessages((prev) => [
       ...prev,
       {
@@ -291,7 +305,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
         content: file.name,
         senderId: user?.id ?? "",
         conversationId: conversation.id,
-        attachmentUrl: null,
+        attachmentUrl: objectUrl,
         attachmentType: previewType,
         replyToId: null,
         edited: false,
@@ -309,12 +323,21 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
       formData.append("file", file);
       const { data: uploadData } = await api.post("/uploads", formData, {
         headers: { "Content-Type": "multipart/form-data" },
+        // Surfaced by axios as e.upload.progress, and used for the bar below.
+        onUploadProgress: (e) => {
+          if (e.total) setUploadPercent(Math.round((e.loaded / e.total) * 100));
+        },
       });
 
       setMessages((prev) =>
         prev.map((m) =>
           m.id === tempId
-            ? { ...m, attachmentUrl: uploadData.url, attachmentType: uploadData.type }
+            ? {
+                ...m,
+                attachmentUrl: uploadData.url,
+                attachmentType: uploadData.type,
+                attachmentPublicId: uploadData.publicId ?? null,
+              }
             : m
         )
       );
@@ -323,10 +346,16 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
         content: file.name,
         attachmentUrl: uploadData.url,
         attachmentType: uploadData.type,
+        attachmentPublicId: uploadData.publicId ?? undefined,
       });
-    } catch {
+    } catch (err) {
+      // The optimistic bubble is removed; without this the user is left with a
+      // permanent phantom message.
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      toast.error(apiErrorMessage(err, "Upload failed"));
     } finally {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setUploadPercent(0);
       setIsUploading(false);
     }
   };
@@ -452,11 +481,18 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
 
     if (msg.attachmentType === "image") {
       return (
-        <div className="mt-2">
+        <div className="mt-2 max-w-full">
+          {msg.id.startsWith("temp-") && (
+            <div className="mb-1 text-[10px] text-gray-400">Uploading…</div>
+          )}
           <img
             src={msg.attachmentUrl}
             alt="Shared image"
-            className="max-h-64 rounded-lg object-cover"
+            // max-w-full + h-auto keeps a wide image inside the bubble instead
+            // of forcing the chat column wider; the rounded corners match the
+            // rest of the message styling.
+            className="block max-h-80 max-w-full rounded-lg object-contain"
+            loading="lazy"
           />
         </div>
       );
@@ -464,11 +500,11 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
 
     if (msg.attachmentType === "video") {
       return (
-        <div className="mt-2">
+        <div className="mt-2 max-w-full">
           <video
             src={msg.attachmentUrl}
             controls
-            className="max-h-64 rounded-lg"
+            className="max-h-80 max-w-full rounded-lg"
           />
         </div>
       );
@@ -728,11 +764,25 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
       )}
 
       <div className="border-t border-gray-800 p-3">
+        {isUploading && (
+          <div className="mb-2" role="status" aria-live="polite">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-700">
+              <div
+                className="h-full rounded-full bg-accent-500 transition-all"
+                style={{ width: `${uploadPercent || 5}%` }}
+              />
+            </div>
+            <p className="mt-1 text-[11px] text-gray-400">
+              Uploading… {uploadPercent}%
+            </p>
+          </div>
+        )}
         <div className="flex items-end gap-2">
           <div className="relative">
             <button
               onClick={() => setShowAttachMenu(!showAttachMenu)}
-              className="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white"
+              disabled={isUploading}
+              className="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
@@ -779,6 +829,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) sendAttachment(file);
+              // Reset so picking the same file twice still fires onChange.
               e.target.value = "";
             }}
           />

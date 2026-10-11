@@ -9,12 +9,20 @@ import { publicOrigin } from "./lib/publicHost.js";
  *
  * In production (Render) neither file exists: every value comes from the
  * service environment. Never commit either file — only `.env.example`.
+ *
+ * Skipped under NODE_ENV=test. Otherwise a developer's local server/.env
+ * decides what the suite sees: setting MEDIA_PROVIDER=disk locally made
+ * "defaults to gridfs on MongoDB" fail on a machine that had never opted out
+ * of GridFS. Tests must depend on the environment they set, nothing else.
  */
-dotenv.config({ path: path.resolve(__dirname, "../.env") });
-dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+const isTest = process.env.NODE_ENV === "test";
+
+if (!isTest) {
+  dotenv.config({ path: path.resolve(__dirname, "../.env") });
+  dotenv.config({ path: path.resolve(__dirname, "../../.env") });
+}
 
 const isProduction = process.env.NODE_ENV === "production";
-const isTest = process.env.NODE_ENV === "test";
 
 // Test suites run DB-free: allow them to import the server and hit routes
 // that never touch Prisma, even when no real credentials are configured.
@@ -152,6 +160,41 @@ if (mediaProvider === "remote") {
 const mongoUri = optional("MONGODB_URI", "mongodb://127.0.0.1:27017");
 const mongoDbName = optional("MONGODB_DB_NAME", "dangro");
 
+// ---------------------------------------------------------------------------
+// Cloudinary — image storage, optimisation and delivery.
+//
+// Images are uploaded from this backend to Cloudinary and served from
+// https://res.cloudinary.com/... The browser only ever talks to this API,
+// so no LAN address or local device is ever contacted.
+//
+// Credentials are deliberately NOT validated at boot. A missing key must not
+// take down the whole API for users who are not uploading an image; the
+// upload path fails with a message naming the missing variables instead.
+// ---------------------------------------------------------------------------
+const cloudinaryCloudName = optional("CLOUDINARY_CLOUD_NAME", "");
+const cloudinaryApiKey = optional("CLOUDINARY_API_KEY", "");
+const cloudinaryApiSecret = optional("CLOUDINARY_API_SECRET", "");
+
+/** Names absent from the environment, for the "not configured" error message. */
+const cloudinaryMissingVars = (["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"] as const)
+  .filter((name) => !optional(name, ""));
+
+// Images default to 8 MB. CLOUDINARY_IMAGE_MAX_BYTES overrides it; the value
+// is clamped so a typo cannot turn the limit off entirely.
+const CLOUDINARY_IMAGE_MAX_BYTES_DEFAULT = 8 * 1024 * 1024;
+const cloudinaryImageMaxBytes = (() => {
+  const raw = optional("CLOUDINARY_IMAGE_MAX_BYTES", "");
+  if (!raw) return CLOUDINARY_IMAGE_MAX_BYTES_DEFAULT;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < 1024) {
+    console.warn("[config] CLOUDINARY_IMAGE_MAX_BYTES must be at least 1024 — using the 8 MB default.");
+    return CLOUDINARY_IMAGE_MAX_BYTES_DEFAULT;
+  }
+  return Math.min(parsed, 50 * 1024 * 1024);
+})();
+
+const cloudinaryConfigured = cloudinaryMissingVars.length === 0;
+
 // Only the PostgreSQL backend needs a connection string.
 const databaseUrl = usesMongo
   ? optional("DATABASE_URL", "")
@@ -179,6 +222,24 @@ export const config = {
   mongoDbName,
   mediaProvider,
   mediaPublicUrl,
+  cloudinary: {
+    cloudName: cloudinaryCloudName,
+    apiKey: cloudinaryApiKey,
+    apiSecret: cloudinaryApiSecret,
+    configured: cloudinaryConfigured,
+    missingVars: cloudinaryMissingVars,
+    imageMaxBytes: cloudinaryImageMaxBytes,
+    /**
+     * The delivery host. Images are fetched from here by the browser, so it
+     * has to be named in the CSP or every image is blocked while the upload
+     * itself reports success.
+     */
+    deliveryHost: "https://res.cloudinary.com",
+    /** Folder inside the Cloudinary media library. */
+    folder: optional("CLOUDINARY_FOLDER", "dangro"),
+    /** Abort an upload that has not completed within this many ms. */
+    timeoutMs: Number.parseInt(optional("CLOUDINARY_TIMEOUT_MS", "30000"), 10) || 30_000,
+  },
   mediaIngestUrl,
   mediaIngestKey,
   databaseUrl,

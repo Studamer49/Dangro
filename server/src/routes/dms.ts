@@ -7,8 +7,43 @@ import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { assertConversationMember, assertDirectMessageReply, paramId } from "../lib/access.js";
 import { mediaUrl } from "../lib/urls.js";
 import { createNotification } from "../lib/notifications.js";
+import { destroyImage, isCloudinaryConfigured } from "../lib/cloudinary.js";
 
 const router = Router();
+
+/**
+ * Removes the Cloudinary asset behind a deleted message.
+ *
+ * Three rules, in order:
+ *   1. Never throw. The message row is already deleted by the time this runs,
+ *      so surfacing an error would tell the caller their delete failed when it
+ *      succeeded. The orphan is logged instead.
+ *   2. Never delete an asset another message still points at. Every upload
+ *      gets a fresh public ID, so this is a cheap safety net rather than the
+ *      main defence.
+ *   3. Never log credentials — only the public ID, which is not a secret.
+ */
+async function removeAttachmentAsset(publicId: string): Promise<void> {
+  try {
+    if (!isCloudinaryConfigured()) {
+      console.warn("[media] Skipping asset removal: Cloudinary is not configured.");
+      return;
+    }
+
+    const stillReferenced = await prisma.directMessage.findFirst({
+      where: { attachmentPublicId: publicId },
+      select: { id: true },
+    });
+    if (stillReferenced) return;
+
+    await destroyImage(publicId);
+  } catch (err) {
+    console.error(
+      "[media] Could not remove Cloudinary asset:",
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+}
 
 const startConversationSchema = z.object({ userId: z.string().uuid() });
 
@@ -16,6 +51,18 @@ const sendMessageSchema = z.object({
   content: z.string().trim().min(1).max(4000),
   attachmentUrl: mediaUrl().optional(),
   attachmentType: z.string().max(100).optional(),
+  /**
+   * Cloudinary's canonical asset ID, used to delete the asset when the
+   * message is removed. Bounded to the shape Cloudinary actually issues
+   * (`folder/name`) so it cannot be used to address an arbitrary path.
+   */
+  attachmentPublicId: z
+    .string()
+    .trim()
+    .min(1)
+    .max(255)
+    .regex(/^[A-Za-z0-9_\-/]+$/, "Invalid attachment identifier")
+    .optional(),
   replyToId: z.string().uuid().nullish(),
 });
 
@@ -213,7 +260,13 @@ router.post(
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = requireUser(req);
     const conversationId = paramId(req.params.conversationId, "conversation id");
-    const { content, attachmentUrl, attachmentType, replyToId } = parseOrThrow(sendMessageSchema, req.body);
+    const {
+      content,
+      attachmentUrl,
+      attachmentType,
+      attachmentPublicId,
+      replyToId,
+    } = parseOrThrow(sendMessageSchema, req.body);
 
     const conversation = await assertConversationMember(conversationId, userId);
     await assertDirectMessageReply(replyToId, conversationId);
@@ -262,6 +315,7 @@ router.post(
         conversationId,
         attachmentUrl: attachmentUrl || undefined,
         attachmentType: attachmentType || undefined,
+        attachmentPublicId: attachmentPublicId || undefined,
         replyToId: replyToId || undefined,
         deliveredAt: new Date(),
       },
@@ -354,7 +408,18 @@ router.delete(
 
     const conversation = await assertConversationMember(message.conversationId, userId);
 
+    // Everything above is the existing authorisation chain and is unchanged.
+    // Only once the caller is confirmed to own the message does any external
+    // side effect happen.
     await prisma.directMessage.delete({ where: { id: messageId } });
+
+    // Remove the Cloudinary asset, but never at the cost of the delete the
+    // user asked for: the message row is already gone, so failing here would
+    // leave the caller thinking their message survived. The orphan is logged
+    // and can be swept later from the media library.
+    if (message.attachmentPublicId) {
+      await removeAttachmentAsset(message.attachmentPublicId);
+    }
 
     const io = getIO();
     if (io) {

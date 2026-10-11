@@ -15,5 +15,13 @@ export default defineConfig({
     sequence: {
       concurrent: false,
     },
+    server: {
+      deps: {
+        // Cloudinary is CommonJS. Left externalised, vi.mock() cannot replace
+        // it and the real SDK runs — reaching for a file stream in a test that
+        // has no network — so it has to be inlined for the mock to take.
+        inline: ["cloudinary"],
+      },
+    },
   },
 });

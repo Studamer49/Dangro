@@ -3,6 +3,8 @@ import path from "path";
 import { Readable } from "node:stream";
 import { GridFSBucket, MongoClient, type GridFSFile } from "mongodb";
 import { config } from "../config.js";
+import * as cloudinaryMedia from "../lib/cloudinary.js";
+import type { UploadedImage } from "../lib/cloudinary.js";
 import { contentTypeForName, safeUploadName } from "./mediaNames.js";
 
 /**
@@ -33,6 +35,15 @@ export interface StoredMedia {
   url: string;
   filename: string;
   size: number;
+  /**
+   * Canonical asset identifier on providers that have one (Cloudinary).
+   * Undefined for the disk/GridFS/remote backends, which address files by
+   * filename. Deletion uses this, not the URL.
+   */
+  publicId?: string;
+  /** Intrinsic dimensions, when the provider reports them. */
+  width?: number | null;
+  height?: number | null;
 }
 
 export interface ResolvedMedia {
@@ -211,6 +222,67 @@ export class RemoteMediaStore implements MediaStore {
   }
 }
 
+/**
+ * Images on Cloudinary.
+ *
+ * Bytes leave this host immediately and never come back: the returned URL is
+ * a public https address on res.cloudinary.com, so the browser makes an
+ * ordinary cross-origin image request. Nothing about it points at a LAN
+ * address or a local device, which is what made the previous remote host
+ * trigger Chrome's "wants to see devices on your local network" prompt.
+ *
+ * Because the delivery URL is absolute, `resolve` has nothing to do — no
+ * request is ever made to `/uploads/...` for a Cloudinary asset.
+ */
+export class CloudinaryMediaStore implements MediaStore {
+  readonly redirects = false;
+
+  constructor(private readonly uploader = cloudinaryMedia) {}
+
+  async save(
+    tempPath: string,
+    filename: string,
+    _contentType: string
+  ): Promise<StoredMedia> {
+    // The filename is a server-generated "<uuid>.<ext>" from the uploader, so
+    // the stem is a UUID and safe to use as a Cloudinary public ID.
+    const publicId = filename.replace(/\.[^.]+$/, "");
+    if (!safeUploadName(filename)) {
+      throw new MediaIngestError(`Refusing to store an unsafe media name: ${filename}`);
+    }
+
+    const format = filename.slice(filename.lastIndexOf(".") + 1).toLowerCase();
+
+    let uploaded: UploadedImage;
+    try {
+      uploaded = await this.uploader.uploadImage({ filePath: tempPath, publicId, format });
+    } catch (err) {
+      // The spool file is this host's only copy and the upload did not land,
+      // so it must go — otherwise a failed upload leaves bytes on disk.
+      await fs.promises.unlink(tempPath).catch(() => undefined);
+      throw new MediaIngestError(err instanceof Error ? err.message : "Cloudinary upload failed");
+    }
+
+    // Cloudinary has the bytes now; keeping a local copy would fill the
+    // ephemeral disk on Render for no benefit.
+    await fs.promises.unlink(tempPath).catch(() => undefined);
+
+    return {
+      url: uploaded.url,
+      filename,
+      size: uploaded.bytes,
+      publicId: uploaded.publicId,
+      width: uploaded.width,
+      height: uploaded.height,
+    };
+  }
+
+  async resolve(): Promise<ResolvedMedia | null> {
+    // Cloudinary serves its own URLs; there is nothing behind /uploads.
+    return null;
+  }
+}
+
 let cached: MediaStore | null = null;
 
 /** The active store, chosen once per process from the configured provider. */
@@ -235,6 +307,18 @@ export function getMediaStore(client: MongoClient | null): MediaStore {
 /** Exposed for tests: drop the memoised store. */
 export function resetMediaStore(): void {
   cached = null;
+}
+
+/**
+ * The store used for images, independent of `MEDIA_PROVIDER`.
+ *
+ * Images always go to Cloudinary; video, audio and documents keep using the
+ * provider the operator chose. That split is what lets Cloudinary become the
+ * image store without disturbing voice notes, which Cloudinary would either
+ * re-encode or reject.
+ */
+export function getImageMediaStore(): MediaStore {
+  return new CloudinaryMediaStore();
 }
 
 export { safeUploadName, contentTypeForName };

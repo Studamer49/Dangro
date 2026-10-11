@@ -153,16 +153,22 @@ app.use("/api", (req, res) => {
   res.status(404).json({ success: false, error: { code: "NOT_FOUND", message: `Cannot ${req.method} ${req.path}` } });
 });
 
-// Media that is not on this machine's disk is streamed (GridFS) or
-// redirected (remote host) rather than served by express.static. Mounted
-// first so it wins over the static handler — but only when the active store
-// actually needs it. The disk store returns null from `resolve`, so mounting
-// this for it would answer every real upload with a JSON 404 and never let
-// express.static see the file.
+// Disk uploads are answered by express.static first. Anything it cannot find —
+// a GridFS file, or media still living on a separate host — falls through to
+// the store router, which streams or redirects it and 404s if it is genuinely
+// gone.
+//
+// The order matters in both directions. Static first means a file left on disk
+// is never shadowed by a store that has no record of it, which is what happens
+// the moment you switch provider: switching to gridfs while uploads are still
+// in server/uploads made every existing image 404. The router stays mounted
+// only when the active store needs it (the disk store returns null from
+// `resolve`), and stays *after* static so a missing file gets a JSON 404 rather
+// than the SPA shell.
+app.use("/uploads", express.static(config.uploadDir, { fallthrough: true, maxAge: "1d" }));
 if (config.mediaProvider !== "disk") {
   app.use("/uploads", mediaRoutes);
 }
-app.use("/uploads", express.static(config.uploadDir, { fallthrough: true, maxAge: "1d" }));
 
 const clientDistPath = path.resolve(__dirname, "../../client/dist");
 const hasClientBuild = fs.existsSync(path.join(clientDistPath, "index.html"));

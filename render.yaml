@@ -34,6 +34,17 @@ services:
       #   MONGODB_URI  the mongodb+srv:// string from Atlas
       - key: MONGODB_URI
         sync: false
+      # Cloudinary stores and delivers images. All three are required before
+      # any image upload succeeds; without them the upload returns 503 with an
+      # explicit message rather than silently writing to the local disk.
+      # Render -> Environment. Never give any of these a VITE_ prefix: that
+      # would inline the secret into the browser bundle.
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
       - key: JWT_SECRET
         generateValue: true
       - key: JWT_REFRESH_SECRET
