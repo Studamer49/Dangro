@@ -86,6 +86,36 @@ router.get(
   })
 );
 
+router.patch(
+  "/:id",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const id = paramId(req.params.id, "story id");
+    const { mediaUrl, mediaType } = parseOrThrow(createStorySchema, req.body);
+
+    const story = await prisma.story.findUnique({
+      where: { id },
+      select: { authorId: true, expiresAt: true },
+    });
+    if (!story || story.authorId !== userId) throw AppError.of("NOT_FOUND", "Story not found");
+
+    // Editing an expired story would resurrect content the viewer may already
+    // have seen the end of; replace it only while it is still live.
+    if (story.expiresAt && story.expiresAt.getTime() <= Date.now()) {
+      throw AppError.of("CONFLICT", "This story has already expired");
+    }
+
+    const updated = await prisma.story.update({
+      where: { id },
+      data: { mediaUrl, mediaType },
+      include: { author: { select: { id: true, username: true, avatar: true } } },
+    });
+
+    ok(res, { story: updated });
+  })
+);
+
 router.delete(
   "/:id",
   authenticate,

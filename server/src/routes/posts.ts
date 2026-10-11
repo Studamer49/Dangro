@@ -121,6 +121,43 @@ router.get(
   })
 );
 
+const updatePostSchema = z
+  .object({ caption: z.string().trim().max(2200).nullish() })
+  .refine((value) => Object.keys(value).length > 0, { message: "Nothing to update" });
+
+const updateCommentSchema = z.object({ content: z.string().trim().min(1).max(500) });
+
+router.patch(
+  "/:id",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const id = paramId(req.params.id, "post id");
+    const input = parseOrThrow(updatePostSchema, req.body);
+
+    const post = await prisma.post.findUnique({ where: { id }, select: { authorId: true } });
+    if (!post) throw AppError.of("NOT_FOUND", "Post not found");
+    if (post.authorId !== userId) throw AppError.of("FORBIDDEN", "You can only edit your own posts");
+
+    const updated = await prisma.post.update({
+      where: { id },
+      // An emptied caption means "no caption": storing "" would leave a post
+      // that renders a blank line under the author name forever.
+      data: {
+        caption:
+          input.caption === undefined
+            ? undefined
+            : input.caption === null || input.caption.trim() === ""
+              ? null
+              : input.caption,
+      },
+      include: withViewer(userId),
+    });
+
+    ok(res, { post: updated });
+  })
+);
+
 router.delete(
   "/:id",
   authenticate,
@@ -200,6 +237,54 @@ router.post(
     });
 
     ok(res, { comment }, 201);
+  })
+);
+
+/** Edit a comment you wrote. Mirrors the message edit route. */
+router.patch(
+  "/comments/:commentId",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const commentId = paramId(req.params.commentId, "comment id");
+    const { content } = parseOrThrow(updateCommentSchema, req.body);
+
+    const comment = await prisma.postComment.findUnique({
+      where: { id: commentId },
+      select: { authorId: true },
+    });
+    if (!comment) throw AppError.of("NOT_FOUND", "Comment not found");
+    if (comment.authorId !== userId) throw AppError.of("FORBIDDEN", "You can only edit your own comments");
+
+    const updated = await prisma.postComment.update({
+      where: { id: commentId },
+      data: { content },
+      include: { author: { select: { id: true, username: true, avatar: true } } },
+    });
+
+    ok(res, { comment: updated });
+  })
+);
+
+router.delete(
+  "/comments/:commentId",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const commentId = paramId(req.params.commentId, "comment id");
+
+    const comment = await prisma.postComment.findUnique({
+      where: { id: commentId },
+      select: { authorId: true },
+    });
+    if (!comment) throw AppError.of("NOT_FOUND", "Comment not found");
+    if (comment.authorId !== userId) {
+      throw AppError.of("FORBIDDEN", "You can only delete your own comments");
+    }
+
+    await prisma.postComment.delete({ where: { id: commentId } });
+
+    ok(res, { message: "Comment deleted" });
   })
 );
 

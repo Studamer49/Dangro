@@ -181,6 +181,9 @@ export default function FeedPage() {
               viewer={user}
               onLike={(target) => void handleLike(target)}
               onDelete={(postId) => void handleDelete(postId)}
+              onEdit={(updated) =>
+                setPosts((prev) => prev.map((entry) => (entry.id === updated.id ? { ...entry, ...updated } : entry)))
+              }
               onCommentCountChange={handleCommentCountChange}
             />
           ))

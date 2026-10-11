@@ -18,6 +18,9 @@ export default function CommentsSection({ postId, viewer, onCountChange }: Comme
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
+  /** Id of the comment currently open in the inline editor. */
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState("");
 
   const loadComments = useCallback(async () => {
     setLoading(true);
@@ -72,6 +75,39 @@ export default function CommentsSection({ postId, viewer, onCountChange }: Comme
     }
   };
 
+  const startEdit = (comment: PostComment) => {
+    setEditingId(comment.id);
+    setEditDraft(comment.content);
+  };
+
+  const saveEdit = async (comment: PostComment) => {
+    const content = editDraft.trim();
+    if (!content) return;
+    try {
+      const { data } = await api.patch(`/posts/comments/${comment.id}`, { content });
+      setComments((prev) =>
+        prev.map((entry) => (entry.id === comment.id ? (data.comment as PostComment) : entry))
+      );
+      setEditingId(null);
+      toast.success("Comment updated");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not update the comment"));
+    }
+  };
+
+  const remove = async (comment: PostComment) => {
+    if (!window.confirm("Delete this comment?")) return;
+    try {
+      await api.delete(`/posts/comments/${comment.id}`);
+      setComments((prev) => prev.filter((entry) => entry.id !== comment.id));
+      onCountChange(postId, -1);
+      if (editingId === comment.id) setEditingId(null);
+      toast.success("Comment deleted");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not delete the comment"));
+    }
+  };
+
   return (
     <div className="border-t border-gray-800 p-4 pt-3">
       {loading ? (
@@ -93,20 +129,77 @@ export default function CommentsSection({ postId, viewer, onCountChange }: Comme
         <p className="py-2 text-sm text-gray-500">No comments yet. Be the first.</p>
       ) : (
         <ul className="space-y-3">
-          {comments.map((comment) => (
-            <li key={comment.id} className="flex gap-2">
-              <Avatar user={comment.author} className="h-7 w-7 text-xs" />
-              <div className="min-w-0">
-                <p className="text-sm text-white">
-                  <span className="font-medium">{comment.author?.username ?? "Unknown"}</span>{" "}
-                  <span className="break-words text-gray-300">{comment.content}</span>
-                </p>
-                <p className="text-[11px] text-gray-500">
-                  {new Date(comment.createdAt).toLocaleDateString()}
-                </p>
-              </div>
-            </li>
-          ))}
+          {comments.map((comment) => {
+            const isOwn = viewer !== null && comment.authorId === viewer.id;
+            const isEditing = editingId === comment.id;
+
+            return (
+              <li key={comment.id} className="group flex gap-2">
+                <Avatar user={comment.author} className="h-7 w-7 text-xs" />
+                <div className="min-w-0 flex-1">
+                  {isEditing ? (
+                    <div className="space-y-1">
+                      <textarea
+                        value={editDraft}
+                        onChange={(e) => setEditDraft(e.target.value.slice(0, 500))}
+                        rows={2}
+                        maxLength={500}
+                        autoFocus
+                        className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:border-accent-500 focus:outline-none"
+                      />
+                      <div className="flex justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setEditingId(null)}
+                          className="rounded bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void saveEdit(comment)}
+                          disabled={!editDraft.trim()}
+                          className="rounded bg-accent-600 px-2 py-1 text-xs font-medium text-white hover:bg-accent-500 disabled:opacity-50"
+                        >
+                          Save
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-sm text-white">
+                        <span className="font-medium">{comment.author?.username ?? "Unknown"}</span>{" "}
+                        <span className="whitespace-pre-wrap break-words text-gray-300">{comment.content}</span>
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-[11px] text-gray-500">
+                          {new Date(comment.createdAt).toLocaleDateString()}
+                        </p>
+                        {isOwn && !comment.id.startsWith("temp-") && (
+                          <span className="hidden gap-2 group-hover:inline-flex">
+                            <button
+                              type="button"
+                              onClick={() => startEdit(comment)}
+                              className="text-[11px] text-gray-400 hover:text-white"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void remove(comment)}
+                              className="text-[11px] text-gray-400 hover:text-red-400"
+                            >
+                              Delete
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
 
