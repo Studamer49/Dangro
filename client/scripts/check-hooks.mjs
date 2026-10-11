@@ -97,13 +97,70 @@ for (const file of files) {
   }
 }
 
-if (failures.length > 0) {
-  console.error("✗ React hook import check failed:\n");
-  for (const f of failures) console.error("  - " + f);
-  console.error(
-    "\nThese would surface in production as: ReferenceError: <hook> is not defined"
-  );
+/**
+ * Route-context guard.
+ *
+ * `useParams()` reads the params of the nearest matched <Route>. A component
+ * rendered OUTSIDE <Routes> gets `{}` — not an error, just empty. That is how
+ * ChannelSidebar sat on "Select a server" forever: it is a sibling of
+ * <Routes> in DashboardPage, so its useParams() always returned `{}`, while
+ * ChatArea next to it — rendered as a <Route> element — worked fine.
+ *
+ * There is no way to prove this statically in general, but the mistake is
+ * always the same shape: a component that calls useParams() but is never
+ * mounted as a <Route element={...}>. So check exactly that.
+ */
+function checkRouteContext(files) {
+  const problems = [];
+
+  // Which component names are ever mounted as a <Route> element?
+  const routeElements = new Set();
+  for (const file of files) {
+    const code = stripCommentsAndStrings(readFileSync(file, "utf8"));
+    for (const m of code.matchAll(/<Route\b[^>]*element=\{<\s*([A-Z]\w*)/g)) {
+      routeElements.add(m[1]);
+    }
+  }
+
+  for (const file of files) {
+    const code = stripCommentsAndStrings(readFileSync(file, "utf8"));
+    if (!/(^|[^A-Za-z0-9_$.])useParams\s*\(/.test(code)) continue;
+
+    // The default export of a file that IS a route element is fine.
+    const exportName = code.match(/export\s+default\s+function\s+([A-Z]\w*)/)?.[1]
+      ?? code.match(/export\s+default\s+([A-Z]\w*)/)?.[1];
+
+    if (exportName && routeElements.has(exportName)) continue;
+
+    problems.push(
+      `${relative(process.cwd(), file)}: calls useParams() but its component is never mounted as ` +
+      `<Route element={...}>. Rendered outside <Routes> it silently receives {} — use useMatch() instead.`
+    );
+  }
+
+  return { problems, routeElements };
+}
+
+const { problems: routeProblems, routeElements } = checkRouteContext(files);
+
+if (failures.length > 0 || routeProblems.length > 0) {
+  if (failures.length > 0) {
+    console.error("✗ React hook import check failed:\n");
+    for (const f of failures) console.error("  - " + f);
+    console.error(
+      "\nThese would surface in production as: ReferenceError: <hook> is not defined"
+    );
+  }
+  if (routeProblems.length > 0) {
+    console.error("\n✗ Route context check failed:\n");
+    for (const p of routeProblems) console.error("  - " + p);
+    console.error(
+      "\nuseParams() outside a matched <Route> returns {} with no error, so the component\n" +
+      "just sees an undefined param. This surfaced as a sidebar stuck on its empty state."
+    );
+  }
   process.exit(1);
 }
 
 console.log(`✓ React hook import check passed (${files.length} files scanned)`);
+console.log(`✓ Route context check passed (${routeElements.size} route components)`);

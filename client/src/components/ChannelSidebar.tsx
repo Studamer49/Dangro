@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useMatch, useNavigate } from "react-router-dom";
 import api, { apiErrorCode, apiErrorMessage } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
 import { useAuthStore } from "@/stores/authStore";
@@ -18,7 +18,15 @@ interface ChannelGroup {
 }
 
 export default function ChannelSidebar() {
-  const { channelId } = useParams();
+  // Deliberately NOT useParams(). This component is rendered as a sibling of
+  // <Routes> in DashboardPage, not as a <Route> element, so it has no matched
+  // route context and useParams() returns {} — channelId was always undefined,
+  // the "no channel selected" branch ran every time, and the sidebar sat on
+  // "Select a server" forever while the chat next to it worked normally.
+  // useMatch resolves the pattern against the location itself and needs no
+  // route context.
+  const channelMatch = useMatch("/channels/:channelId");
+  const channelId = channelMatch?.params.channelId;
   const navigate = useNavigate();
   const currentUser = useAuthStore((s) => s.user);
   const toast = useToast();
