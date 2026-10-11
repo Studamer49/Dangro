@@ -105,8 +105,45 @@ model Server {
   channels  Channel[]
   categories Category[]
   invites   Invite[]
+  roles     Role[]
 
   @@map("servers")
+}
+
+/// A per-server role, Discord-style: a named bundle of permissions and a
+/// position in the server's hierarchy. `isEveryone` marks the baseline role
+/// every member holds implicitly and cannot be deleted or reassigned.
+model Role {
+  id          String   @id @default(uuid())
+  serverId    String
+  name        String
+  color       String?
+  position    Int      @default(0)
+  permissions String[]
+  isEveryone  Boolean  @default(false)
+  /// Shown separately in the member list rather than folded into the tag.
+  hoist       Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  server  Server       @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  members MemberRole[]
+
+  @@index([serverId, position])
+  @@map("roles")
+}
+
+/// Which member holds which role. Many-to-many: a member can be Moderator and
+/// have a bespoke "Beta Tester" role at the same time.
+model MemberRole {
+  id       String @id @default(uuid())
+  memberId String
+  roleId   String
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  role   Role   @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, roleId])
+  @@map("member_roles")
 }
 
 /// A shareable server invite, Discord-style: optional expiry, optional use
@@ -150,11 +187,14 @@ model Member {
   userId   String
   serverId String
   nickname String?
+  /// Legacy single role kept so servers created before the roles table still
+  /// resolve; `MemberRole` rows are the source of truth from now on.
   role     String   @default("member") // owner, admin, moderator, member
   joinedAt DateTime @default(now())
 
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  server Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  server Server       @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  roles  MemberRole[]
 
   @@unique([userId, serverId])
   @@map("members")
@@ -269,6 +309,9 @@ model DirectMessage {
   conversationId String
   attachmentUrl  String?
   attachmentType String?
+  /// Canonical Cloudinary asset ID. Nullable, so messages without an
+  /// attachment and messages written before Cloudinary are unaffected.
+  attachmentPublicId String?
   replyToId      String?
   edited         Boolean   @default(false)
   readAt         DateTime?

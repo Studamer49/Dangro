@@ -4,7 +4,7 @@ import { prisma } from "../prisma.js";
 import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { assertServerMember, findServerOr404, paramId } from "../lib/access.js";
-import { requireServerPermission } from "../lib/permissions.js";
+import { requirePermission } from "../lib/permissions.js";
 
 const router = Router();
 
@@ -58,7 +58,7 @@ router.post(
     const userId = requireUser(req);
     const input = parseOrThrow(createChannelSchema, req.body);
 
-    await requireServerPermission(input.serverId, userId, "manageChannels");
+    await requirePermission(input.serverId, userId, "MANAGE_CHANNELS");
     await assertCategoryInServer(input.categoryId, input.serverId);
 
     const channel = await prisma.channel.create({
@@ -87,7 +87,7 @@ router.patch(
     const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true } });
     if (!channel) throw AppError.of("NOT_FOUND", "Channel not found");
 
-    await requireServerPermission(channel.serverId, userId, "manageChannels");
+    await requirePermission(channel.serverId, userId, "MANAGE_CHANNELS");
 
     if (input.categoryId !== undefined) {
       await assertCategoryInServer(input.categoryId, channel.serverId);
@@ -120,7 +120,7 @@ router.delete(
     });
     if (!channel) throw AppError.of("NOT_FOUND", "Channel not found");
 
-    await requireServerPermission(channel.serverId, userId, "manageChannels");
+    await requirePermission(channel.serverId, userId, "MANAGE_CHANNELS");
 
     // Deleting the last channel would leave a server nobody can open: the
     // sidebar navigates to a text channel, and with none the page is empty and
@@ -153,7 +153,7 @@ router.post(
     const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true } });
     if (!channel) throw AppError.of("NOT_FOUND", "Channel not found");
 
-    await requireServerPermission(channel.serverId, userId, "manageChannels");
+    await requirePermission(channel.serverId, userId, "MANAGE_CHANNELS");
     await assertCategoryInServer(input.categoryId, channel.serverId);
 
     const updated = await prisma.channel.update({

@@ -24,6 +24,7 @@ export interface Server {
   members?: Member[];
   channels?: Channel[];
   categories?: Category[];
+  roles?: ServerRole[];
   _count?: { members: number };
 }
 
@@ -32,9 +33,40 @@ export interface Member {
   userId: string;
   serverId: string;
   nickname?: string | null;
+  /** Legacy single role. `roleIds` is the real answer now. */
   role: Role;
+  /** Every role this member holds. */
+  roleIds?: string[];
+  /** Highest position among those roles; drives the hierarchy in the UI. */
+  position?: number;
+  isOwner?: boolean;
   joinedAt: string;
   user?: User;
+}
+
+/** A per-server role: a named bundle of permissions, ordered by position. */
+export interface ServerRole {
+  id: string;
+  serverId: string;
+  name: string;
+  color: string | null;
+  position: number;
+  permissions: string[];
+  /** The implicit baseline every member holds; cannot be deleted. */
+  isEveryone: boolean;
+  /** Shown separately in the member list rather than folded into a tag. */
+  hoist: boolean;
+  memberCount?: number;
+}
+
+export interface PermissionMeta {
+  label: string;
+  description: string;
+}
+
+export interface PermissionGroup {
+  name: string;
+  permissions: Record<string, PermissionMeta>;
 }
 
 /** A Discord-style folder grouping channels in the sidebar. */

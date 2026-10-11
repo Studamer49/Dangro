@@ -1,5 +1,17 @@
 import type { Db, Document } from "mongodb";
 import { MODELS } from "./mongoSchema.js";
+import {
+  ADMIN_PERMISSIONS,
+  EVERYONE_PERMISSIONS,
+  MODERATOR_PERMISSIONS,
+  legacyRoleNames,
+} from "../lib/permissions.js";
+
+// Duplicated here rather than imported: this module runs before the routes and
+// must not pull the Prisma singleton in through permissions.ts.
+const DEFAULT_EVERYONE = EVERYONE_PERMISSIONS;
+const DEFAULT_MODERATOR = MODERATOR_PERMISSIONS;
+const DEFAULT_ADMIN = ADMIN_PERMISSIONS;
 
 /**
  * Creates the indexes MongoDB needs to behave like the Postgres schema.
@@ -67,6 +79,15 @@ export async function ensureIndexes(db: Db): Promise<void> {
     }
     if (model.name === "invite") {
       await collection.createIndex({ serverId: 1, createdAt: -1 }, { name: "server_invites" });
+    }
+    if (model.name === "role") {
+      await collection.createIndex({ serverId: 1, position: -1 }, { name: "server_order" });
+      // At most one @everyone per server; it is the baseline every member
+      // resolves through, so two would double-count every permission.
+      await collection.createIndex(
+        { serverId: 1, isEveryone: 1 },
+        { unique: true, name: "uniq_server_everyone", partialFilterExpression: { isEveryone: true } }
+      );
     }
   }
 }
@@ -143,5 +164,75 @@ export async function backfillServerLayout(db: Db): Promise<void> {
     // uncategorised (categoryId: null) stays out of the folder.
     await channels.updateMany({ serverId, categoryId: { $exists: false } }, { $set: { categoryId } });
     console.log(`[db] created a default category for server ${serverId}`);
+  }
+}
+
+/**
+ * Gives servers created before the roles table their starting roles, and maps
+ * the legacy single-role column onto them.
+ *
+ * Without this a server that already existed would have no roles at all, so
+ * every permission check would fail and its admins would be locked out of
+ * their own server the moment the role system deployed.
+ *
+ * Safe to run on every boot: a server that already has roles is skipped.
+ */
+export async function backfillServerRoles(db: Db): Promise<void> {
+  type FlexibleDoc = { _id: string; [key: string]: unknown };
+
+  const servers = db.collection<FlexibleDoc>("servers");
+  const roles = db.collection<FlexibleDoc>("roles");
+  const members = db.collection<FlexibleDoc>("members");
+  const memberRoles = db.collection<FlexibleDoc>("member_roles");
+
+  const allServers = await servers.find({}).project<{ _id: string; ownerId: string }>({ _id: 1, ownerId: 1 }).toArray();
+
+  const DEFAULTS = [
+    { name: "@everyone", position: 0, color: null, permissions: DEFAULT_EVERYONE },
+    { name: "Moderator", position: 10, color: "#3ba55d", permissions: DEFAULT_MODERATOR },
+    { name: "Admin", position: 20, color: "#f23f43", permissions: DEFAULT_ADMIN },
+  ];
+
+  for (const server of allServers) {
+    const serverId = String(server._id);
+    if ((await roles.countDocuments({ serverId })) > 0) continue;
+
+    const idByName = new Map<string, string>();
+    for (const preset of DEFAULTS) {
+      const id = crypto.randomUUID();
+      idByName.set(preset.name, id);
+      await roles.insertOne({
+        _id: id,
+        serverId,
+        name: preset.name,
+        color: preset.color,
+        position: preset.position,
+        permissions: preset.permissions,
+        isEveryone: preset.name === "@everyone",
+        hoist: preset.name !== "@everyone",
+        createdAt: new Date(),
+      });
+    }
+
+    // Map the legacy `role` string onto the matching seeded role, so nobody
+    // loses the access they already had.
+    const serverMembers = await members
+      .find({ serverId })
+      .project<{ _id: string; role?: string }>({ _id: 1, role: 1 })
+      .toArray();
+
+    const links: FlexibleDoc[] = [];
+    for (const member of serverMembers) {
+      const wanted = legacyRoleNames(member.role);
+      for (const name of wanted) {
+        const roleId = idByName.get(name);
+        if (roleId) links.push({ _id: crypto.randomUUID(), memberId: member._id, roleId, createdAt: new Date() });
+      }
+    }
+    if (links.length > 0) await memberRoles.insertMany(links);
+
+    console.log(
+      `[db] seeded default roles for server ${serverId} (${serverMembers.length} member(s), ${links.length} role link(s))`
+    );
   }
 }

@@ -32,11 +32,14 @@ export interface RelationDef {
   onDelete?: "Cascade" | "SetNull";
 }
 
+/** Field value shapes the registry can describe. */
+export type FieldType = "string" | "number" | "boolean" | "date" | "array";
+
 export interface ModelDef {
   name: string;
   collection: string;
   /** Scalar fields with their declared defaults; null means optional. */
-  fields: Record<string, { type: "string" | "number" | "boolean" | "date"; optional?: boolean; default?: unknown }>;
+  fields: Record<string, { type: FieldType; optional?: boolean; default?: unknown }>;
   relations: RelationDef[];
   /** Compound unique indexes, keyed by the Prisma compound key name. */
   uniques: Record<string, string[]>;
@@ -171,6 +174,7 @@ export const MODELS: Record<string, ModelDef> = {
       relation("channels", "channel", "many", { backKey: "serverId" }),
       relation("categories", "category", "many", { backKey: "serverId" }),
       relation("invites", "invite", "many", { backKey: "serverId" }),
+      relation("roles", "role", "many", { backKey: "serverId" }),
     ],
   },
 
@@ -213,6 +217,44 @@ export const MODELS: Record<string, ModelDef> = {
     ],
   },
 
+  role: {
+    name: "role",
+    collection: "roles",
+    fields: {
+      serverId: { type: "string" },
+      name: { type: "string" },
+      color: { type: "string", optional: true },
+      position: { type: "number", default: 0 },
+      /** Permission keys. Stored verbatim as a string[] by the roles routes. */
+      permissions: { type: "array" },
+      isEveryone: { type: "boolean", default: false },
+      hoist: { type: "boolean", default: false },
+      createdAt: { type: "date", default: () => new Date() },
+    },
+    uniques: {},
+    defaultOrder: { position: "desc" },
+    relations: [
+      relation("server", "server", "one", { ownKey: "serverId" }),
+      relation("members", "memberRole", "many", { backKey: "roleId" }),
+    ],
+  },
+
+  memberRole: {
+    name: "memberRole",
+    collection: "member_roles",
+    fields: {
+      memberId: { type: "string" },
+      roleId: { type: "string" },
+      createdAt: { type: "date", default: () => new Date() },
+    },
+    uniques: { memberId_roleId: ["memberId", "roleId"] },
+    defaultOrder: { createdAt: "asc" },
+    relations: [
+      relation("member", "member", "one", { ownKey: "memberId" }),
+      relation("role", "role", "one", { ownKey: "roleId" }),
+    ],
+  },
+
   member: {
     name: "member",
     collection: "members",
@@ -228,6 +270,7 @@ export const MODELS: Record<string, ModelDef> = {
     relations: [
       relation("user", "user", "one", { ownKey: "userId" }),
       relation("server", "server", "one", { ownKey: "serverId" }),
+      relation("roleLinks", "memberRole", "many", { backKey: "memberId" }),
     ],
   },
 
@@ -366,6 +409,11 @@ export const MODELS: Record<string, ModelDef> = {
       conversationId: { type: "string" },
       attachmentUrl: { type: "string", optional: true },
       attachmentType: { type: "string", optional: true },
+      // Canonical Cloudinary asset ID. Optional, so messages written before
+      // Cloudinary existed — and messages with no attachment at all — keep
+      // working untouched. The URL is what renders; this is only used to
+      // delete the asset later.
+      attachmentPublicId: { type: "string", optional: true },
       replyToId: { type: "string", optional: true },
       edited: { type: "boolean", default: false },
       readAt: { type: "date", optional: true },

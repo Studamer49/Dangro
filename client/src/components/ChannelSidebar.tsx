@@ -8,7 +8,7 @@ import Modal from "@/components/Modal";
 import InviteModal from "@/components/server/InviteModal";
 import ServerSettingsModal from "@/components/server/ServerSettingsModal";
 import ChannelEditModal from "@/components/server/ChannelEditModal";
-import type { Server, Channel, Category, Role } from "@/types";
+import type { Server, Channel, Category } from "@/types";
 
 /** Discord's sidebar: collapsible category folders, each holding channels. */
 interface ChannelGroup {
@@ -88,14 +88,37 @@ export default function ChannelSidebar() {
     }
   }, [channelId, fetchServerForChannel]);
 
-  const myRole = useMemo<Role | null>(() => {
-    if (!server || !currentUser) return null;
-    if (server.ownerId === currentUser.id) return "owner";
-    return server.members?.find((m) => m.userId === currentUser.id)?.role ?? null;
+  /**
+   * The viewer's effective permissions, straight from the server.
+   *
+   * Derived from `server.members` rather than the legacy single role string,
+   * because a member may now hold several roles and the union of their
+   * permissions is what decides.
+   */
+  const myPermissions = useMemo<Set<string>>(() => {
+    if (!server || !currentUser) return new Set();
+    const held = server.roles ?? [];
+    const mine = server.members?.find((m) => m.userId === currentUser.id);
+    if (!mine) return new Set();
+
+    // The owner bypasses the whole system.
+    if (server.ownerId === currentUser.id) return new Set(["*"]);
+
+    const ids = new Set(mine.roleIds ?? []);
+    const granted = new Set<string>();
+    for (const role of held) {
+      if (ids.has(role.id)) for (const permission of role.permissions) granted.add(permission);
+    }
+    return granted;
   }, [server, currentUser]);
 
-  const isModerator = myRole === "owner" || myRole === "admin";
-  const canManageChannels = myRole === "owner" || myRole === "admin" || myRole === "moderator";
+  const can = useCallback(
+    (permission: string) => myPermissions.has("*") || myPermissions.has(permission),
+    [myPermissions]
+  );
+
+  const canManageChannels = can("MANAGE_CHANNELS");
+  const canManageCategories = can("MANAGE_CATEGORIES");
 
   /**
    * Buckets the channels by category, preserving the order the server returned.
@@ -306,7 +329,7 @@ export default function ChannelSidebar() {
             </button>
           )}
 
-          {isModerator && group.category && (
+          {canManageCategories && group.category && (
             <>
               <button
                 onClick={() => renameCategory(group.category as Category)}
@@ -405,7 +428,7 @@ export default function ChannelSidebar() {
           >
             + Channel
           </button>
-          {isModerator && (
+          {canManageCategories && (
             <button
               onClick={() => setShowCreateCategory(true)}
               className="rounded-lg bg-gray-800 px-3 py-2 text-xs font-medium text-gray-300 hover:bg-gray-700"
@@ -552,7 +575,7 @@ export default function ChannelSidebar() {
       {showSettings && (
         <ServerSettingsModal
           server={server}
-          myRole={myRole}
+          myRole={can("MANAGE_SERVER") ? "owner" : can("MANAGE_ROLES") ? "admin" : "member"}
           onClose={() => setShowSettings(false)}
           onOpenInvites={() => {
             setShowSettings(false);

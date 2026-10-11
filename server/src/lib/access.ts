@@ -21,6 +21,8 @@ export async function findServerOr404(serverId: string) {
     include: {
       channels: { orderBy: { position: "asc" } },
       categories: { orderBy: { position: "asc" } },
+      // The sidebar derives every "can I do this" from these.
+      roles: { orderBy: { position: "desc" } },
       members: {
         include: { user: { select: { id: true, username: true, avatar: true, status: true } } },
         orderBy: { joinedAt: "asc" },
@@ -28,7 +30,27 @@ export async function findServerOr404(serverId: string) {
     },
   });
   if (!server) throw AppError.of("NOT_FOUND", "Server not found");
-  return server;
+
+  // Members need their role ids for the permission union, so the join table is
+  // read once here rather than per component.
+  const links = await prisma.memberRole.findMany({
+    where: { member: { serverId } },
+    select: { memberId: true, roleId: true },
+  });
+  const rolesByMember = new Map<string, string[]>();
+  for (const link of links) {
+    const bucket = rolesByMember.get(link.memberId);
+    if (bucket) bucket.push(link.roleId);
+    else rolesByMember.set(link.memberId, [link.roleId]);
+  }
+
+  return {
+    ...server,
+    members: server.members.map((member) => ({
+      ...member,
+      roleIds: rolesByMember.get(member.id) ?? [],
+    })),
+  };
 }
 
 export async function assertServerMember(serverId: string, userId: string, roles?: string[]) {

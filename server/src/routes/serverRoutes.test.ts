@@ -23,6 +23,8 @@ const { prismaMock, store, uuid } = vi.hoisted(() => {
     invites: new Map<string, any>(),
     categories: new Map<string, any>(),
     channels: new Map<string, any>(),
+    roles: new Map<string, any>(),
+    memberRoles: new Map<string, any>(),
     users: new Map<string, any>([["owner-1", { id: "owner-1", username: "owner" }]]),
   };
 
@@ -225,6 +227,106 @@ prismaMock.channel = {
 prismaMock.user = { findUnique: async () => null, update: async () => ({}) };
 prismaMock.$transaction = async (ops: any[]) => Promise.all(ops);
 
+// --- roles -----------------------------------------------------------------
+// The default roles are seeded per server, exactly as the real create path
+// does, so the permission checks in these tests run against the same data
+// shape production sees.
+const EVERYONE_PERMS = ["VIEW_CHANNEL", "SEND_MESSAGES", "SEND_ATTACHMENTS", "ADD_REACTIONS", "CONNECT", "SPEAK", "CHANGE_NICKNAME"];
+const MOD_PERMS = [...EVERYONE_PERMS, "MANAGE_MESSAGES", "MUTE_MEMBERS", "MOVE_MEMBERS", "KICK_MEMBERS", "MANAGE_NICKNAMES"];
+const ADMIN_PERMS = [...MOD_PERMS, "BAN_MEMBERS", "MANAGE_CHANNELS", "MANAGE_CATEGORIES", "MANAGE_INVITES", "MANAGE_ROLES", "MANAGE_SERVER"];
+
+function seedRoles(serverId: string): { everyone: any; moderator: any; admin: any } {
+  // Real UUIDs: the routes validate roleIds with z.string().uuid() before they
+  // ever reach the stub, so an id like "role-moderator" would be rejected as
+  // invalid input and mask what the test is checking.
+  const make = (
+    name: string,
+    position: number,
+    permissions: string[],
+    isEveryone = false
+  ) => {
+    const row = {
+      id: uuid(),
+      serverId,
+      name,
+      color: null,
+      position,
+      permissions,
+      isEveryone,
+      hoist: !isEveryone,
+    };
+    store.roles.set(row.id, row);
+    return row;
+  };
+  return {
+    everyone: make("@everyone", 0, EVERYONE_PERMS, true),
+    moderator: make("Moderator", 10, MOD_PERMS),
+    admin: make("Admin", 20, ADMIN_PERMS),
+  };
+}
+
+prismaMock.role = {
+  create: async (args: any) => {
+    const row = {
+      id: `role-${store.roles.size + 1}`,
+      serverId: args.data.serverId,
+      name: args.data.name,
+      color: args.data.color ?? null,
+      position: args.data.position ?? 0,
+      permissions: args.data.permissions ?? [],
+      isEveryone: args.data.isEveryone ?? false,
+      hoist: args.data.hoist ?? false,
+      createdAt: new Date(),
+    };
+    store.roles.set(row.id, row);
+    return row;
+  },
+  findMany: async (args: any) => {
+    const rows = [...store.roles.values()].filter(
+      (r) => !args?.where?.serverId || r.serverId === args.where.serverId
+    );
+    return rows.sort((a, b) => b.position - a.position);
+  },
+  findUnique: async (args: any) => store.roles.get(args?.where?.id) ?? null,
+  update: async (args: any) => {
+    const row = store.roles.get(args.where.id)!;
+    Object.assign(row, args.data);
+    return { ...row };
+  },
+  delete: async (args: any) => {
+    store.roles.delete(args.where.id);
+    return { id: args.where.id };
+  },
+  deleteMany: async () => ({ count: 0 }),
+};
+
+prismaMock.memberRole = {
+  create: async (args: any) => {
+    const row = {
+      id: `link-${store.memberRoles.size + 1}`,
+      memberId: args.data.memberId,
+      roleId: args.data.roleId,
+      createdAt: new Date(),
+    };
+    store.memberRoles.set(`${row.memberId}:${row.roleId}`, row);
+    return row;
+  },
+  findMany: async (args: any) => {
+    const rows = [...store.memberRoles.values()];
+    if (args?.where?.memberId) return rows.filter((r) => r.memberId === args.where.memberId);
+    // `where: { member: { serverId } }` — resolve through the member.
+    const serverId = args?.where?.member?.serverId;
+    if (!serverId) return rows;
+    return rows.filter((r) => store.members.get(r.memberId)?.serverId === serverId);
+  },
+  deleteMany: async (args: any) => {
+    for (const [key, row] of store.memberRoles) {
+      if (!args?.where?.memberId || row.memberId === args.where.memberId) store.memberRoles.delete(key);
+    }
+    return { count: 0 };
+  },
+};
+
 vi.mock("../prisma.js", () => ({ prisma: prismaMock, mongoClient: null }));
 
 /** Mirrors middleware/auth.ts's contract with the rest of the app. */
@@ -261,9 +363,13 @@ async function seedOwnerServer() {
   const server = await prismaMock.server.create({
     data: { id: UUID, name: "Owner Server", ownerId: "owner-1", inviteCode: "perm123" },
   });
+  seeded = seedRoles(server.id);
   await prismaMock.member.create({ data: { userId: "owner-1", serverId: UUID, role: "owner" } });
   return server;
 }
+
+/** The seeded default roles, for tests that need their real ids. */
+let seeded: { everyone: any; moderator: any; admin: any };
 
 beforeAll(async () => {
   await seedOwnerServer();
@@ -507,15 +613,39 @@ describe("server settings", () => {
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
   });
 
-  it("refuses to assign the owner role directly", async () => {
-    const member = await prismaMock.member.create({ data: { userId: "somebody", serverId: UUID } });
+  it("assigns several roles to a member at once", async () => {
+    const member = await prismaMock.member.create({ data: { userId: "multi", serverId: UUID } });
 
     const res = await request(app)
       .patch(`/api/servers/${UUID}/members/${member.id}`)
-      .send({ role: "owner" });
+      .send({ roleIds: [seeded.moderator.id, seeded.admin.id] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.member.roleIds.sort()).toEqual([seeded.admin.id, seeded.moderator.id].sort());
+  });
+
+  it("refuses a role id from another server", async () => {
+    const member = await prismaMock.member.create({ data: { userId: "stranger-role", serverId: UUID } });
+
+    const res = await request(app)
+      .patch(`/api/servers/${UUID}/members/${member.id}`)
+      .send({ roleIds: ["00000000-0000-4000-8000-000000000099"] });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.message).toMatch(/transfer ownership/i);
+    expect(res.body.error.message).toMatch(/unknown role/i);
+  });
+
+  it("silently ignores @everyone in an assignment", async () => {
+    // @everyone is implicit and cannot be granted or revoked by hand; storing
+    // a link to it would double-count on every resolution.
+    const member = await prismaMock.member.create({ data: { userId: "everyone-test", serverId: UUID } });
+
+    const res = await request(app)
+      .patch(`/api/servers/${UUID}/members/${member.id}`)
+      .send({ roleIds: [seeded.everyone.id, seeded.moderator.id] });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.member.roleIds).toEqual([seeded.moderator.id]);
   });
 
   it("will not let the owner kick themselves through the member route", async () => {
@@ -526,13 +656,11 @@ describe("server settings", () => {
     expect(res.status).toBe(403);
   });
 
-  it("rejects an unknown role", async () => {
-    const member = await prismaMock.member.create({ data: { userId: "somebody2", serverId: UUID } });
+  it("rejects a member id that is not a member of this server", async () => {
+    const foreign = await prismaMock.member.create({ data: { userId: "outsider", serverId: "other-server" } });
 
-    const res = await request(app)
-      .patch(`/api/servers/${UUID}/members/${member.id}`)
-      .send({ role: "overlord" });
+    const res = await request(app).delete(`/api/servers/${UUID}/members/${foreign.id}`);
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(404);
   });
 });

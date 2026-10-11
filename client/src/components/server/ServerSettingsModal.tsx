@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Modal from "@/components/Modal";
+import RoleEditor from "@/components/server/RoleEditor";
 import api, { apiErrorMessage } from "@/lib/api";
 import { useToast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
-import type { Member, Role, Server } from "@/types";
+import type { Member, Role, Server, ServerRole } from "@/types";
 
 interface Props {
   server: Server;
@@ -14,22 +15,25 @@ interface Props {
   onSaved: (server: Server) => void;
 }
 
-type Tab = "overview" | "members" | "danger";
+type Tab = "overview" | "members" | "roles" | "danger";
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: "overview", label: "Overview" },
   { id: "members", label: "Members" },
+  { id: "roles", label: "Roles" },
   { id: "danger", label: "Danger Zone" },
 ];
 
-const RANK: Record<Role, number> = { owner: 4, admin: 3, moderator: 2, member: 1 };
-
-/** Roles a given actor is allowed to hand out — strictly below their own. */
-function assignableRoles(actor: Role | null): Role[] {
-  if (!actor) return [];
-  if (actor === "owner") return ["admin", "moderator", "member"];
-  if (actor === "admin") return ["moderator", "member"];
-  return [];
+/** A small coloured role tag, Discord's member-list chip. */
+function RoleChip({ name, color }: { name: string; color: string | null }) {
+  return (
+    <span
+      className="rounded px-1.5 py-0.5 text-[10px] font-medium text-white/90"
+      style={{ backgroundColor: color ?? "#4b5563" }}
+    >
+      {name}
+    </span>
+  );
 }
 
 export default function ServerSettingsModal({ server, myRole, onClose, onOpenInvites, onSaved }: Props) {
@@ -44,7 +48,19 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
   const [confirmText, setConfirmText] = useState("");
 
   const isOwner = myRole === "owner";
-  const canManageRoles = myRole === "owner" || myRole === "admin";
+
+  const [roles, setRoles] = useState<ServerRole[]>(server.roles ?? []);
+
+  /** The viewer's own highest role position, for the hierarchy checks. */
+  const myPosition = useMemo(() => {
+    if (isOwner) return Number.MAX_SAFE_INTEGER;
+    const mine = members.find((m) => m.userId === currentUser?.id);
+    return mine?.position ?? 0;
+  }, [isOwner, members, currentUser?.id]);
+
+  const canManageRoles = isOwner || roles.some(
+    (role) => role.position <= myPosition && role.permissions.includes("MANAGE_ROLES")
+  );
 
   const loadMembers = useCallback(async () => {
     try {
@@ -55,9 +71,24 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
     }
   }, [server.id, toast]);
 
+  const loadRoles = useCallback(async () => {
+    try {
+      const { data } = await api.get(`/servers/${server.id}/roles`);
+      setRoles(data.roles ?? []);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not load roles"));
+    }
+  }, [server.id, toast]);
+
+  // The member list is needed on the Roles tab too: it is what establishes the
+  // viewer's own position in the hierarchy.
   useEffect(() => {
-    if (tab === "members") void loadMembers();
+    if (tab === "members" || tab === "roles") void loadMembers();
   }, [tab, loadMembers]);
+
+  useEffect(() => {
+    if (tab === "roles" || tab === "members") void loadRoles();
+  }, [tab, loadRoles]);
 
   const saveProfile = async () => {
     setBusy(true);
@@ -72,14 +103,21 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
     }
   };
 
-  const changeRole = async (member: Member, role: Role) => {
+  /** Adds or removes one role; a member can hold several at once. */
+  const toggleMemberRole = async (member: Member, roleId: string, grant: boolean) => {
+    const current = new Set(member.roleIds ?? []);
+    if (grant) current.add(roleId);
+    else current.delete(roleId);
+
+    const next = [...current];
+    setMembers((prev) =>
+      prev.map((m) => (m.id === member.id ? { ...m, roleIds: next } : m))
+    );
     try {
-      await api.patch(`/servers/${server.id}/members/${member.id}`, { role });
-      setMembers((prev) => prev.map((m) => (m.id === member.id ? { ...m, role } : m)));
-      toast.success(`${member.user?.username ?? "Member"} is now ${role}`);
+      await api.put(`/servers/${server.id}/members/${member.id}/roles`, { roleIds: next });
     } catch (err) {
-      toast.error(apiErrorMessage(err, "Could not change role"));
-      // Re-read so the dropdown snaps back to what the server actually has.
+      toast.error(apiErrorMessage(err, "Could not change roles"));
+      // Re-read so the buttons snap back to what the server actually has.
       void loadMembers();
     }
   };
@@ -244,11 +282,13 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
 
           <ul className="max-h-80 space-y-1 overflow-y-auto">
             {members.map((member) => {
-              const isTargetOwner = member.userId === server.ownerId;
-              const actorRank = myRole ? RANK[myRole] : 0;
-              const targetRank = isTargetOwner ? RANK.owner : RANK[member.role] ?? RANK.member;
+              const isTargetOwner = member.isOwner || member.userId === server.ownerId;
+              const targetPosition = isTargetOwner
+                ? Number.MAX_SAFE_INTEGER
+                : member.position ?? 0;
               // Same rule as the server: only act on someone strictly below you.
-              const canAct = canManageRoles && actorRank > targetRank;
+              const canAct = canManageRoles && myPosition > targetPosition;
+              const held = new Set(member.roleIds ?? []);
 
               return (
                 <li
@@ -262,24 +302,43 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
                         <span className="ml-2 text-xs text-gray-500">(you)</span>
                       )}
                     </p>
-                    <p className="truncate text-xs text-gray-500">@{member.user?.username}</p>
+                    <div className="mt-0.5 flex flex-wrap gap-1">
+                      {isTargetOwner ? (
+                        <RoleChip name="Owner" color="#f23f43" />
+                      ) : (
+                        roles
+                          .filter((role) => held.has(role.id))
+                          .map((role) => (
+                            <RoleChip key={role.id} name={role.name} color={role.color} />
+                          ))
+                      )}
+                    </div>
                   </div>
 
                   {canAct ? (
-                    <select
-                      value={member.role}
-                      onChange={(e) => changeRole(member, e.target.value as Role)}
-                      className="rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white focus:outline-none"
-                    >
-                      {assignableRoles(myRole).map((role) => (
-                        <option key={role} value={role}>
-                          {role}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="flex flex-wrap justify-end gap-1">
+                      {roles
+                        .filter((role) => !role.isEveryone && role.position <= myPosition)
+                        .map((role) => {
+                          const on = held.has(role.id);
+                          return (
+                            <button
+                              key={role.id}
+                              onClick={() => toggleMemberRole(member, role.id, !on)}
+                              className={`rounded px-2 py-1 text-xs transition-colors ${
+                                on
+                                  ? "bg-accent-600 text-white"
+                                  : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                              }`}
+                            >
+                              {role.name}
+                            </button>
+                          );
+                        })}
+                    </div>
                   ) : (
-                    <span className="rounded bg-gray-800 px-2 py-1 text-xs capitalize text-gray-400">
-                      {isTargetOwner ? "owner" : member.role}
+                    <span className="shrink-0 text-xs text-gray-600">
+                      {isTargetOwner ? "owner" : "—"}
                     </span>
                   )}
 
@@ -306,6 +365,17 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
             })}
           </ul>
         </div>
+      )}
+
+      {tab === "roles" && (
+        <RoleEditor
+          serverId={server.id}
+          roles={roles}
+          myPosition={myPosition}
+          isOwner={isOwner}
+          onClose={onClose}
+          onRolesChanged={setRoles}
+        />
       )}
 
       {tab === "danger" && isOwner && (

@@ -4,7 +4,7 @@ import { prisma } from "../prisma.js";
 import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { paramId } from "../lib/access.js";
-import { requireServerPermission } from "../lib/permissions.js";
+import { requirePermission } from "../lib/permissions.js";
 
 /**
  * Channel categories — the Discord sidebar folder.
@@ -43,7 +43,7 @@ router.get(
     const userId = requireUser(req);
     const serverId = String(req.params.id ?? "");
 
-    await requireServerPermission(serverId, userId, "manageCategories");
+    await requirePermission(serverId, userId, "MANAGE_CATEGORIES");
 
     const categories = await prisma.category.findMany({
       where: { serverId },
@@ -63,7 +63,7 @@ router.post(
     const serverId = String(req.params.id ?? "");
     const input = parseOrThrow(createCategorySchema, { ...req.body, serverId });
 
-    await requireServerPermission(serverId, userId, "manageCategories");
+    await requirePermission(serverId, userId, "MANAGE_CATEGORIES");
 
     const category = await prisma.category.create({
       data: { name: input.name, serverId, position: await nextCategoryPosition(serverId) },
@@ -84,7 +84,7 @@ router.patch(
     const category = await prisma.category.findUnique({ where: { id: categoryId }, select: { serverId: true } });
     if (!category) throw AppError.of("NOT_FOUND", "Category not found");
 
-    await requireServerPermission(category.serverId, userId, "manageCategories");
+    await requirePermission(category.serverId, userId, "MANAGE_CATEGORIES");
 
     const updated = await prisma.category.update({ where: { id: categoryId }, data: { name: input.name } });
 
@@ -103,7 +103,7 @@ router.delete(
     const category = await prisma.category.findUnique({ where: { id: categoryId }, select: { serverId: true } });
     if (!category) throw AppError.of("NOT_FOUND", "Category not found");
 
-    await requireServerPermission(category.serverId, userId, "manageCategories");
+    await requirePermission(category.serverId, userId, "MANAGE_CATEGORIES");
 
     await prisma.category.delete({ where: { id: categoryId } });
 
@@ -122,7 +122,7 @@ router.post(
     const category = await prisma.category.findUnique({ where: { id: categoryId }, select: { serverId: true } });
     if (!category) throw AppError.of("NOT_FOUND", "Category not found");
 
-    await requireServerPermission(category.serverId, userId, "manageCategories");
+    await requirePermission(category.serverId, userId, "MANAGE_CATEGORIES");
 
     const updated = await prisma.category.update({
       where: { id: categoryId },

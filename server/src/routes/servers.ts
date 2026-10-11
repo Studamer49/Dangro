@@ -5,7 +5,8 @@ import { prisma } from "../prisma.js";
 import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { assertServerMember, findServerOr404, paramId } from "../lib/access.js";
-import { requireServerPermission } from "../lib/permissions.js";
+import { requirePermission } from "../lib/permissions.js";
+import { createDefaultRoles } from "../lib/permissions.js";
 import { inviteState } from "./invites.js";
 import { mediaUrl } from "../lib/urls.js";
 
@@ -71,9 +72,16 @@ router.post(
       data: { categoryId: category.id },
     });
 
+    // @everyone / Moderator / Admin, Discord's starting set.
+    await createDefaultRoles(server.id);
+
     const created = await prisma.server.findUnique({
       where: { id: server.id },
-      include: { channels: { orderBy: { position: "asc" } }, categories: { orderBy: { position: "asc" } } },
+      include: {
+        channels: { orderBy: { position: "asc" } },
+        categories: { orderBy: { position: "asc" } },
+        roles: { orderBy: { position: "desc" } },
+      },
     });
 
     ok(res, { server: created }, 201);
@@ -189,7 +197,7 @@ router.post(
     const userId = requireUser(req);
     const id = paramId(req.params.id, "server id");
 
-    await requireServerPermission(id, userId, "manageInvites");
+    await requirePermission(id, userId, "MANAGE_INVITES");
 
     const server = await prisma.server.update({
       where: { id },
@@ -233,7 +241,7 @@ router.delete(
     const userId = requireUser(req);
     const id = paramId(req.params.id, "server id");
 
-    await requireServerPermission(id, userId, "manageServer");
+    await requirePermission(id, userId, "MANAGE_SERVER");
 
     await prisma.server.delete({ where: { id } });
 

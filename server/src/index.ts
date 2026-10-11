@@ -13,7 +13,7 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { buildCspDirectives } from "./lib/csp.js";
 import { setupSocketHandlers } from "./socket/index.js";
 import { setIO } from "./socket/io.js";
-import { ensureIndexes, backfillServerLayout } from "./db/mongoIndexes.js";
+import { ensureIndexes, backfillServerLayout, backfillServerRoles } from "./db/mongoIndexes.js";
 import { mongoClient } from "./prisma.js";
 
 import authRoutes from "./routes/auth.js";
@@ -23,6 +23,7 @@ import serverRoutes from "./routes/servers.js";
 import serverSettingsRoutes from "./routes/serverSettings.js";
 import inviteRoutes from "./routes/invites.js";
 import categoryRoutes from "./routes/categories.js";
+import roleRoutes from "./routes/roles.js";
 import channelRoutes from "./routes/channels.js";
 import messageRoutes from "./routes/messages.js";
 import dmRoutes from "./routes/dms.js";
@@ -132,6 +133,7 @@ app.use("/api/auth/register", authLimiter);
 // more specific settings/invite paths win over its `/:id` catch-all.
 app.use("/api", inviteRoutes);
 app.use("/api", categoryRoutes);
+app.use("/api", roleRoutes);
 app.use("/api", serverSettingsRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
@@ -199,6 +201,10 @@ async function main(): Promise<void> {
       // Servers created before categories existed would otherwise show every
       // channel in one unsorted, uncategorised group.
       await backfillServerLayout(mongoClient.db(config.mongoDbName));
+
+      // Servers created before roles existed would otherwise fail every
+      // permission check and lock their own admins out.
+      await backfillServerRoles(mongoClient.db(config.mongoDbName));
     }
 
     httpServer.listen(config.port, () => {

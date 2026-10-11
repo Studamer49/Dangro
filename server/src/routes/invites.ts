@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
-import { requireServerPermission } from "../lib/permissions.js";
+import { requirePermission } from "../lib/permissions.js";
 
 /**
  * Server invites, Discord-style.
@@ -70,7 +70,7 @@ router.get(
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = requireUser(req);
     const serverId = String(req.params.id ?? "");
-    await requireServerPermission(serverId, userId, "manageInvites");
+    await requirePermission(serverId, userId, "MANAGE_INVITES");
 
     const invites = await prisma.invite.findMany({
       where: { serverId },
@@ -99,7 +99,7 @@ router.post(
     const serverId = String(req.params.id ?? "");
     const input = parseOrThrow(createInviteSchema, req.body ?? {});
 
-    await requireServerPermission(serverId, userId, "manageInvites");
+    await requirePermission(serverId, userId, "MANAGE_INVITES");
 
     if (input.channelId) {
       // The channel must belong to *this* server, otherwise an invite could
@@ -156,7 +156,7 @@ router.delete(
     const serverId = String(req.params.id ?? "");
     const code = normalizeCode(String(req.params.code ?? ""));
 
-    await requireServerPermission(serverId, userId, "manageInvites");
+    await requirePermission(serverId, userId, "MANAGE_INVITES");
 
     // Scoped to the server so an admin cannot revoke another server's invite
     // by guessing a code.

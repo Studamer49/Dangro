@@ -5,10 +5,16 @@ import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { paramId } from "../lib/access.js";
 import { nullableMediaUrl } from "../lib/urls.js";
-import { ROLES, assertOutranks, requireServerPermission } from "../lib/permissions.js";
+import {
+  assertOutranks,
+  loadServerRoles,
+  loadTarget,
+  requireMember,
+  requirePermission,
+} from "../lib/permissions.js";
 
 /**
- * Server settings: the profile, the member list, and role changes.
+ * Server settings: the profile, the member list, and member changes.
  *
  * Every mutation goes through the role hierarchy in `lib/permissions.ts` so
  * that "who may act on whom" is decided in exactly one place.
@@ -24,8 +30,9 @@ const updateServerSchema = z
   })
   .refine((value) => Object.keys(value).length > 0, { message: "Nothing to update" });
 
+/** A member holds any number of roles, Discord-style. */
 const updateMemberSchema = z.object({
-  role: z.enum(ROLES),
+  roleIds: z.array(z.string().uuid()).max(20).optional(),
   nickname: z.string().trim().min(1).max(32).nullish().optional(),
 });
 
@@ -37,7 +44,7 @@ router.patch(
     const id = String(req.params.id ?? "");
     const input = parseOrThrow(updateServerSchema, req.body);
 
-    await requireServerPermission(id, userId, "manageServer");
+    await requirePermission(id, userId, "MANAGE_SERVER");
 
     const server = await prisma.server.update({
       where: { id },
@@ -62,11 +69,7 @@ router.get(
     const id = String(req.params.id ?? "");
 
     // Any member may see the roster; only managers may change it.
-    const member = await prisma.member.findUnique({
-      where: { userId_serverId: { userId, serverId: id } },
-      select: { id: true },
-    });
-    if (!member) throw AppError.of("FORBIDDEN", "You are not a member of this server");
+    await requireMember(id, userId);
 
     const members = await prisma.member.findMany({
       where: { serverId: id },
@@ -76,7 +79,31 @@ router.get(
       orderBy: { joinedAt: "asc" },
     });
 
-    ok(res, { members });
+    const links = await prisma.memberRole.findMany({
+      where: { member: { serverId: id } },
+      select: { memberId: true, roleId: true },
+    });
+    const rolesByMember = new Map<string, string[]>();
+    for (const link of links) {
+      const bucket = rolesByMember.get(link.memberId);
+      if (bucket) bucket.push(link.roleId);
+      else rolesByMember.set(link.memberId, [link.roleId]);
+    }
+
+    const roles = await loadServerRoles(id);
+    const owner = await prisma.server.findUnique({ where: { id }, select: { ownerId: true } });
+
+    ok(res, {
+      members: members.map((member) => ({
+        ...member,
+        roleIds: rolesByMember.get(member.id) ?? [],
+        isOwner: owner?.ownerId === member.userId,
+        // Resolved so the UI can grey out actions the viewer may not take.
+        position: roles
+          .filter((role) => (rolesByMember.get(member.id) ?? []).includes(role.id))
+          .reduce((highest, role) => Math.max(highest, role.position), 0),
+      })),
+    });
   })
 );
 
@@ -89,35 +116,49 @@ router.patch(
     const memberId = paramId(req.params.memberId, "member id");
     const input = parseOrThrow(updateMemberSchema, req.body);
 
-    const actor = await requireServerPermission(id, userId, "manageRoles");
+    const actor = await requirePermission(id, userId, "MANAGE_ROLES");
 
     const target = await prisma.member.findUnique({
       where: { id: memberId },
-      select: { id: true, userId: true, serverId: true, role: true },
+      select: { id: true, userId: true, serverId: true },
     });
     if (!target || target.serverId !== id) throw AppError.of("NOT_FOUND", "Member not found");
 
-    const ownerId = await prisma.server.findUnique({ where: { id }, select: { ownerId: true } });
-    const targetIsOwner = ownerId?.ownerId === target.userId;
+    const server = await prisma.server.findUnique({ where: { id }, select: { ownerId: true } });
+    const serverRoles = await loadServerRoles(id);
+    const resolved = await loadTarget(id, memberId, serverRoles, server?.ownerId ?? "");
 
-    // "owner" is not assignable: ownership moves only through /transfer.
-    if (input.role === "owner") {
-      throw AppError.of("BAD_REQUEST", "Transfer ownership instead of assigning the owner role");
+    // Changing your own roles, or anyone at or above your level, is refused.
+    assertOutranks(actor, resolved);
+
+    if (input.roleIds) {
+      // @everyone is implicit and cannot be assigned or removed by hand.
+      const everyone = serverRoles.find((role) => role.isEveryone);
+      const assignable = input.roleIds.filter((roleId) => roleId !== everyone?.id);
+
+      const known = new Set(serverRoles.map((role) => role.id));
+      for (const roleId of assignable) {
+        if (!known.has(roleId)) throw AppError.of("BAD_REQUEST", "Unknown role for this server");
+      }
+
+      await prisma.memberRole.deleteMany({ where: { memberId } });
+      for (const roleId of assignable) {
+        await prisma.memberRole.create({ data: { memberId, roleId } });
+      }
     }
-
-    // Changing your own role, or anyone at or above your level, is refused.
-    if (!targetIsOwner) assertOutranks(actor, target.role, false);
 
     const updated = await prisma.member.update({
       where: { id: memberId },
-      data: {
-        role: input.role,
-        nickname: input.nickname === undefined ? undefined : input.nickname ?? null,
-      },
+      data: { nickname: input.nickname === undefined ? undefined : input.nickname ?? null },
       include: { user: { select: { id: true, username: true, avatar: true, status: true } } },
     });
 
-    ok(res, { member: updated });
+    const links = await prisma.memberRole.findMany({
+      where: { memberId },
+      select: { roleId: true },
+    });
+
+    ok(res, { member: { ...updated, roleIds: links.map((link) => link.roleId) } });
   })
 );
 
@@ -130,24 +171,26 @@ router.delete(
     const id = String(req.params.id ?? "");
     const memberId = paramId(req.params.memberId, "member id");
 
-    const actor = await requireServerPermission(id, userId, "kickMembers");
+    const actor = await requirePermission(id, userId, "KICK_MEMBERS");
 
     const target = await prisma.member.findUnique({
       where: { id: memberId },
-      select: { id: true, userId: true, serverId: true, role: true },
+      select: { id: true, userId: true, serverId: true },
     });
     if (!target || target.serverId !== id) throw AppError.of("NOT_FOUND", "Member not found");
 
     const server = await prisma.server.findUnique({ where: { id }, select: { ownerId: true } });
-    assertOutranks(actor, target.role, server?.ownerId === target.userId);
+    const serverRoles = await loadServerRoles(id);
+    assertOutranks(actor, await loadTarget(id, memberId, serverRoles, server?.ownerId ?? ""));
 
+    // The member's role links cascade with the row.
     await prisma.member.delete({ where: { id: memberId } });
 
     ok(res, { message: "Member removed" });
   })
 );
 
-/** Move ownership. Owner only, and the new owner must already be a member. */
+/** Move ownership. The outgoing owner keeps the Admin role. */
 router.post(
   "/servers/:id/transfer",
   authenticate,
@@ -156,7 +199,12 @@ router.post(
     const id = String(req.params.id ?? "");
     const { memberId } = parseOrThrow(z.object({ memberId: z.string().uuid() }), req.body);
 
-    await requireServerPermission(id, userId, "manageServer");
+    // Only the owner can hand the server on, even though MANAGE_SERVER is
+    // normally an admin permission.
+    const actor = await requirePermission(id, userId, "MANAGE_SERVER");
+    if (!actor.isOwner) {
+      throw AppError.of("FORBIDDEN", "Only the server owner can transfer ownership");
+    }
 
     const target = await prisma.member.findUnique({
       where: { id: memberId },
@@ -165,11 +213,19 @@ router.post(
     if (!target || target.serverId !== id) throw AppError.of("NOT_FOUND", "Member not found");
     if (target.userId === userId) throw AppError.of("BAD_REQUEST", "You already own this server");
 
-    await prisma.$transaction([
+    // The new owner gets the Admin role so they keep full access afterwards.
+    const admin = (await loadServerRoles(id)).find((role) => role.name === "Admin");
+    const existing = await prisma.memberRole.findMany({ where: { memberId }, select: { roleId: true } });
+
+    const operations = [
       prisma.server.update({ where: { id }, data: { ownerId: target.userId } }),
-      // The outgoing owner's membership row becomes an ordinary admin.
-      prisma.member.update({ where: { id: memberId }, data: { role: "admin" } }),
-    ]);
+    ];
+    if (admin && !existing.some((link) => link.roleId === admin.id)) {
+      operations.push(
+        prisma.memberRole.create({ data: { memberId, roleId: admin.id } }) as never
+      );
+    }
+    await prisma.$transaction(operations as never);
 
     ok(res, { message: "Ownership transferred" });
   })
