@@ -54,12 +54,15 @@ export default function ServerSidebar() {
     if (!code || busyJoin) return;
     setBusyJoin(true);
     try {
-      const { data } = await api.get(`/servers/join/${encodeURIComponent(code)}`);
+      // POST: joining mutates. Accepts a managed invite code or the server's
+      // permanent code, and reports which channel to land in.
+      const { data } = await api.post(`/servers/join/${encodeURIComponent(code)}`);
       setInviteCode("");
       setShowJoinModal(false);
       toast.success(`Joined ${data.server.name}`);
-      const firstChannel = data.server.channels?.[0]?.id;
-      if (firstChannel) navigate(`/channels/${firstChannel}`);
+      const target =
+        data.channelId ?? data.server.channels?.find((c: { type: string }) => c.type === "text")?.id;
+      if (target) navigate(`/channels/${target}`);
       else await fetchServers();
     } catch (err: unknown) {
       toast.error(apiErrorMessage(err, "Invalid invite code"));

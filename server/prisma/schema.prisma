@@ -21,6 +21,7 @@ model User {
 
   ownedServers   Server[]       @relation("ServerOwner")
   memberships    Member[]
+  sentInvites    Invite[]       @relation("InviteInviter")
   sentMessages   Message[]      @relation("MessageAuthor")
   reactions      Reaction[]
   sentFriendRequests    FriendRequest[] @relation("FriendRequestSender")
@@ -90,25 +91,65 @@ model Block {
 }
 
 model Server {
-  id         String   @id @default(uuid())
-  name       String
-  icon       String?
-  ownerId    String
-  inviteCode String   @unique @default(uuid())
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id          String   @id @default(uuid())
+  name        String
+  icon        String?
+  description String?
+  ownerId     String
+  inviteCode  String   @unique @default(uuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  owner   User     @relation("ServerOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  members Member[]
-  channels Channel[]
+  owner     User       @relation("ServerOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  members   Member[]
+  channels  Channel[]
+  categories Category[]
+  invites   Invite[]
 
   @@map("servers")
+}
+
+/// A shareable server invite, Discord-style: optional expiry, optional use
+/// cap, and optionally bound to a single channel so joiners land somewhere
+/// specific. `Server.inviteCode` stays as the always-on code for the existing
+/// share link, so old links keep working.
+model Invite {
+  id         String    @id @default(uuid())
+  code       String    @unique
+  serverId   String
+  channelId  String?
+  inviterId  String
+  maxUses    Int?
+  uses       Int       @default(0)
+  expiresAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  server  Server   @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  channel Channel? @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  inviter User     @relation("InviteInviter", fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@map("invites")
+}
+
+/// A named group of channels, the Discord sidebar folder.
+model Category {
+  id        String   @id @default(uuid())
+  name      String
+  serverId  String
+  position  Int      @default(0)
+  createdAt DateTime @default(now())
+
+  server   Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  channels Channel[]
+
+  @@map("categories")
 }
 
 model Member {
   id       String   @id @default(uuid())
   userId   String
   serverId String
+  nickname String?
   role     String   @default("member") // owner, admin, moderator, member
   joinedAt DateTime @default(now())
 
@@ -120,14 +161,19 @@ model Member {
 }
 
 model Channel {
-  id        String   @id @default(uuid())
-  name      String
-  type      String   @default("text") // text, voice
-  serverId  String
-  createdAt DateTime @default(now())
+  id         String   @id @default(uuid())
+  name       String
+  type       String   @default("text") // text, voice
+  topic      String?
+  serverId   String
+  categoryId String?
+  position   Int      @default(0)
+  createdAt  DateTime @default(now())
 
   server   Server    @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   messages Message[]
+  invites  Invite[]
 
   @@map("channels")
 }

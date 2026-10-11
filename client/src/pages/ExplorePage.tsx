@@ -127,7 +127,7 @@ export default function ExplorePage() {
     if (joiningId) return;
     setJoiningId(server.id);
     try {
-      const { data } = await api.get(
+      const { data } = await api.post(
         `/servers/join/${encodeURIComponent(server.inviteCode)}`
       );
       setJoinedIds((prev) => (prev.includes(server.id) ? prev : [...prev, server.id]));

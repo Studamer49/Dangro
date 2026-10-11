@@ -13,13 +13,16 @@ import { errorHandler } from "./middleware/errorHandler.js";
 import { buildCspDirectives } from "./lib/csp.js";
 import { setupSocketHandlers } from "./socket/index.js";
 import { setIO } from "./socket/io.js";
-import { ensureIndexes } from "./db/mongoIndexes.js";
+import { ensureIndexes, backfillServerLayout } from "./db/mongoIndexes.js";
 import { mongoClient } from "./prisma.js";
 
 import authRoutes from "./routes/auth.js";
 import userRoutes from "./routes/users.js";
 import friendRoutes from "./routes/friends.js";
 import serverRoutes from "./routes/servers.js";
+import serverSettingsRoutes from "./routes/serverSettings.js";
+import inviteRoutes from "./routes/invites.js";
+import categoryRoutes from "./routes/categories.js";
 import channelRoutes from "./routes/channels.js";
 import messageRoutes from "./routes/messages.js";
 import dmRoutes from "./routes/dms.js";
@@ -123,6 +126,13 @@ app.use("/api", globalLimiter);
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/register", authLimiter);
 
+// These three declare `/servers/...` paths in full, so they are mounted at the
+// API root — mounting them under `/api/servers` would resolve them to
+// `/api/servers/servers/...`. They are registered before `serverRoutes` so the
+// more specific settings/invite paths win over its `/:id` catch-all.
+app.use("/api", inviteRoutes);
+app.use("/api", categoryRoutes);
+app.use("/api", serverSettingsRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/friends", friendRoutes);
@@ -185,6 +195,10 @@ async function main(): Promise<void> {
       // indexes declared in mongoSchema.ts are applied on every boot.
       await ensureIndexes(mongoClient.db(config.mongoDbName));
       console.log("MongoDB indexes verified");
+
+      // Servers created before categories existed would otherwise show every
+      // channel in one unsorted, uncategorised group.
+      await backfillServerLayout(mongoClient.db(config.mongoDbName));
     }
 
     httpServer.listen(config.port, () => {

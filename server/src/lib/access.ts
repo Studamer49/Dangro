@@ -19,8 +19,12 @@ export async function findServerOr404(serverId: string) {
   const server = await prisma.server.findUnique({
     where: { id: serverId },
     include: {
-      channels: true,
-      members: { include: { user: { select: { id: true, username: true, avatar: true, status: true } } } },
+      channels: { orderBy: { position: "asc" } },
+      categories: { orderBy: { position: "asc" } },
+      members: {
+        include: { user: { select: { id: true, username: true, avatar: true, status: true } } },
+        orderBy: { joinedAt: "asc" },
+      },
     },
   });
   if (!server) throw AppError.of("NOT_FOUND", "Server not found");

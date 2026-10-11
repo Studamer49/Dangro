@@ -98,6 +98,7 @@ export const MODELS: Record<string, ModelDef> = {
       relation("following", "follow", "many", { backKey: "followerId" }),
       relation("sentCalls", "call", "many", { backKey: "callerId" }),
       relation("receivedCalls", "call", "many", { backKey: "receiverId" }),
+      relation("sentInvites", "invite", "many", { backKey: "inviterId" }),
     ],
   },
 
@@ -156,6 +157,7 @@ export const MODELS: Record<string, ModelDef> = {
     fields: {
       name: { type: "string" },
       icon: { type: "string", optional: true },
+      description: { type: "string", optional: true },
       ownerId: { type: "string" },
       inviteCode: { type: "string", default: () => crypto.randomUUID() },
       createdAt: { type: "date", default: () => new Date() },
@@ -167,6 +169,47 @@ export const MODELS: Record<string, ModelDef> = {
       relation("owner", "user", "one", { ownKey: "ownerId" }),
       relation("members", "member", "many", { backKey: "serverId" }),
       relation("channels", "channel", "many", { backKey: "serverId" }),
+      relation("categories", "category", "many", { backKey: "serverId" }),
+      relation("invites", "invite", "many", { backKey: "serverId" }),
+    ],
+  },
+
+  invite: {
+    name: "invite",
+    collection: "invites",
+    fields: {
+      code: { type: "string" },
+      serverId: { type: "string" },
+      channelId: { type: "string", optional: true },
+      inviterId: { type: "string" },
+      maxUses: { type: "number", optional: true },
+      uses: { type: "number", default: 0 },
+      expiresAt: { type: "date", optional: true },
+      createdAt: { type: "date", default: () => new Date() },
+    },
+    uniques: { code: ["code"] },
+    defaultOrder: { createdAt: "desc" },
+    relations: [
+      relation("server", "server", "one", { ownKey: "serverId" }),
+      relation("channel", "channel", "one", { ownKey: "channelId" }),
+      relation("inviter", "user", "one", { ownKey: "inviterId" }),
+    ],
+  },
+
+  category: {
+    name: "category",
+    collection: "categories",
+    fields: {
+      name: { type: "string" },
+      serverId: { type: "string" },
+      position: { type: "number", default: 0 },
+      createdAt: { type: "date", default: () => new Date() },
+    },
+    uniques: {},
+    defaultOrder: { position: "asc" },
+    relations: [
+      relation("server", "server", "one", { ownKey: "serverId" }),
+      relation("channels", "channel", "many", { backKey: "categoryId" }),
     ],
   },
 
@@ -176,6 +219,7 @@ export const MODELS: Record<string, ModelDef> = {
     fields: {
       userId: { type: "string" },
       serverId: { type: "string" },
+      nickname: { type: "string", optional: true },
       role: { type: "string", default: "member" },
       joinedAt: { type: "date", default: () => new Date() },
     },
@@ -193,14 +237,21 @@ export const MODELS: Record<string, ModelDef> = {
     fields: {
       name: { type: "string" },
       type: { type: "string", default: "text" },
+      topic: { type: "string", optional: true },
       serverId: { type: "string" },
+      categoryId: { type: "string", optional: true },
+      position: { type: "number", default: 0 },
       createdAt: { type: "date", default: () => new Date() },
     },
     uniques: {},
-    defaultOrder: { createdAt: "asc" },
+    defaultOrder: { position: "asc" },
     relations: [
       relation("server", "server", "one", { ownKey: "serverId" }),
+      // SetNull in schema.prisma: deleting a category must unlink its channels,
+      // not delete them.
+      relation("category", "category", "one", { ownKey: "categoryId", onDelete: "SetNull" }),
       relation("messages", "message", "many", { backKey: "channelId", orderBy: { createdAt: "desc" } }),
+      relation("invites", "invite", "many", { backKey: "channelId" }),
     ],
   },
 

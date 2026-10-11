@@ -5,21 +5,17 @@ import { prisma } from "../prisma.js";
 import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { assertServerMember, findServerOr404, paramId } from "../lib/access.js";
-import { mediaUrl, nullableMediaUrl } from "../lib/urls.js";
+import { requireServerPermission } from "../lib/permissions.js";
+import { inviteState } from "./invites.js";
+import { mediaUrl } from "../lib/urls.js";
 
 const router = Router();
 
 const createServerSchema = z.object({
   name: z.string().trim().min(1).max(100),
   icon: mediaUrl().optional(),
+  description: z.string().trim().max(500).optional(),
 });
-
-const updateServerSchema = z
-  .object({
-    name: z.string().trim().min(1).max(100).optional(),
-    icon: nullableMediaUrl(),
-  })
-  .refine((v) => Object.keys(v).length > 0, { message: "Nothing to update" });
 
 const listInclude = {
   // Only one channel is needed — the client navigates to it when a server is
@@ -49,52 +45,113 @@ router.post(
   authenticate,
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = requireUser(req);
-    const { name, icon } = parseOrThrow(createServerSchema, req.body);
+    const { name, icon, description } = parseOrThrow(createServerSchema, req.body);
 
     const server = await prisma.server.create({
       data: {
         name,
         icon,
+        description: description ?? null,
         ownerId: userId,
         inviteCode: uuidv4().slice(0, 8),
         members: { create: { userId, role: "owner" } },
-        channels: { create: [{ name: "general", type: "text" }] },
+        channels: { create: [{ name: "general", type: "text", position: 0 }] },
       },
       include: { channels: true },
     });
 
-    ok(res, { server }, 201);
+    // Discord puts the first channel in a "Text Channels" folder. The category
+    // has to exist before #general can point at it, so it is created here and
+    // the channel moved into it in a second step.
+    const category = await prisma.category.create({
+      data: { name: "Text Channels", serverId: server.id, position: 0 },
+    });
+    await prisma.channel.updateMany({
+      where: { serverId: server.id, categoryId: null },
+      data: { categoryId: category.id },
+    });
+
+    const created = await prisma.server.findUnique({
+      where: { id: server.id },
+      include: { channels: { orderBy: { position: "asc" } }, categories: { orderBy: { position: "asc" } } },
+    });
+
+    ok(res, { server: created }, 201);
   })
 );
 
-router.get(
-  "/join/:inviteCode",
-  authenticate,
-  asyncHandler(async (req: AuthRequest, res) => {
-    const userId = requireUser(req);
-    const inviteCode = String(req.params.inviteCode ?? "").trim().slice(0, 32);
-    if (!inviteCode) throw AppError.of("BAD_REQUEST", "Invalid invite code");
+/**
+ * Legacy invite join, kept so `/servers/join/:code` and every link already
+ * shared keeps working. It resolves a managed invite first and falls back to
+ * the server's permanent `inviteCode`.
+ */
+const joinHandler = asyncHandler(async (req: AuthRequest, res) => {
+  const userId = requireUser(req);
+  const raw = String(req.params.inviteCode ?? "").trim().toLowerCase();
+  if (!raw) throw AppError.of("BAD_REQUEST", "Invalid invite code");
 
-    const server = await prisma.server.findUnique({
-      where: { inviteCode },
-      include: { channels: true, _count: { select: { members: true } } },
+  const invite = await prisma.invite.findUnique({ where: { code: raw } });
+  if (invite) {
+    const { expired, exhausted } = inviteState(invite);
+    if (expired || exhausted) throw AppError.of("NOT_FOUND", "Invite not found or expired");
+
+    const existing = await prisma.member.findUnique({
+      where: { userId_serverId: { userId, serverId: invite.serverId } },
     });
-    if (!server) throw AppError.of("NOT_FOUND", "Invite not found or expired");
-
-    const existingMember = await prisma.member.findUnique({
-      where: { userId_serverId: { userId, serverId: server.id } },
-    });
-
-    if (!existingMember) {
-      await prisma.member.create({ data: { userId, serverId: server.id } });
-      // The count was read before this insert, so responding with `server`
-      // would always exclude the person who just joined.
-      server._count.members += 1;
+    if (!existing) {
+      await prisma.member.create({ data: { userId, serverId: invite.serverId } });
+      await prisma.invite.update({ where: { id: invite.id }, data: { uses: invite.uses + 1 } });
     }
+    await respondWithServer(res, invite.serverId, !existing, invite.channelId);
+    return;
+  }
 
-    ok(res, { server });
-  })
-);
+  const server = await prisma.server.findUnique({
+    where: { inviteCode: raw },
+    select: { id: true },
+  });
+  if (!server) throw AppError.of("NOT_FOUND", "Invite not found or expired");
+
+  const existing = await prisma.member.findUnique({
+    where: { userId_serverId: { userId, serverId: server.id } },
+  });
+  if (!existing) {
+    await prisma.member.create({ data: { userId, serverId: server.id } });
+  }
+
+  await respondWithServer(res, server.id, !existing, null);
+});
+
+/** POST is correct (joining mutates); GET stays for links already in the wild. */
+router.post("/join/:inviteCode", authenticate, joinHandler);
+router.get("/join/:inviteCode", authenticate, joinHandler);
+
+/** Returns the full sidebar payload so the client can open the channel. */
+async function respondWithServer(
+  res: Parameters<typeof ok>[0],
+  serverId: string,
+  joined: boolean,
+  channelId: string | null
+): Promise<void> {
+  const server = await prisma.server.findUnique({
+    where: { id: serverId },
+    include: {
+      channels: { orderBy: { position: "asc" } },
+      categories: { orderBy: { position: "asc" } },
+      _count: { select: { members: true } },
+    },
+  });
+  if (!server) throw AppError.of("NOT_FOUND", "Server not found");
+
+  // An invite bound to a channel sends the joiner straight there; otherwise
+  // they land on the first text channel.
+  const target =
+    (channelId ? server.channels.find((c) => c.id === channelId) : undefined) ??
+    server.channels.find((c) => c.type === "text") ??
+    server.channels[0];
+
+  ok(res, { server, joined, channelId: target?.id ?? null });
+}
 
 router.get(
   "/explore",
@@ -124,30 +181,7 @@ router.get(
   })
 );
 
-router.patch(
-  "/:id",
-  authenticate,
-  asyncHandler(async (req: AuthRequest, res) => {
-    const userId = requireUser(req);
-    const id = paramId(req.params.id, "server id");
-    const input = parseOrThrow(updateServerSchema, req.body);
-
-    await assertServerMember(id, userId, ["owner", "admin"]);
-
-    const server = await prisma.server.update({
-      where: { id },
-      data: {
-        name: input.name,
-        icon: input.icon === undefined ? undefined : input.icon ?? null,
-      },
-      include: { channels: true, _count: { select: { members: true } } },
-    });
-
-    ok(res, { server });
-  })
-);
-
-/** Owner/admin can rotate the invite link. */
+/** Rotates the server's permanent invite code. */
 router.post(
   "/:id/invite",
   authenticate,
@@ -155,7 +189,7 @@ router.post(
     const userId = requireUser(req);
     const id = paramId(req.params.id, "server id");
 
-    await assertServerMember(id, userId, ["owner", "admin"]);
+    await requireServerPermission(id, userId, "manageInvites");
 
     const server = await prisma.server.update({
       where: { id },
@@ -177,10 +211,16 @@ router.post(
     const server = await prisma.server.findUnique({ where: { id }, select: { ownerId: true } });
     if (!server) throw AppError.of("NOT_FOUND", "Server not found");
     if (server.ownerId === userId) {
-      throw AppError.of("CONFLICT", "Owners must delete the server instead of leaving it");
+      throw AppError.of("CONFLICT", "Transfer ownership before leaving the server");
     }
 
-    await prisma.member.deleteMany({ where: { serverId: id, userId } });
+    const existing = await prisma.member.findUnique({
+      where: { userId_serverId: { userId, serverId: id } },
+      select: { id: true },
+    });
+    if (!existing) throw AppError.of("FORBIDDEN", "You are not a member of this server");
+
+    await prisma.member.delete({ where: { id: existing.id } });
 
     ok(res, { message: "Left server" });
   })
@@ -193,9 +233,7 @@ router.delete(
     const userId = requireUser(req);
     const id = paramId(req.params.id, "server id");
 
-    const server = await prisma.server.findUnique({ where: { id }, select: { ownerId: true } });
-    if (!server) throw AppError.of("NOT_FOUND", "Server not found");
-    if (server.ownerId !== userId) throw AppError.of("FORBIDDEN", "Only the owner can delete this server");
+    await requireServerPermission(id, userId, "manageServer");
 
     await prisma.server.delete({ where: { id } });
 

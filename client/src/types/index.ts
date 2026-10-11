@@ -10,16 +10,20 @@ export interface User {
   updatedAt: string;
 }
 
+export type Role = "owner" | "admin" | "moderator" | "member";
+
 export interface Server {
   id: string;
   name: string;
   icon: string | null;
+  description?: string | null;
   ownerId: string;
   inviteCode: string;
   createdAt: string;
   updatedAt: string;
   members?: Member[];
   channels?: Channel[];
+  categories?: Category[];
   _count?: { members: number };
 }
 
@@ -27,18 +31,50 @@ export interface Member {
   id: string;
   userId: string;
   serverId: string;
-  role: "owner" | "admin" | "moderator" | "member";
+  nickname?: string | null;
+  role: Role;
   joinedAt: string;
   user?: User;
+}
+
+/** A Discord-style folder grouping channels in the sidebar. */
+export interface Category {
+  id: string;
+  name: string;
+  serverId: string;
+  position: number;
+  channels?: Channel[];
 }
 
 export interface Channel {
   id: string;
   name: string;
   type: "text" | "voice";
+  topic?: string | null;
   serverId: string;
+  categoryId?: string | null;
+  position: number;
   createdAt: string;
   messages?: Message[];
+}
+
+/** A managed server invite with its own expiry and use cap. */
+export interface Invite {
+  id: string;
+  code: string;
+  serverId: string;
+  channelId: string | null;
+  inviterId: string;
+  maxUses: number | null;
+  uses: number;
+  expiresAt: string | null;
+  createdAt: string;
+  /** Server-computed, so the UI does not re-derive expiry from the clock. */
+  expired: boolean;
+  exhausted: boolean;
+  url: string;
+  channel?: { id: string; name: string } | null;
+  inviter?: Partial<User>;
 }
 
 export interface Message {

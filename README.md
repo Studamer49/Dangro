@@ -45,12 +45,35 @@ Apply the schema: `npm run db:migrate` (dev, creates migration files) or `npm ru
 | `npm run verify` | lint + typecheck + build + test in one command |
 | `npm run db:deploy` | `prisma migrate deploy` against `DATABASE_URL` |
 
+### Removing abandoned servers
+
+A server can only be deleted through the API by its owner, so cleaning up test or abandoned
+servers needs a direct database run. `pruneServers` performs the same cascade the HTTP route
+does (channels → messages, categories, invites, members) and is a dry run unless you pass
+`--confirm`:
+
+```bash
+# preview, using the production MONGODB_URI in the environment
+npm --prefix server run prune:servers -- --match "QA Server"
+
+# actually delete
+npm --prefix server run prune:servers -- --match "^QA" --confirm
+
+# or name them explicitly
+npm --prefix server run prune:servers -- <server-id> <server-id> --confirm
+```
+
+It refuses to run with `--confirm` against a local `mongod`, so a typo in `MONGODB_URI` cannot
+silently hit the wrong database. It also prints the remaining servers and per-collection row
+counts afterwards, so a surprising cascade is visible immediately.
+
 ## Folder structure
 
 ```
 ├── client/            React app
 │   ├── src/
 │   │   ├── components/  UI (chat, feed, notifications, onboarding rails…)
+│   │   │   └── server/    server settings, invites, channel modals
 │   │   ├── hooks/       useWebRTC
 │   │   ├── lib/         api (envelope interceptor) + socket + helpers
 │   │   ├── pages/       route pages (feed, explore, friends, channels, dms…)
@@ -61,10 +84,13 @@ Apply the schema: `npm run db:migrate` (dev, creates migration files) or `npm ru
 ├── server/            Express + Socket.IO
 │   ├── prisma/          schema.prisma + migrations
 │   └── src/
-│       ├── lib/         envelope helpers, access checks, notifications
+│       ├── lib/         envelope helpers, access checks, permissions,
+│       │                notifications, media URL validation
 │       ├── middleware/  auth, error handler
-│       ├── routes/      auth, users, friends, servers, channels, messages,
-│       │                dms, uploads, posts, stories, follows, notifications
+│       ├── routes/      auth, users, friends, servers, serverSettings,
+│       │                invites, categories, channels, messages, dms,
+│       │                uploads, media, posts, stories, follows,
+│       │                notifications
 │       └── socket/      Socket.IO auth + validation + rooms
 ├── render.yaml        one-click Render deployment
 ├── Dockerfile
@@ -73,12 +99,59 @@ Apply the schema: `npm run db:migrate` (dev, creates migration files) or `npm ru
 
 ## Feature surface
 
-- Server channels (text + voice/WebRTC), permissions on create/rename/delete channels
+- Server channels (text + voice/WebRTC), with Discord-style **categories** in a collapsible sidebar
+- Channel management: create, rename, set a topic, move between categories, delete
+- **Invites**: a permanent link per server plus any number of managed invites with an expiry (1h/24h/7d/never), an optional use cap, an optional destination channel, and individual revocation
+- Invite landing page that previews the server, the inviter and the channel before you join
+- Server settings: profile (name/description/icon), member list with roles, kick, and ownership transfer
 - Direct messages with typing indicators, read receipts and replies
 - Friends: requests, accept/reject, sent/cancel, presence via Socket.IO
 - Social: posts (media up to 10 attachments), likes, comments, 24-hour stories
 - Notifications: bell with live socket updates and read/unread state
 - Profile editing (avatar upload + link), follow/unfollow, user + server search, invite links (`/invite/:code`)
+
+### Server roles
+
+Discord's ordering, enforced in one place (`server/src/lib/permissions.ts`) so "who may act on
+whom" is never decided differently by two routes:
+
+| Role | May do |
+|---|---|
+| `owner` | Everything, including deleting the server and transferring ownership |
+| `admin` | Manage channels, categories, invites, roles; kick members |
+| `moderator` | Manage channels and kick members |
+| `member` | Read, write, leave |
+
+A member can only act on someone **strictly below** their own role, and nobody can act on the
+owner — that is what stops two admins from demoting or removing each other.
+
+### Server API
+
+| Method | Path | Who |
+|---|---|---|
+| `GET` | `/api/servers` | member — servers you are in |
+| `POST` | `/api/servers` | any user — creates one with `#general` in a "Text Channels" folder |
+| `GET` | `/api/servers/explore` | any user — public directory |
+| `GET` | `/api/servers/:id` | member |
+| `PATCH` | `/api/servers/:id` | owner — name / description / icon |
+| `DELETE` | `/api/servers/:id` | owner — deletes everything |
+| `POST` | `/api/servers/:id/leave` | member (owner must transfer first) |
+| `GET` | `/api/servers/:id/members` | member |
+| `PATCH` | `/api/servers/:id/members/:memberId` | admin+ — role / nickname |
+| `DELETE` | `/api/servers/:id/members/:memberId` | moderator+ — kick |
+| `POST` | `/api/servers/:id/transfer` | owner |
+| `GET` | `/api/servers/:id/invites` | admin+ |
+| `POST` | `/api/servers/:id/invites` | admin+ — create a managed invite |
+| `DELETE` | `/api/servers/:id/invites/:code` | admin+ — revoke |
+| `GET` | `/api/invites/:code` | anyone — preview, does not join |
+| `POST` | `/api/invites/:code` | anyone — redeem |
+| `POST` | `/api/servers/join/:code` | anyone — legacy; accepts either kind of code |
+| `POST` | `/api/servers/:id/categories` | admin+ |
+| `PATCH`/`DELETE` | `/api/categories/:categoryId` | admin+ — deleting keeps the channels |
+| `POST` | `/api/channels` | moderator+ |
+| `PATCH`/`DELETE` | `/api/channels/:channelId` | moderator+ |
+| `POST` | `/api/channels/:channelId/move` | moderator+ |
+
 
 ## API status codes
 
