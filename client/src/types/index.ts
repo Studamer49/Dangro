@@ -199,7 +199,8 @@ export interface Call {
   receiverId: string;
   type: string;
   status: string;
-  roomID: string;
+  /** Spelled `roomId` everywhere else (callStore, socket handlers). */
+  roomId: string;
   startedAt: string;
   endedAt: string | null;
 }

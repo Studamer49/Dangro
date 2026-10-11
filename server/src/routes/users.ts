@@ -4,6 +4,7 @@ import { prisma } from "../prisma.js";
 import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { paramId } from "../lib/access.js";
+import { nullableMediaUrl } from "../lib/urls.js";
 
 const router = Router();
 
@@ -11,7 +12,7 @@ const updateProfileSchema = z.object({
   username: z.string().min(3).max(32).regex(/^\S+$/, "Username cannot contain spaces").optional(),
   email: z.string().email().max(254).optional(),
   bio: z.string().max(500).optional(),
-  avatar: z.string().max(500).nullish(),
+  avatar: nullableMediaUrl(),
   status: z.enum(["online", "idle", "dnd", "offline"]).optional(),
 });
 

@@ -1,6 +1,7 @@
 import { create } from "zustand";
-import api, { setAuthListeners } from "@/lib/api";
+import api, { apiErrorCode, invalidateSession, setAuthListeners } from "@/lib/api";
 import { connectSocket, disconnectSocket, setSocketToken } from "@/lib/socket";
+import { useCallStore } from "@/stores/callStore";
 import type { User } from "@/types";
 
 interface AuthState {
@@ -38,8 +39,19 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
+    // Ends the session locally first: any refresh still in flight would
+    // otherwise write its token back into localStorage after the clear below.
+    invalidateSession();
+    // The call UI is mounted above the router, so signing out did not unmount
+    // it. Ending the call here is what tells the other party, and it is the
+    // only thing that stops the microphone/camera tracks — otherwise the OS
+    // recording indicator stays lit over the login screen.
+    useCallStore.getState().endCall();
     try {
       await api.post("/auth/logout");
+    } catch {
+      // The server-side cookie may not be clearable while offline. The local
+      // session is already gone, and the token is about to be discarded.
     } finally {
       localStorage.removeItem("accessToken");
       disconnectSocket();
@@ -58,9 +70,17 @@ export const useAuthStore = create<AuthState>((set) => ({
       const currentToken = localStorage.getItem("accessToken");
       set({ user: data.user, isAuthenticated: true, isLoading: false });
       connectSocket(currentToken || token);
-    } catch {
-      localStorage.removeItem("accessToken");
-      set({ user: null, isAuthenticated: false, isLoading: false });
+    } catch (err) {
+      // Only a real auth failure ends the session. Being offline, a 500 or
+      // the global rate limiter must not delete a still-valid token and bounce
+      // the user to /login.
+      if (apiErrorCode(err) === "UNAUTHORIZED") {
+        localStorage.removeItem("accessToken");
+        disconnectSocket();
+        set({ user: null, isAuthenticated: false, isLoading: false });
+        return;
+      }
+      set({ isLoading: false });
     }
   },
 
@@ -73,6 +93,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 setAuthListeners(
   (accessToken) => setSocketToken(accessToken),
   () => {
+    invalidateSession();
     localStorage.removeItem("accessToken");
     disconnectSocket();
     useAuthStore.setState({ user: null, isAuthenticated: false, isLoading: false });

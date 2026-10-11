@@ -53,15 +53,35 @@ describe("buildFilter", () => {
     expect(await buildFilter(getModel("story"), { createdAt: { gt: now } }, emptyCtx)).toEqual({
       createdAt: { $gt: now },
     });
-    expect(await buildFilter(message, { id: { in: ["a", "b"] } }, emptyCtx)).toEqual({
-      id: { $in: ["a", "b"] },
-    });
-    expect(await buildFilter(message, { id: { notIn: ["a"] } }, emptyCtx)).toEqual({
-      id: { $nin: ["a"] },
-    });
     expect(await buildFilter(message, { content: { not: "spam" } }, emptyCtx)).toEqual({
       content: { $ne: "spam" },
     });
+  });
+
+  it("queries the primary key on _id, not on a field called id", async () => {
+    // Documents store their id in `_id`, so a filter on `id` matched nothing
+    // — while `{ id: { not: X } }` matched every document, because $ne also
+    // matches documents where the field is absent. That made "exclude myself"
+    // a no-op: the user saw themselves in their own search results, and
+    // patching their own profile returned 409 "Username already taken".
+    expect(await buildFilter(message, { id: { in: ["a", "b"] } }, emptyCtx)).toEqual({
+      _id: { $in: ["a", "b"] },
+    });
+    expect(await buildFilter(message, { id: { notIn: ["a"] } }, emptyCtx)).toEqual({
+      _id: { $nin: ["a"] },
+    });
+    expect(await buildFilter(message, { id: "a" }, emptyCtx)).toEqual({ _id: "a" });
+    expect(await buildFilter(message, { id: { not: "a" } }, emptyCtx)).toEqual({ _id: { $ne: "a" } });
+  });
+
+  it("combines the _id clause with the other keys in the filter", async () => {
+    expect(
+      await buildFilter(
+        getModel("user"),
+        { username: { equals: "Alice", mode: "insensitive" }, id: { not: "me" } },
+        emptyCtx
+      )
+    ).toEqual({ $and: [{ username: { $regex: "^Alice$", $options: "i" } }, { _id: { $ne: "me" } }] });
   });
 
   it("escapes regex metacharacters in contains / startsWith", async () => {
@@ -152,6 +172,29 @@ describe("buildFilter", () => {
 
   it("rejects unknown fields so schema drift fails loudly", async () => {
     await expect(buildFilter(message, { nonsense: "x" }, emptyCtx)).rejects.toThrow(/Unknown field/);
+  });
+
+  it("reads a bare array as Prisma's `in` shorthand", async () => {
+    // `{ status: ["a", "b"] }` means "in". Read as an operator spec instead,
+    // Object.entries yields index keys, every branch hits the default case,
+    // and the filter silently collapsed to "equals the last element".
+    expect(await buildFilter(message, { edited: [true, false] }, emptyCtx)).toEqual({
+      edited: { $in: [true, false] },
+    });
+    expect(await buildFilter(message, { content: ["a", "b"] }, emptyCtx)).toEqual({
+      content: { $in: ["a", "b"] },
+    });
+    expect(await buildFilter(message, { content: [] }, emptyCtx)).toEqual({ content: { $in: [] } });
+  });
+
+  it("matches nothing for an empty OR instead of sending MongoDB a parse error", async () => {
+    // `$or: []` is rejected by the server ("must be a nonempty array"), so the
+    // query would surface as a 500 rather than the empty result Prisma gives.
+    expect(await buildFilter(message, { OR: [] }, emptyCtx)).toEqual({ _id: { $in: [] } });
+  });
+
+  it("keeps an empty NOT as a no-op", async () => {
+    expect(await buildFilter(message, { NOT: [] }, emptyCtx)).toEqual({});
   });
 });
 

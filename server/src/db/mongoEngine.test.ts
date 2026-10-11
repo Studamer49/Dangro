@@ -125,6 +125,119 @@ describe("findUnique", () => {
   });
 });
 
+describe("filters on the primary key", () => {
+  it("excludes the caller from a findMany filtered on `id: { not }`", async () => {
+    // Prisma exposes the primary key as `id`; the document stores it in `_id`.
+    // Filtering on `id` matched nothing, and `id: { not: X }` matched
+    // *everything* — because $ne also matches documents where the field is
+    // absent. The route that depends on this is `GET /api/users/search`, which
+    // returned the caller in their own results, and `PATCH /api/users/me`,
+    // which answered 409 "Username already taken" for the caller's own
+    // username.
+    const { prisma } = client();
+    await prisma.server.create({ data: { id: "s-mine", name: "Mine", ownerId: "u1", inviteCode: "aaaa1111" } });
+    await prisma.server.create({ data: { id: "s-other", name: "Other", ownerId: "u2", inviteCode: "bbbb2222" } });
+
+    const found = (await prisma.server.findMany({
+      where: { id: { not: "s-mine" } },
+      select: { id: true },
+    })) as Array<{ id: string }>;
+
+    expect(found.map((s) => s.id)).toEqual(["s-other"]);
+  });
+
+  it("matches a document when filtering on `id: { equals }`", async () => {
+    const { prisma } = client();
+    await prisma.server.create({ data: { id: "s-mine", name: "Mine", ownerId: "u1", inviteCode: "aaaa1111" } });
+    await prisma.server.create({ data: { id: "s-other", name: "Other", ownerId: "u2", inviteCode: "bbbb2222" } });
+
+    const found = (await prisma.server.findMany({
+      where: { id: { equals: "s-other" } },
+      select: { id: true },
+    })) as Array<{ id: string }>;
+
+    expect(found.map((s) => s.id)).toEqual(["s-other"]);
+  });
+
+  it("counts rows with an id filter rather than counting the whole collection", async () => {
+    const { prisma } = client();
+    await prisma.server.create({ data: { id: "s1", name: "One", ownerId: "u1", inviteCode: "aaaa1111" } });
+    await prisma.server.create({ data: { id: "s2", name: "Two", ownerId: "u2", inviteCode: "bbbb2222" } });
+
+    expect(await prisma.server.count({ where: { id: "s1" } })).toBe(1);
+    expect(await prisma.server.count({ where: { id: { not: "s1" } } })).toBe(1);
+  });
+
+  it("combines an id filter with the rest of the where clause", async () => {
+    const { prisma } = client();
+    await prisma.server.create({ data: { name: "Alpha", ownerId: "u1", inviteCode: "aaaa1111" } });
+    await prisma.server.create({ data: { name: "Alpha2", ownerId: "u2", inviteCode: "bbbb2222" } });
+
+    const found = (await prisma.server.findMany({
+      where: { name: { startsWith: "Alpha" }, id: { not: "s-mine" } },
+      select: { name: true },
+    })) as Array<{ name: string }>;
+
+    expect(found).toHaveLength(2);
+  });
+});
+
+describe("nested relation filters", () => {
+  it("keeps the parent restriction when the nested where names the back key", async () => {
+    // The has-many filter is `{ serverId: { $in: [...parents] } }` and
+    // `buildFilter` returns a *top-level* fragment, so Object.assign replaced
+    // the parent clause whenever the nested where named the same key — the
+    // children of a server that is not even on the page came back.
+    const { prisma } = client();
+    await prisma.server.create({ data: { id: "s-mine", name: "Mine", ownerId: "u1", inviteCode: "aaaa1111" } });
+
+    await prisma.member.create({ data: { userId: "u1", serverId: "s-mine", role: "owner" } });
+    await prisma.member.create({ data: { userId: "u1", serverId: "s-other", role: "owner" } });
+
+    const [shaped] = (await prisma.server.findMany({
+      where: { id: "s-mine" },
+      select: { id: true },
+      include: { members: { where: { serverId: "s-other" }, select: { userId: true } } },
+    })) as Array<{ id: string; members: Array<{ userId: string }> }>;
+
+    expect(shaped.id).toBe("s-mine");
+    // `s-other` matches the nested where but is not this server, so nothing
+    // should come back.
+    expect(shaped.members).toEqual([]);
+  });
+
+  it("still applies a nested where that names an unrelated field", async () => {
+    const { prisma } = client();
+    await prisma.server.create({ data: { id: "s1", name: "One", ownerId: "u1", inviteCode: "aaaa1111" } });
+    await prisma.member.create({ data: { userId: "u1", serverId: "s1", role: "owner" } });
+    await prisma.member.create({ data: { userId: "u2", serverId: "s1", role: "member" } });
+
+    const [shaped] = (await prisma.server.findMany({
+      where: { id: "s1" },
+      select: { id: true },
+      include: { members: { where: { role: "owner" }, select: { userId: true } } },
+    })) as Array<{ members: Array<{ userId: string }> }>;
+
+    expect(shaped.members).toEqual([{ userId: "u1" }]);
+  });
+
+  it("ANDs a multi-key nested where without dropping either clause", async () => {
+    const { prisma } = client();
+    await prisma.server.create({ data: { id: "s1", name: "One", ownerId: "u1", inviteCode: "aaaa1111" } });
+    await prisma.member.create({ data: { userId: "u1", serverId: "s1", role: "owner" } });
+    await prisma.member.create({ data: { userId: "u2", serverId: "s1", role: "owner" } });
+    await prisma.member.create({ data: { userId: "u1", serverId: "s1", role: "member" } });
+
+    const [shaped] = (await prisma.server.findMany({
+      where: { id: "s1" },
+      select: { id: true },
+      include: { members: { where: { role: "owner", userId: "u1" }, select: { userId: true } } },
+    })) as Array<{ members: Array<{ userId: string }> }>;
+
+    expect(shaped.members).toEqual([{ userId: "u1" }]);
+  });
+});
+
 describe("updateMany", () => {
   it("reports the number of matched rows, not the number changed", async () => {
     const { prisma } = client();

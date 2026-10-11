@@ -33,15 +33,20 @@ interface Emitted {
 function fakeSocket(userId: string) {
   const handlers = new Map<string, (payload: unknown) => unknown>();
   const rooms = new Set<string>([`user:${userId}`]);
+  const emitted: Emitted[] = [];
 
   return {
     data: { userId },
     rooms,
+    /** What this socket sent back to its own client. */
+    emitted,
     handshake: { auth: { token: "test" } },
     join: (room: string) => rooms.add(room),
     leave: (room: string) => rooms.delete(room),
     on: (event: string, handler: (payload: unknown) => unknown) => handlers.set(event, handler),
-    emit: () => undefined,
+    emit: (event: string, payload: unknown) => {
+      emitted.push({ room: `socket:${userId}`, event, payload });
+    },
     fire: (event: string, payload: unknown) => handlers.get(event)?.(payload),
     has: (event: string) => handlers.has(event),
   };
@@ -296,5 +301,51 @@ describe("voice_signal", () => {
     await a.fire("voice_signal", { targetUserId: B, signal: { sdp: "x" } });
 
     expect(io.emitted.filter((e) => e.event === "voice_signal")).toHaveLength(0);
+  });
+});
+
+describe("async handler failures", () => {
+  /**
+   * Every async listener is wrapped so a rejected database call cannot escape
+   * as an unhandled rejection. Socket.IO does not await listeners, and the
+   * global `unhandledRejection` handler only logs — so without the wrapper the
+   * event vanished with no reply and the socket stayed half-joined.
+   */
+  it("reports the failure to the client instead of rejecting", async () => {
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    io.connect(a);
+
+    prismaMock.friend.findFirst.mockRejectedValueOnce(new Error("db is down"));
+    prismaMock.follow.findUnique.mockResolvedValue(null);
+
+    // Resolves rather than rejecting: an escaped rejection would be swallowed
+    // by the process-level handler with no reply at all.
+    await expect(
+      a.fire("call_invite", { targetUserId: B, callType: "voice", roomId: nextRoom() })
+    ).resolves.toBeUndefined();
+
+    expect(a.emitted).toContainEqual(
+      expect.objectContaining({ event: "error", payload: { message: "Request failed" } })
+    );
+    expect(io.emitted.filter((e) => e.event === "call_invite")).toHaveLength(0);
+  });
+
+  it("leaves the connection usable after a failed event", async () => {
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    io.connect(a);
+
+    prismaMock.friend.findFirst.mockRejectedValueOnce(new Error("db is down"));
+    prismaMock.follow.findUnique.mockResolvedValue(null);
+    await a.fire("call_invite", { targetUserId: B, callType: "voice", roomId: nextRoom() });
+
+    asFriends();
+    io.emitted.length = 0;
+    await a.fire("call_invite", { targetUserId: B, callType: "voice", roomId: nextRoom() });
+
+    expect(io.emitted.filter((e) => e.event === "call_invite")).toHaveLength(1);
   });
 });

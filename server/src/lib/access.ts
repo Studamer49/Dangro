@@ -45,6 +45,11 @@ export async function assertChannelMember(channelId: string, userId: string) {
     include: { server: { include: { members: { where: { userId } } } } },
   });
   if (!channel) throw AppError.of("NOT_FOUND", "Channel not found");
+  // `server` resolves to null when the parent row is gone, which the MongoDB
+  // backend allows because it enforces no foreign keys. Prisma's types say it
+  // is non-nullable, so TypeScript does not flag the dereference — without
+  // this guard it is a 500 instead of a 404.
+  if (!channel.server) throw AppError.of("NOT_FOUND", "Server not found");
   if (channel.server.members.length === 0) {
     throw AppError.of("FORBIDDEN", "You are not a member of this server");
   }

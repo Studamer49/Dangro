@@ -67,6 +67,13 @@ export async function buildFilter(
 
     if (key === "OR") {
       const list = Array.isArray(value) ? value : [value];
+      // MongoDB rejects an empty $or ("$and/$or/$nor must be a nonempty
+      // array") while Prisma reads it as "match nothing". Expressing that as
+      // an impossible _id keeps the two backends agreeing.
+      if (list.length === 0) {
+        clauses.push({ _id: { $in: [] } });
+        continue;
+      }
       const built = await Promise.all(list.map((entry) => buildFilter(model, entry as Where, ctx)));
       clauses.push({ $or: built });
       continue;
@@ -74,6 +81,9 @@ export async function buildFilter(
 
     if (key === "NOT") {
       const list = Array.isArray(value) ? value : [value];
+      // Nothing excluded, so everything matches — which is what $nor does
+      // with an empty array, except MongoDB refuses to parse one.
+      if (list.length === 0) continue;
       const built = await Promise.all(list.map((entry) => buildFilter(model, entry as Where, ctx)));
       clauses.push({ $nor: built });
       continue;
@@ -128,7 +138,12 @@ export async function buildFilter(
       );
     }
 
-    clauses.push(scalarFilter(key, value));
+    // Prisma exposes the primary key as `id`; the document stores it in `_id`.
+    // Querying the field `id` instead matches nothing at all, while `{ id: {
+    // not: X } }` matches *every* document, because $ne also matches documents
+    // where the field is absent. Both are silent: `findMany` and friends would
+    // quietly return the wrong rows.
+    clauses.push(scalarFilter(key === "id" ? "_id" : key, value));
   }
 
   if (clauses.length === 0) return {};
@@ -138,6 +153,12 @@ export async function buildFilter(
 
 function scalarFilter(field: string, value: unknown): Filter<Document> {
   if (value === null) return { [field]: null };
+
+  // Prisma's shorthand for "in": `{ status: ["a", "b"] }`. Without this the
+  // array is read as an operator spec, Object.entries yields index keys, and
+  // every branch falls through to `default`, so the filter silently degraded
+  // to "equals the last element".
+  if (Array.isArray(value)) return { [field]: { $in: value } as never };
 
   if (typeof value !== "object" || value instanceof Date) {
     return { [field]: value as never };

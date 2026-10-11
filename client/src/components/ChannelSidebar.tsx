@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import api, { apiErrorMessage } from "@/lib/api";
+import api, { apiErrorCode, apiErrorMessage } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
 import { useAuthStore } from "@/stores/authStore";
 import { useToast } from "@/stores/toastStore";
@@ -40,7 +40,13 @@ export default function ChannelSidebar() {
       toastRef.current.error(apiErrorMessage(err, "Could not load this server"));
       setServer(null);
       setChannels([]);
-      navigate("/explore", { replace: true });
+      // Only an access problem means "you cannot be here". Treating a 500 or a
+      // dropped connection the same way silently navigated the reader out of
+      // the channel they were in, with no way back except the browser.
+      const code = apiErrorCode(err);
+      if (code === "FORBIDDEN" || code === "NOT_FOUND") {
+        navigate("/explore", { replace: true });
+      }
     }
   }, [navigate]);
 

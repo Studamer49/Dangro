@@ -27,6 +27,10 @@ type TestPrisma = {
   member: MongoDelegate;
   friendRequest: MongoDelegate;
   friend: MongoDelegate;
+  user: MongoDelegate;
+  notification: MongoDelegate;
+  conversation: MongoDelegate;
+  directMessage: MongoDelegate;
 };
 
 function client() {
@@ -144,5 +148,72 @@ describe("cascade delete", () => {
 
     expect(result.count).toBe(0);
     expect(rows(fakedb, "members")).toHaveLength(1);
+  });
+});
+
+describe("SetNull relations survive a cascade", () => {
+  /**
+   * `message.replyTo`, `notification.fromUser` and `directMessage.replyTo` are
+   * declared `onDelete: SetNull` in schema.prisma. Treating every foreign key
+   * as a Cascade deleted the reply and the notification along with the row
+   * they pointed at, so MongoDB lost data that PostgreSQL keeps.
+   */
+  it("nulls message.replyTo instead of deleting the reply", async () => {
+    const { prisma, fakedb } = client();
+    const { channelId } = await seedServer(prisma);
+
+    const parent = (await prisma.message.create({
+      data: { content: "parent", authorId: "user-1", channelId },
+    })) as { id: string };
+    await prisma.message.create({
+      data: { content: "reply", authorId: "user-1", channelId, replyToId: parent.id },
+    });
+
+    await prisma.message.delete({ where: { id: parent.id } });
+
+    expect(rows(fakedb, "messages")).toHaveLength(1);
+    expect(rows(fakedb, "messages")[0].content).toBe("reply");
+    expect(rows(fakedb, "messages")[0].replyToId).toBeNull();
+  });
+
+  it("keeps the notifications a deleted user produced", async () => {
+    const { prisma, fakedb } = client();
+    await prisma.user.create({ data: { id: "user-1", username: "alice", email: "a@b.c", password: "HASH" } });
+    await prisma.notification.create({
+      data: { userId: "user-2", fromUserId: "user-1", type: "friend_request", message: "hi" },
+    });
+
+    await prisma.user.delete({ where: { id: "user-1" } });
+
+    // user-1's own notifications cascade (NotificationUser is Cascade) but the
+    // one *sent* to user-2 is only unlinked.
+    expect(rows(fakedb, "notifications")).toHaveLength(1);
+    expect(rows(fakedb, "notifications")[0].userId).toBe("user-2");
+    expect(rows(fakedb, "notifications")[0].fromUserId).toBeNull();
+  });
+
+  it("nulls directMessage.replyTo instead of deleting the reply", async () => {
+    const { prisma, fakedb } = client();
+    const conversation = (await prisma.conversation.create({
+      data: { user1Id: "user-1", user2Id: "user-2" },
+    })) as { id: string };
+
+    const parent = (await prisma.directMessage.create({
+      data: { content: "parent", senderId: "user-1", conversationId: conversation.id },
+    })) as { id: string };
+    await prisma.directMessage.create({
+      data: {
+        content: "reply",
+        senderId: "user-1",
+        conversationId: conversation.id,
+        replyToId: parent.id,
+      },
+    });
+
+    await prisma.directMessage.delete({ where: { id: parent.id } });
+
+    expect(rows(fakedb, "direct_messages")).toHaveLength(1);
+    expect(rows(fakedb, "direct_messages")[0].content).toBe("reply");
+    expect(rows(fakedb, "direct_messages")[0].replyToId).toBeNull();
   });
 });

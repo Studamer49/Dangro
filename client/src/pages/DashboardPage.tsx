@@ -24,6 +24,8 @@ export default function DashboardPage() {
   const showChannelSidebar = location.pathname.startsWith("/channels/");
 
   const handleLogout = async () => {
+    // logout() never rejects, but awaiting it in an onClick handler would turn
+    // any future throw into an unhandled rejection.
     await logout();
     navigate("/login");
   };

@@ -27,6 +27,24 @@ export default function ConversationList({ activeConversation, onSelectConversat
     knownIdsRef.current = new Set(conversations.map((c) => c.id));
   }, [conversations]);
 
+  /**
+   * Moves one conversation to the top of the list.
+   *
+   * `updated[index]` is `undefined` whenever the id is not in the array, and
+   * the next render reads `.status` off every entry — so an unknown id used to
+   * be able to put `undefined` into state and crash the page through the error
+   * boundary. The ref check above runs in the same tick the id can change, so
+   * the lookup is re-verified here rather than trusted.
+   */
+  const moveToTop = useCallback(
+    (list: Conversation[], conversationId: string): Conversation[] => {
+      const match = list.find((c) => c.id === conversationId);
+      if (!match) return list;
+      return [match, ...list.filter((c) => c.id !== conversationId)];
+    },
+    []
+  );
+
   const fetchConversations = useCallback(async () => {
     try {
       const { data } = await api.get("/dms");
@@ -63,8 +81,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
               }
             : c
         );
-        const index = updated.findIndex((c) => c.id === message.conversationId);
-        return [updated[index], ...updated.filter((c) => c.id !== message.conversationId)];
+        return moveToTop(updated, message.conversationId);
       });
     };
 
@@ -92,8 +109,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
               }
             : c
         );
-        const index = updated.findIndex((c) => c.id === data.conversationId);
-        return [updated[index], ...updated.filter((c) => c.id !== data.conversationId)];
+        return moveToTop(updated, data.conversationId);
       });
     };
 
@@ -152,7 +168,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
       socket.off("connect", handleConnect);
       clearInterval(pollId);
     };
-  }, [activeConversation?.id, user?.id, fetchConversations]);
+  }, [activeConversation?.id, user?.id, fetchConversations, moveToTop]);
 
   useEffect(() => {
     if (!activeConversation?.id) return;
@@ -163,17 +179,26 @@ export default function ConversationList({ activeConversation, onSelectConversat
     );
   }, [activeConversation?.id]);
 
+  // One request per keystroke with no ordering guard meant a slow response for
+  // "al" could land after "alice" and overwrite its results with the wrong
+  // people. Each call claims a sequence number and only the newest may write.
+  const searchSeqRef = useRef(0);
+
   const searchUsers = async (query: string) => {
     setSearchQuery(query);
-    if (query.length < 2) {
+    const trimmed = query.trim();
+    if (trimmed.length < 2) {
+      searchSeqRef.current += 1;
       setSearchResults([]);
       return;
     }
+    const seq = ++searchSeqRef.current;
     try {
-      const { data } = await api.get(`/users/search?q=${encodeURIComponent(query)}`);
+      const { data } = await api.get(`/users/search?q=${encodeURIComponent(trimmed)}`);
+      if (seq !== searchSeqRef.current) return;
       setSearchResults(data.users);
     } catch {
-      // silent
+      if (seq === searchSeqRef.current) setSearchResults([]);
     }
   };
 

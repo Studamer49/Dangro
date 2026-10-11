@@ -211,16 +211,20 @@ function applyDefaults(model: ModelDef, doc: Document, isCreate: boolean): Docum
  * The collections whose rows point at `modelName` through a foreign key.
  *
  * Derived from the registry rather than hand-listed, so it stays correct as
- * models are added. Every such relation is declared `onDelete: Cascade` in
- * schema.prisma, and MongoDB enforces nothing on its own.
+ * models are added. Each carries the declared `onDelete`, because MongoDB
+ * enforces nothing on its own and the two rules are not interchangeable:
+ * Cascade removes the dependent rows, SetNull only clears the foreign key.
+ * `message.replyTo`, `notification.fromUser` and `directMessage.replyTo` are
+ * SetNull in schema.prisma — deleting the parent nulls the link and keeps the
+ * reply and the notification, which is what PostgreSQL does.
  */
-function cascadeTargets(modelName: string): Array<{ model: ModelDef; field: string }> {
-  const targets: Array<{ model: ModelDef; field: string }> = [];
+function cascadeTargets(modelName: string): Array<{ model: ModelDef; field: string; onDelete: "Cascade" | "SetNull" }> {
+  const targets: Array<{ model: ModelDef; field: string; onDelete: "Cascade" | "SetNull" }> = [];
 
   for (const child of Object.values(MODELS)) {
     for (const relation of child.relations) {
       if (relation.ownKey && relation.target === modelName) {
-        targets.push({ model: child, field: relation.ownKey });
+        targets.push({ model: child, field: relation.ownKey, onDelete: relation.onDelete ?? "Cascade" });
       }
     }
   }
@@ -355,8 +359,20 @@ function createDelegate(modelName: string, db: Db): MongoDelegate {
     while (queue.length > 0) {
       const level = queue.shift() as { model: ModelDef; ids: string[] };
 
-      for (const { model, field } of cascadeTargets(level.model.name)) {
+      for (const { model, field, onDelete } of cascadeTargets(level.model.name)) {
         const collection = db.collection(model.collection);
+
+        if (onDelete === "SetNull") {
+          // The row survives; only the link is cleared. Not queued for the
+          // cascade walk, because the row itself was never removed.
+          await collection.updateMany(
+            { [field]: { $in: level.ids } },
+            { $set: { [field]: null } },
+            sessionOpts()
+          );
+          continue;
+        }
+
         const children = (
           await collection.find({ [field]: { $in: level.ids } }, sessionOpts()).toArray()
         ).map((doc) => String(doc._id));

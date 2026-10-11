@@ -127,10 +127,10 @@ export default function FeedPage() {
       const author = story?.author;
       if (story && author) {
         setStories((prev) => {
-          const existing = prev.find((group) => group.author.id === author.id);
+          const existing = prev.find((group) => group.author?.id === author.id);
           if (existing) {
             return prev.map((group) =>
-              group.author.id === author.id
+              group.author?.id === author.id
                 ? { ...group, stories: [story, ...group.stories] }
                 : group
             );

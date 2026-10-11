@@ -133,11 +133,18 @@ async function loadRelation(
       .map((parent) => parent[rel.ownKey as string])
       .filter((value): value is string => typeof value === "string" && value.length > 0);
 
-    const childDocs = foreignKeys.length
+    const childDocs: Document[] = foreignKeys.length
       ? await ctx.collectionFor(rel.target).find({ _id: { $in: [...new Set(foreignKeys)] } }, sessionOpts()).toArray()
       : [];
 
     const byId = new Map(childDocs.map((doc: Document) => [String(doc._id), doc]));
+
+    // Shaped in one batched pass, for the same reason as the has-many branch:
+    // shaping one document at a time re-ran every nested relation query.
+    const shapedChildren = await shapeDocuments(target, childDocs, childShapeArgs(nested), ctx);
+    const shapedById = new Map(
+      childDocs.map((doc, index) => [String(doc._id), shapedChildren[index]] as const)
+    );
 
     for (let index = 0; index < parents.length; index += 1) {
       const foreignKey = parents[index][rel.ownKey as string];
@@ -145,7 +152,7 @@ async function loadRelation(
       // (so a user is never returned with its password hash), renames _id to
       // id, and resolves any nested include.
       const doc = typeof foreignKey === "string" ? byId.get(foreignKey) : undefined;
-      out.set(String(parentIds[index]), doc ? await shapeSingle(target, doc, nested, ctx) : null);
+      out.set(String(parentIds[index]), doc ? shapedById.get(String(doc._id)) ?? null : null);
     }
 
     return out;
@@ -155,10 +162,17 @@ async function loadRelation(
 
   // Has-many / has-one: the foreign key sits on the child document.
   const filter: Document = { [rel.backKey]: { $in: parentIds } };
-  if (nested.where) Object.assign(filter, await buildFilter(target, nested.where, ctx));
+  if (nested.where) {
+    // Combined with $and rather than Object.assign: `buildFilter` returns a
+    // top-level fragment, so merging it in would silently overwrite the
+    // foreign-key clause whenever the nested where names the same field (a
+    // nested `where: { userId }` would drop the parent restriction entirely and
+    // return every child of every parent on the page).
+    Object.assign(filter, { $and: [await buildFilter(target, nested.where, ctx)] });
+  }
 
   const sort = buildSort(target, nested.orderBy) ?? buildSort(target, target.defaultOrder);
-  const children = await ctx
+  const children: Document[] = await ctx
     .collectionFor(rel.target)
     .find(filter, sessionOpts())
     .sort(sort ?? { _id: 1 })
@@ -172,35 +186,40 @@ async function loadRelation(
     else grouped.set(key, [child]);
   }
 
+  // Skip/take are applied per parent first, so only the children that survive
+  // are shaped below.
+  const buckets = new Map<string, Document[]>();
   for (const parentId of parentIds) {
     const key = String(parentId);
     let bucket = grouped.get(key) ?? [];
     if (nested.skip) bucket = bucket.slice(nested.skip);
     if (typeof nested.take === "number") bucket = bucket.slice(0, nested.take);
+    buckets.set(key, bucket);
+  }
+
+  // Every retained child is shaped in a single batched pass rather than one
+  // document at a time. Shaping a child resolves its own relations, so calling
+  // it per document issued one query per child for any nested include —
+  // `members: { include: { user } }` on a 500-member server cost 500 queries
+  // for a single request.
+  const retained = [...new Set([...buckets.values()].flat())];
+  const shapedChildren = await shapeDocuments(target, retained, childShapeArgs(nested), ctx);
+  const shapedById = new Map(
+    retained.map((doc, index) => [String(doc._id), shapedChildren[index]] as const)
+  );
+
+  for (const parentId of parentIds) {
+    const key = String(parentId);
+    const bucket = buckets.get(key) ?? [];
     if (rel.kind === "one") {
       const first = bucket[0];
-      out.set(key, first ? await shapeSingle(target, first, nested, ctx) : null);
+      out.set(key, (first ? shapedById.get(String(first._id)) : null) ?? null);
     } else {
-      out.set(
-        key,
-        await Promise.all(
-          bucket.map((doc: Document) => shapeSingle(target, doc, nested, ctx))
-        )
-      );
+      out.set(key, bucket.map((doc: Document) => shapedById.get(String(doc._id))));
     }
   }
 
   return out;
-}
-
-async function shapeSingle(
-  model: ModelDef,
-  doc: Document,
-  args: ShapeArgs,
-  ctx: QueryContext
-): Promise<Record<string, unknown>> {
-  const [shaped] = await shapeDocuments(model, [doc], childShapeArgs(args), ctx);
-  return shaped;
 }
 
 async function countRelation(

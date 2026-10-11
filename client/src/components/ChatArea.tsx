@@ -19,18 +19,31 @@ export default function ChatArea() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const flashTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Distinguishes the channel currently on screen from one still loading, so a
+  // slow response for a channel you already left cannot overwrite the view.
+  const activeChannelRef = useRef<string | undefined>(channelId);
+  // Only autoscroll when the reader was already at the bottom; otherwise a
+  // 15 s poll yanks them away from the history they are reading.
+  const shouldAutoScrollRef = useRef(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const fetchMessages = useCallback(async () => {
     if (!channelId) return;
+    const requestChannelId = channelId;
     try {
-      const { data } = await api.get(`/messages/${channelId}`);
+      const { data } = await api.get(`/messages/${requestChannelId}`);
+      // The poll and the channel-switch fetch share this path, so a response
+      // that arrives after the user switched channels is dropped rather than
+      // written into the new channel's view.
+      if (activeChannelRef.current !== requestChannelId) return;
       setMessages(data.messages);
     } catch {
-      // silent
+      // Silent: the next poll retries, and the messages already on screen stay.
     }
   }, [channelId]);
 
   useEffect(() => {
+    activeChannelRef.current = channelId;
     if (!channelId) {
       setMessages([]);
       return;
@@ -136,7 +149,12 @@ export default function ChatArea() {
   }, [channelId, user?.id, fetchMessages]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    // Only follow new messages when the reader is already at the bottom.
+    // Autoscrolling on every `messages` change meant the 15 s poll dragged the
+    // view back down mid-scrollback.
+    if (shouldAutoScrollRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
   }, [messages]);
 
   useEffect(() => {
@@ -144,6 +162,12 @@ export default function ChatArea() {
     setEditContent("");
     setReplyTo(null);
     setFlashId(null);
+    // `messages` and `typingUsers` carry the previous channel's state. Leaving
+    // them in place meant a failed fetch left the old channel's history under
+    // the new channel's header, and a typing indicator followed you across.
+    setMessages([]);
+    setTypingUsers([]);
+    shouldAutoScrollRef.current = true;
   }, [channelId]);
 
   const sendMessage = async () => {
@@ -179,7 +203,10 @@ export default function ChatArea() {
       });
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      setNewMessage(content);
+      // Only restores the composer if the user has not started typing again —
+      // otherwise a failed send destroys whatever they wrote while it was in
+      // flight.
+      setNewMessage((current) => (current.trim() === "" ? content : current));
     }
   };
 
@@ -251,6 +278,18 @@ export default function ChatArea() {
 
   const quickReactions = ["👍", "❤️", "😂", "🔥", "👀"];
 
+  /**
+   * Records whether the reader is pinned to the bottom of the scroll area.
+   *
+   * The 15 s poll replaces the message array on every tick, so an unconditional
+   * autoscroll pulled the view down even while someone was reading scrollback.
+   */
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    shouldAutoScrollRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
+
   if (!channelId) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -263,7 +302,7 @@ export default function ChatArea() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4" ref={scrollRef} onScroll={handleScroll}>
         {messages.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <p className="text-gray-500">No messages yet. Start the conversation!</p>

@@ -30,7 +30,34 @@ async function isChannelMember(channelId: string, userId: string): Promise<boole
     where: { id: channelId },
     select: { server: { select: { members: { where: { userId }, select: { id: true } } } } },
   });
-  return !!channel && channel.server.members.length > 0;
+  // `server` is null when the channel outlives its server — possible on the
+  // MongoDB backend, which enforces no foreign keys. Prisma's types call it
+  // non-nullable, so this is the only thing stopping a TypeError (and an
+  // unhandled rejection in the async handlers below).
+  return !!channel?.server && channel.server.members.length > 0;
+}
+
+/**
+ * Wraps an async socket listener so a rejected database call cannot escape.
+ *
+ * Socket.IO does not await listeners, and `process.on("unhandledRejection")` in
+ * index.ts swallows the rejection rather than crashing — so without this the
+ * event is dropped in total silence and the socket stays half-joined. The
+ * client gets a clear error instead.
+ */
+function safe(
+  socket: Socket,
+  event: string,
+  handler: (payload: unknown) => Promise<void>
+): void {
+  socket.on(event, (payload: unknown) => {
+    // Socket.IO ignores the return value; the promise is returned so tests
+    // can await the handler deterministically.
+    return handler(payload).catch((err: unknown) => {
+      console.error(`[socket] ${event} failed:`, err);
+      socket.emit("error", { message: "Request failed" });
+    });
+  });
 }
 
 async function isServerMember(serverId: string, userId: string): Promise<boolean> {
@@ -158,7 +185,7 @@ export function setupSocketHandlers(io: SocketServer): void {
       .update({ where: { id: userId }, data: { status: "online" } })
       .catch((err) => console.error(`[socket] failed to mark ${userId} online:`, err));
 
-    socket.on("join_server", async (payload: unknown) => {
+    safe(socket, "join_server", async (payload: unknown) => {
       const data = parse(serverRef, payload);
       if (!data) return;
       if (!(await isServerMember(data.serverId, userId))) return;
@@ -170,7 +197,7 @@ export function setupSocketHandlers(io: SocketServer): void {
       if (data) void socket.leave(`server:${data.serverId}`);
     });
 
-    socket.on("join_channel", async (payload: unknown) => {
+    safe(socket, "join_channel", async (payload: unknown) => {
       const data = parse(channelRef, payload);
       if (!data) return;
       if (!(await isChannelMember(data.channelId, userId))) return;
@@ -182,13 +209,12 @@ export function setupSocketHandlers(io: SocketServer): void {
       if (data) void socket.leave(`channel:${data.channelId}`);
     });
 
-    socket.on("message", async (payload: unknown) => {
-      try {
-        const data = parse(messagePayload, payload);
-        if (!data) {
-          socket.emit("error", { message: "Invalid message payload" });
-          return;
-        }
+    safe(socket, "message", async (payload: unknown) => {
+      const data = parse(messagePayload, payload);
+      if (!data) {
+        socket.emit("error", { message: "Invalid message payload" });
+        return;
+      }
 
         if (!(await isChannelMember(data.channelId, userId))) {
           socket.emit("error", { message: "You cannot send messages to this channel" });
@@ -222,27 +248,23 @@ export function setupSocketHandlers(io: SocketServer): void {
         });
 
         io.to(`channel:${data.channelId}`).emit("new_message", message);
-      } catch (err) {
-        console.error("[socket] message failed:", err);
-        socket.emit("error", { message: "Failed to send message" });
-      }
     });
 
-    socket.on("typing_start", async (payload: unknown) => {
+    safe(socket, "typing_start", async (payload: unknown) => {
       const data = parse(channelRef, payload);
       if (!data) return;
       if (!(await isChannelMember(data.channelId, userId))) return;
       socket.to(`channel:${data.channelId}`).emit("typing_start", { userId, channelId: data.channelId });
     });
 
-    socket.on("typing_stop", async (payload: unknown) => {
+    safe(socket, "typing_stop", async (payload: unknown) => {
       const data = parse(channelRef, payload);
       if (!data) return;
       if (!(await isChannelMember(data.channelId, userId))) return;
       socket.to(`channel:${data.channelId}`).emit("typing_stop", { userId, channelId: data.channelId });
     });
 
-    socket.on("voice_join", async (payload: unknown) => {
+    safe(socket, "voice_join", async (payload: unknown) => {
       const data = parse(channelRef, payload);
       if (!data) return;
       if (!(await isChannelMember(data.channelId, userId))) return;
@@ -257,7 +279,7 @@ export function setupSocketHandlers(io: SocketServer): void {
       socket.to(`voice:${data.channelId}`).emit("voice_user_leave", { userId, channelId: data.channelId });
     });
 
-    socket.on("voice_signal", async (payload: unknown) => {
+    safe(socket, "voice_signal", async (payload: unknown) => {
       const data = parse(signalTarget, payload);
       if (!data) return;
       // Voice-channel signalling is only meaningful between two people in
@@ -274,7 +296,7 @@ export function setupSocketHandlers(io: SocketServer): void {
       io.to(`user:${data.targetUserId}`).emit("voice_signal", { userId, signal: data.signal });
     });
 
-    socket.on("dm_join", async (payload: unknown) => {
+    safe(socket, "dm_join", async (payload: unknown) => {
       const data = parse(conversationRef, payload);
       if (!data) return;
       if (!(await isConversationParticipant(data.conversationId, userId))) return;
@@ -286,14 +308,14 @@ export function setupSocketHandlers(io: SocketServer): void {
       if (data) void socket.leave(`dm:${data.conversationId}`);
     });
 
-    socket.on("dm_typing_start", async (payload: unknown) => {
+    safe(socket, "dm_typing_start", async (payload: unknown) => {
       const data = parse(conversationRef, payload);
       if (!data) return;
       if (!(await isConversationParticipant(data.conversationId, userId))) return;
       socket.to(`dm:${data.conversationId}`).emit("dm_typing_start", { userId, conversationId: data.conversationId });
     });
 
-    socket.on("dm_typing_stop", async (payload: unknown) => {
+    safe(socket, "dm_typing_stop", async (payload: unknown) => {
       const data = parse(conversationRef, payload);
       if (!data) return;
       if (!(await isConversationParticipant(data.conversationId, userId))) return;
@@ -303,7 +325,7 @@ export function setupSocketHandlers(io: SocketServer): void {
     // A call is only ever relayed between its two participants. Without these
     // checks any authenticated user could ring, interrupt or tear down anyone
     // else's call simply by naming their id.
-    socket.on("call_invite", async (payload: unknown) => {
+    safe(socket, "call_invite", async (payload: unknown) => {
       const data = parse(callInvite, payload);
       if (!data) return;
 

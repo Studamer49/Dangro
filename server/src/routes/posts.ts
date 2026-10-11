@@ -4,6 +4,7 @@ import { prisma } from "../prisma.js";
 import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { paramId } from "../lib/access.js";
+import { mediaUrl } from "../lib/urls.js";
 
 const router = Router();
 
@@ -12,7 +13,7 @@ const createPostSchema = z.object({
   media: z
     .array(
       z.object({
-        url: z.string().max(500),
+        url: mediaUrl(),
         type: z.enum(["image", "video"]),
         width: z.number().int().min(0).max(10000).optional(),
         height: z.number().int().min(0).max(10000).optional(),

@@ -28,9 +28,13 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const flashTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
+  // The conversation currently on screen, so a response for one already left
+  // behind cannot overwrite the thread that replaced it.
+  const activeConversationRef = useRef(conversation.id);
 
   const markAsRead = useCallback(async () => {
     try {
@@ -41,8 +45,12 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   }, [conversation.id]);
 
   const fetchMessages = useCallback(async () => {
+    const requestConversationId = conversation.id;
     try {
-      const { data } = await api.get(`/dms/${conversation.id}`);
+      const { data } = await api.get(`/dms/${requestConversationId}`);
+      // The component is reused across conversations, so a slow response for
+      // the thread you just left would otherwise land in the one now open.
+      if (activeConversationRef.current !== requestConversationId) return;
       const next = data.messages as DirectMessage[];
       setMessages(next);
 
@@ -53,11 +61,12 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
         void markAsRead();
       }
     } catch {
-      // silent
+      // Silent: the next poll retries, and the messages already on screen stay.
     }
   }, [conversation.id, markAsRead, user?.id]);
 
   useEffect(() => {
+    activeConversationRef.current = conversation.id;
     fetchMessages();
     const socket = getSocket();
     socket.emit("dm_join", { conversationId: conversation.id });
@@ -173,6 +182,10 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
       socket.off("dm_read_receipt", handleReadReceipt);
       socket.off("connect", rejoin);
       clearInterval(pollId);
+      // Both timers are cleared here; left running they survive the effect and
+      // then fire against state that has already moved on to another thread.
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
       socket.emit("dm_leave", { conversationId: conversation.id });
     };
   }, [conversation.id, user?.id, fetchMessages, markAsRead]);
@@ -182,6 +195,14 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
     setEditContent("");
     setReplyTo(null);
     setFlashId(null);
+    // These carry the previous thread's state. Clearing them stops a failed
+    // fetch from leaving one person's private messages under another person's
+    // name, and stops the typing indicator from following you across — it is
+    // labelled with the *current* conversation's user, so a leaked entry
+    // accuses the wrong person.
+    setMessages([]);
+    setTypingUsers([]);
+    setShouldAutoScroll(true);
   }, [conversation.id]);
 
   useEffect(() => {
@@ -236,7 +257,9 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
       }
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      setNewMessage(content);
+      // Restores the composer only when the user has not started typing again,
+      // so a failed send cannot destroy what they wrote in the meantime.
+      setNewMessage((current) => (current.trim() === "" ? content : current));
     }
   };
 
@@ -360,7 +383,14 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   const scrollToMessage = (id: string) => {
     document.getElementById(`dm-message-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     setFlashId(id);
-    window.setTimeout(() => setFlashId((cur) => (cur === id ? null : cur)), 1500);
+    // Tracked and cleared on unmount: an untracked timer outlives the component
+    // and can clear a flashId belonging to a conversation opened in the
+    // meantime.
+    if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+    flashTimeoutRef.current = setTimeout(
+      () => setFlashId((cur) => (cur === id ? null : cur)),
+      1500
+    );
   };
 
   const editMessage = async (messageId: string) => {

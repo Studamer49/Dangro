@@ -5,23 +5,28 @@ import { prisma } from "../prisma.js";
 import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { assertServerMember, findServerOr404, paramId } from "../lib/access.js";
+import { mediaUrl, nullableMediaUrl } from "../lib/urls.js";
 
 const router = Router();
 
 const createServerSchema = z.object({
   name: z.string().trim().min(1).max(100),
-  icon: z.string().url().max(500).optional(),
+  icon: mediaUrl().optional(),
 });
 
 const updateServerSchema = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),
-    icon: z.string().url().max(500).nullish(),
+    icon: nullableMediaUrl(),
   })
   .refine((v) => Object.keys(v).length > 0, { message: "Nothing to update" });
 
 const listInclude = {
-  channels: { take: 1 },
+  // Only one channel is needed — the client navigates to it when a server is
+  // clicked — but which one matters: an unordered `take: 1` returns an
+  // arbitrary channel, and if that happens to be a voice channel the text-chat
+  // view is opened for it.
+  channels: { where: { type: "text" }, orderBy: { createdAt: "asc" }, take: 1 },
   _count: { select: { members: true } },
 } as const;
 

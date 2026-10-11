@@ -83,8 +83,11 @@ export default function ProfilePage() {
 
   const handleStartDM = async () => {
     try {
-      await api.post("/dms/start", { userId });
-      navigate("/dms");
+      // Navigating to the bare /dms left the thread unselected, so the user
+      // landed on "Select a conversation" having just created one. Deep-linking
+      // the new id opens it directly.
+      const { data } = await api.post("/dms/start", { userId });
+      navigate(`/dms/${data.conversation.id}`);
     } catch (err) {
       toast.error(apiErrorMessage(err));
     }

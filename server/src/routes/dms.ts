@@ -5,6 +5,7 @@ import { getIO } from "../socket/io.js";
 import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { assertConversationMember, assertDirectMessageReply, paramId } from "../lib/access.js";
+import { mediaUrl } from "../lib/urls.js";
 import { createNotification } from "../lib/notifications.js";
 
 const router = Router();
@@ -13,7 +14,7 @@ const startConversationSchema = z.object({ userId: z.string().uuid() });
 
 const sendMessageSchema = z.object({
   content: z.string().trim().min(1).max(4000),
-  attachmentUrl: z.string().max(500).optional(),
+  attachmentUrl: mediaUrl().optional(),
   attachmentType: z.string().max(100).optional(),
   replyToId: z.string().uuid().nullish(),
 });

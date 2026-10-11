@@ -59,18 +59,34 @@ export function useWebRTC() {
         audio: true,
         video,
       });
+      // The permission prompt is open across an await the caller cannot
+      // cancel. If the call ended while it was pending, nobody is left to stop
+      // these tracks — the effect cleanup already ran against a null stream —
+      // so the OS recording indicator would stay on indefinitely.
+      if (!useCallStore.getState().isInCall) {
+        stream.getTracks().forEach((track) => track.stop());
+        throw new Error("Call ended before the microphone was ready");
+      }
       setLocalStream(stream);
       return stream;
-    } catch {
+    } catch (err) {
+      if (err instanceof Error && err.message.startsWith("Call ended")) throw err;
       // Camera denied or unavailable: fall back to audio only.
       try {
         const audioOnly = await navigator.mediaDevices.getUserMedia({
           audio: true,
           video: false,
         });
+        if (!useCallStore.getState().isInCall) {
+          audioOnly.getTracks().forEach((track) => track.stop());
+          throw new Error("Call ended before the microphone was ready");
+        }
         setLocalStream(audioOnly);
         return audioOnly;
-      } catch {
+      } catch (fallbackErr) {
+        if (fallbackErr instanceof Error && fallbackErr.message.startsWith("Call ended")) {
+          throw fallbackErr;
+        }
         // The fallback used to reject unhandled, leaving the call UI showing
         // a live call with no microphone and nothing in the console.
         throw new Error("Microphone access was denied");
@@ -148,41 +164,53 @@ export function useWebRTC() {
 
     const socket = getSocket();
 
-    socket.on("call_accept", () => {
+    // Handlers are kept in named consts so cleanup can remove exactly these
+    // ones. `socket.off("call_end")` with no argument removes *every* listener
+    // for that event on the shared socket — including CallInvitation's, which
+    // is mounted independently. That left the incoming-call overlay ringing
+    // after the caller had already hung up.
+    const handleCallAccept = () => {
       createOffer().catch(failCall);
-    });
+    };
 
-    socket.on("webrtc_offer", (data: { offer: RTCSessionDescriptionInit; userId: string }) => {
+    const handleOfferEvent = (data: { offer: RTCSessionDescriptionInit; userId: string }) => {
       handleOffer(data.offer, data.userId).catch(failCall);
-    });
+    };
 
-    socket.on("webrtc_answer", (data: { answer: RTCSessionDescriptionInit }) => {
+    const handleAnswerEvent = (data: { answer: RTCSessionDescriptionInit }) => {
       handleAnswer(data.answer).catch(failCall);
-    });
+    };
 
-    socket.on("ice_candidate", (data: { candidate: RTCIceCandidateInit }) => {
+    const handleIceEvent = (data: { candidate: RTCIceCandidateInit }) => {
       handleIceCandidate(data.candidate).catch(() => {
         // A candidate that arrives after teardown is expected and harmless.
       });
-    });
+    };
 
-    socket.on("call_end", () => {
+    const handleCallEnd = () => {
       cleanup();
       useCallStore.getState().resetCall();
-    });
+    };
 
-    socket.on("call_reject", () => {
+    const handleCallReject = () => {
       cleanup();
       useCallStore.getState().resetCall();
-    });
+    };
+
+    socket.on("call_accept", handleCallAccept);
+    socket.on("webrtc_offer", handleOfferEvent);
+    socket.on("webrtc_answer", handleAnswerEvent);
+    socket.on("ice_candidate", handleIceEvent);
+    socket.on("call_end", handleCallEnd);
+    socket.on("call_reject", handleCallReject);
 
     return () => {
-      socket.off("call_accept");
-      socket.off("webrtc_offer");
-      socket.off("webrtc_answer");
-      socket.off("ice_candidate");
-      socket.off("call_end");
-      socket.off("call_reject");
+      socket.off("call_accept", handleCallAccept);
+      socket.off("webrtc_offer", handleOfferEvent);
+      socket.off("webrtc_answer", handleAnswerEvent);
+      socket.off("ice_candidate", handleIceEvent);
+      socket.off("call_end", handleCallEnd);
+      socket.off("call_reject", handleCallReject);
       cleanup();
     };
   }, [isInCall, isCaller, callType, createOffer, handleOffer, handleAnswer, handleIceCandidate, cleanup, startLocalStream, failCall]);

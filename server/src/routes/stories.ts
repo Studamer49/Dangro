@@ -4,11 +4,12 @@ import { prisma } from "../prisma.js";
 import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { paramId } from "../lib/access.js";
+import { mediaUrl } from "../lib/urls.js";
 
 const router = Router();
 
 const createStorySchema = z.object({
-  mediaUrl: z.string().max(500),
+  mediaUrl: mediaUrl(),
   mediaType: z.enum(["image", "video"]),
 });
 

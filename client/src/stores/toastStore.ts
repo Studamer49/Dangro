@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { create } from "zustand";
 
 export type ToastVariant = "success" | "error" | "info";
@@ -28,12 +29,22 @@ export const useToastStore = create<ToastState>((set, get) => ({
   dismiss: (id) => set({ toasts: get().toasts.filter((t) => t.id !== id) }),
 }));
 
-/** Convenience wrapper: `const toast = useToast(); toast.error("Nope")`. */
+/**
+ * Convenience wrapper: `const toast = useToast(); toast.error("Nope")`.
+ *
+ * The returned object is memoised on the store's `push`. Returning a fresh
+ * literal on every render gave it a new identity each time, so any effect or
+ * callback that depended on it re-ran on every render — which several call
+ * sites had to work around by mirroring it into a ref.
+ */
 export function useToast() {
   const push = useToastStore((s) => s.push);
-  return {
-    success: (message: string) => push(message, "success"),
-    error: (message: string) => push(message, "error"),
-    info: (message: string) => push(message, "info"),
-  };
+  return useMemo(
+    () => ({
+      success: (message: string) => push(message, "success"),
+      error: (message: string) => push(message, "error"),
+      info: (message: string) => push(message, "info"),
+    }),
+    [push]
+  );
 }

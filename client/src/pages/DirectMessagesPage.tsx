@@ -1,10 +1,40 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
 import ConversationList from "@/components/ConversationList";
 import DMChatArea from "@/components/DMChatArea";
+import api from "@/lib/api";
 import type { Conversation } from "@/types";
 
 export default function DirectMessagesPage() {
+  const { conversationId } = useParams();
   const [activeConversation, setActiveConversation] = useState<Conversation | null>(null);
+
+  // The route declares `/dms/:conversationId`, but nothing read the segment —
+  // so a deep link (or a shared link) opened an empty screen, and "Message" on
+  // a profile navigated to /dms without ever selecting the thread it had just
+  // created. The conversation is fetched here and the list keeps the same
+  // selection state, so a later click still wins.
+  useEffect(() => {
+    if (!conversationId) return;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const { data } = await api.get("/dms");
+        if (cancelled) return;
+        const match = (data.conversations as Conversation[]).find(
+          (c) => c.id === conversationId
+        );
+        if (match) setActiveConversation(match);
+      } catch {
+        // Silent: the list still renders and the user can pick manually.
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId]);
 
   return (
     <div className="flex h-full">

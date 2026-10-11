@@ -24,6 +24,12 @@ export interface RelationDef {
   backKey?: string;
   /** Sort applied when loading a "many" relation, matching Prisma's default. */
   orderBy?: Record<string, "asc" | "desc">;
+  /**
+   * What happens to this model when the target row is deleted. Mirrors the
+   * `onDelete` in schema.prisma: the default is Cascade (delete the rows),
+   * while SetNull only clears the foreign key and keeps the row.
+   */
+  onDelete?: "Cascade" | "SetNull";
 }
 
 export interface ModelDef {
@@ -42,7 +48,12 @@ const relation = (
   name: string,
   target: string,
   kind: "one" | "many",
-  key: { ownKey?: string; backKey?: string; orderBy?: Record<string, "asc" | "desc"> }
+  key: {
+    ownKey?: string;
+    backKey?: string;
+    orderBy?: Record<string, "asc" | "desc">;
+    onDelete?: "Cascade" | "SetNull";
+  }
 ): RelationDef => ({ name, target, kind, ...key });
 
 export const MODELS: Record<string, ModelDef> = {
@@ -210,7 +221,7 @@ export const MODELS: Record<string, ModelDef> = {
     relations: [
       relation("author", "user", "one", { ownKey: "authorId" }),
       relation("channel", "channel", "one", { ownKey: "channelId" }),
-      relation("replyTo", "message", "one", { ownKey: "replyToId" }),
+      relation("replyTo", "message", "one", { ownKey: "replyToId", onDelete: "SetNull" }),
       relation("replies", "message", "many", { backKey: "replyToId", orderBy: { createdAt: "asc" } }),
       relation("reactions", "reaction", "many", { backKey: "messageId" }),
       relation("attachments", "attachment", "many", { backKey: "messageId" }),
@@ -271,7 +282,7 @@ export const MODELS: Record<string, ModelDef> = {
     defaultOrder: { createdAt: "desc" },
     relations: [
       relation("user", "user", "one", { ownKey: "userId" }),
-      relation("fromUser", "user", "one", { ownKey: "fromUserId" }),
+      relation("fromUser", "user", "one", { ownKey: "fromUserId", onDelete: "SetNull" }),
     ],
   },
 
@@ -316,7 +327,7 @@ export const MODELS: Record<string, ModelDef> = {
     relations: [
       relation("sender", "user", "one", { ownKey: "senderId" }),
       relation("conversation", "conversation", "one", { ownKey: "conversationId" }),
-      relation("replyTo", "directMessage", "one", { ownKey: "replyToId" }),
+      relation("replyTo", "directMessage", "one", { ownKey: "replyToId", onDelete: "SetNull" }),
       relation("replies", "directMessage", "many", { backKey: "replyToId", orderBy: { createdAt: "asc" } }),
     ],
   },

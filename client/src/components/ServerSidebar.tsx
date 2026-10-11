@@ -69,8 +69,11 @@ export default function ServerSidebar() {
   };
 
   const openChannel = (server: Server) => {
-    const firstChannel = server.channels?.[0]?.id;
-    if (firstChannel) navigate(`/channels/${firstChannel}`);
+    // The server only returns text channels, but this list is also fed by the
+    // explore/join paths. Landing on a voice channel would render the text
+    // chat view for it.
+    const firstChannel = server.channels?.find((c) => c.type !== "voice") ?? server.channels?.[0];
+    if (firstChannel) navigate(`/channels/${firstChannel.id}`);
   };
 
   return (

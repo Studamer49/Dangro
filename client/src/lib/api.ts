@@ -55,16 +55,26 @@ api.interceptors.response.use(
     if (status === 401 && original && !original._retry && !isAuthPath) {
       original._retry = true;
 
+      let accessToken: string;
       try {
-        const accessToken = await refreshAccessToken();
-        original.headers = original.headers ?? {};
-        original.headers.Authorization = `Bearer ${accessToken}`;
-
-        return api(original);
-      } catch {
+        accessToken = await refreshAccessToken();
+      } catch (refreshError) {
+        // Only a failed *refresh* means the session is genuinely over.
         onSessionExpired?.();
-        return Promise.reject(error);
+        return Promise.reject(refreshError);
       }
+
+      // The replay is deliberately outside the try above. It can fail for
+      // reasons that have nothing to do with the session — a 500, a dropped
+      // connection, the global rate limiter — and treating those as an expired
+      // session signed the user out and deleted a still-valid refresh cookie.
+      original.headers = original.headers ?? {};
+      original.headers.Authorization = `Bearer ${accessToken}`;
+
+      return api(original).catch((replayError: AxiosError) => {
+        normalizeError(replayError);
+        return Promise.reject(replayError);
+      });
     }
 
     return Promise.reject(error);
@@ -81,8 +91,24 @@ api.interceptors.response.use(
  */
 let inFlightRefresh: Promise<string> | null = null;
 
+/**
+ * Bumped by logout so an in-flight refresh cannot resurrect the session.
+ *
+ * Without this, pressing Log out while a silent refresh was in flight lost the
+ * race: the refresh resolved afterwards and wrote the access token back into
+ * localStorage, so a reload found a valid token and signed the user straight
+ * back in.
+ */
+let sessionEpoch = 0;
+
+export function invalidateSession(): void {
+  sessionEpoch += 1;
+  inFlightRefresh = null;
+}
+
 function refreshAccessToken(): Promise<string> {
   if (!inFlightRefresh) {
+    const epoch = sessionEpoch;
     inFlightRefresh = axios
       .post<ApiSuccessEnvelope<{ accessToken: string }>>(
         `${API_BASE}/auth/refresh`,
@@ -92,6 +118,10 @@ function refreshAccessToken(): Promise<string> {
       .then((refreshed) => {
         const accessToken = refreshed.data?.data?.accessToken;
         if (!accessToken) throw new Error("Refresh returned no token");
+
+        // The session was ended while this refresh was in flight; its token is
+        // no longer wanted.
+        if (epoch !== sessionEpoch) throw new Error("Session ended during refresh");
 
         localStorage.setItem("accessToken", accessToken);
         onTokenRefreshed?.(accessToken);
