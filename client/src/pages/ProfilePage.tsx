@@ -142,7 +142,7 @@ export default function ProfilePage() {
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
-      <div className="mx-auto w-full max-w-2xl px-6 pb-12 pt-6">
+      <div className="mx-auto w-full max-w-3xl px-6 pb-12 pt-6">
         {/*
           Identity block. A wide frosted panel whose top is the "cover": the
           user's banner image, or the accent gradient when none is set, with the
@@ -278,11 +278,11 @@ export default function ProfilePage() {
               <p className="text-sm font-semibold text-gray-300">No posts yet</p>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-3 gap-3">
               {posts.map((post) => (
                 <div
                   key={post.id}
-                  className="glass-card group relative aspect-square cursor-pointer overflow-hidden rounded-xl"
+                  className="glass-card group relative aspect-square cursor-pointer overflow-hidden rounded-2xl"
                 >
                   {post.media?.[0] ? (
                     <img

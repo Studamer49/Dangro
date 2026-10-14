@@ -78,10 +78,10 @@ export default function PostCard({
 
   return (
     <article className="glass-card glass-card-hover overflow-hidden rounded-2xl">
-      <div className="flex items-center gap-3 p-4">
-        <Avatar user={post.author} className="h-9 w-9 text-sm" />
+      <div className="flex items-center gap-3 p-5">
+        <Avatar user={post.author} className="h-11 w-11 text-base" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold tracking-tight text-white">{post.author?.username ?? "Unknown"}</p>
+          <p className="truncate text-base font-semibold tracking-tight text-white">{post.author?.username ?? "Unknown"}</p>
           <p className="tabular text-xs text-gray-600">{new Date(post.createdAt).toLocaleDateString()}</p>
         </div>
         {isOwnPost && (
@@ -118,7 +118,7 @@ export default function PostCard({
       </div>
 
       {post.media && post.media.length > 0 && (
-        <div className="px-4 pb-1 pt-0.5">
+        <div className="px-5 pb-1 pt-0.5">
           {/* The media carousel sits in a recessed glass well rather than
               flush against the card edge, so the images read as sitting on the
               card instead of replacing it. */}
@@ -141,7 +141,7 @@ export default function PostCard({
         </div>
       )}
 
-      <div className="space-y-2 p-4">
+      <div className="space-y-2 p-5">
         <div className="flex items-center gap-4">
           <button
             type="button"
@@ -239,7 +239,7 @@ export default function PostCard({
           </div>
         ) : (
           post.caption && (
-            <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-200">
+            <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-gray-200">
               <span className="font-semibold tracking-tight text-white">{post.author?.username ?? "Unknown"}</span>{" "}
               {post.caption}
             </p>

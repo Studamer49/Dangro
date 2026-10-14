@@ -2,7 +2,16 @@ import { useMemo, useState } from "react";
 import StoryComposer from "@/components/feed/StoryComposer";
 import StoryViewer from "@/components/feed/StoryViewer";
 import Avatar from "@/components/Avatar";
+import { useStorySeenStore } from "@/stores/storySeenStore";
 import type { Story, StoryGroup, User } from "@/types";
+
+/** The newest story's timestamp in a group, used to decide if it is unseen. */
+function latestCreatedAt(group: StoryGroup): string {
+  return group.stories.reduce(
+    (max, story) => (Date.parse(story.createdAt) > Date.parse(max) ? story.createdAt : max),
+    ""
+  );
+}
 
 interface StoriesBarProps {
   groups: StoryGroup[];
@@ -48,6 +57,9 @@ export default function StoriesBar({ groups, viewer, onAdded }: StoriesBarProps)
     ? (renderable.find((group) => group.author.id === viewing.authorId) ?? null)
     : null;
 
+  const seenByAuthor = useStorySeenStore((s) => s.seen);
+  const markGroupSeen = useStorySeenStore((s) => s.markGroupSeen);
+
   const openComposer = (story: Story | null) => {
     setEditing(story);
     setComposing(true);
@@ -87,23 +99,35 @@ export default function StoriesBar({ groups, viewer, onAdded }: StoriesBarProps)
           </button>
 
           {/* Everyone else */}
-          {otherGroups.map((group) => (
-            <button
-              key={group.author.id}
-              type="button"
-              onClick={() => setViewing({ authorId: group.author.id, startIndex: 0 })}
-              className="group flex w-[68px] shrink-0 flex-col items-center gap-1.5"
-            >
-              <span className={`block rounded-full p-[2.5px] transition-transform duration-200 ease-out group-hover:scale-105 ${RING_UNSEEN}`}>
-                <span className="block rounded-full bg-gray-950 p-[2px]">
-                  <Avatar user={group.author} className="h-14 w-14" linkToProfile={false} />
+          {otherGroups.map((group) => {
+            const seenStamp = Date.parse(seenByAuthor[group.author.id] ?? "");
+            const latest = Date.parse(latestCreatedAt(group));
+            const seen = Number.isFinite(seenStamp) && Number.isFinite(latest) && seenStamp >= latest;
+            return (
+              <button
+                key={group.author.id}
+                type="button"
+                onClick={() => {
+                  markGroupSeen(group);
+                  setViewing({ authorId: group.author.id, startIndex: 0 });
+                }}
+                className="group flex w-[68px] shrink-0 flex-col items-center gap-1.5"
+              >
+                <span
+                  className={`block rounded-full p-[2.5px] transition-transform duration-200 ease-out group-hover:scale-105 ${
+                    seen ? RING_SEEN : RING_UNSEEN
+                  }`}
+                >
+                  <span className="block rounded-full bg-gray-950 p-[2px]">
+                    <Avatar user={group.author} className="h-14 w-14" linkToProfile={false} />
+                  </span>
                 </span>
-              </span>
-              <span className="w-full truncate text-center text-[11px] font-medium text-gray-400 transition-colors duration-200 ease-out group-hover:text-white">
-                {group.author.username}
-              </span>
-            </button>
-          ))}
+                <span className="w-full truncate text-center text-[11px] font-medium text-gray-400 transition-colors duration-200 ease-out group-hover:text-white">
+                  {group.author.username}
+                </span>
+              </button>
+            );
+          })}
 
           {otherGroups.length === 0 && (
             <p className="flex items-center pl-2 text-xs text-gray-500">
