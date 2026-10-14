@@ -110,7 +110,7 @@ export default function NotificationsBell() {
       </button>
 
       {open && (
-        <div className="glass-panel absolute right-0 z-50 mt-2 w-80 animate-pop-in overflow-hidden rounded-2xl">
+        <div className="glass-panel layer-popup absolute right-0 mt-2 w-80 animate-pop-in overflow-hidden rounded-2xl">
           <div className="flex items-center justify-between border-b border-gray-700/60 px-4 py-3">
             <span className="text-sm font-bold tracking-tight text-white">Notifications</span>
             {unreadCount > 0 && (

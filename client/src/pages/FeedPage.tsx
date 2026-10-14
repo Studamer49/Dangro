@@ -145,7 +145,7 @@ export default function FeedPage() {
 
   return (
     <div className="flex h-full flex-col items-center overflow-y-auto pb-10">
-      <div className="glass-panel sticky top-0 z-20 w-full max-w-lg border-x-0 border-t-0 px-4 py-4">
+      <div className="glass-panel sticky top-0 z-10 w-full max-w-lg border-x-0 border-t-0 px-4 py-4">
         <StoriesBar groups={stories} viewer={user} onAdded={handleStoryAdded} />
       </div>
 

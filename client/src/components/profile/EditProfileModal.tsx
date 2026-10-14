@@ -21,7 +21,7 @@ interface EditProfileModalProps {
 export default function EditProfileModal({ user, onClose, onSaved }: EditProfileModalProps) {
   return createPortal(
     <div
-      className="animate-overlay-in fixed inset-0 z-50 flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm"
+      className="animate-overlay-in fixed inset-0 layer-overlay flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm"
       onMouseDown={onClose}
     >
       <div

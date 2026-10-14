@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type ButtonHTMLAttributes } from "react";
+import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { useToast } from "@/stores/toastStore";
@@ -42,7 +43,7 @@ function BouncyButton({
       {tooltip && (
         <span
           role="tooltip"
-          className={`glass-panel pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap rounded-xl px-2.5 py-1.5 text-sm font-semibold text-white transition-all duration-150 ease-out ${
+          className={`glass-panel layer-popup pointer-events-none absolute left-full top-1/2 ml-3 -translate-y-1/2 whitespace-nowrap rounded-xl px-2.5 py-1.5 text-sm font-semibold text-white transition-all duration-150 ease-out ${
             showTooltip ? "translate-x-0 opacity-100" : "-translate-x-1.5 opacity-0"
           }`}
         >
@@ -130,7 +131,7 @@ export default function ServerSidebar() {
   };
 
   return (
-    <div className="glass flex w-[72px] flex-col items-center gap-2 border-r py-3">
+    <div className="glass relative layer-popup flex w-[72px] flex-col items-center gap-2 border-r py-3">
       <BouncyButton
         onClick={() => {
           // Clicking Home while already on Home reloads the feed instead of
@@ -230,65 +231,69 @@ export default function ServerSidebar() {
         )}
       </BouncyButton>
 
-      {showCreateModal && (
-        <div className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm">
-          <div className="anim-pop-in glass-panel w-full max-w-md rounded-2xl bg-gray-900/95 p-6">
-            <h3 className="mb-4 text-lg font-bold tracking-tight text-white">Create Server</h3>
-            <input
-              type="text"
-              value={newServerName}
-              onChange={(e) => setNewServerName(e.target.value)}
-              placeholder="Server name"
-              className="field mb-4"
-              onKeyDown={(e) => e.key === "Enter" && createServer()}
-              autoFocus
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowCreateModal(false)}
-                className="btn-ghost px-4 py-2 text-sm"
-              >
-                Cancel
-              </button>
-              <button onClick={createServer} disabled={busyCreate} className="btn-primary px-4 py-2 text-sm">
-                {busyCreate ? "Creating..." : "Create"}
-              </button>
+      {showCreateModal &&
+        createPortal(
+          <div className="anim-fade-in fixed inset-0 layer-overlay flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm">
+            <div className="anim-pop-in glass-panel w-full max-w-md rounded-2xl bg-gray-900/95 p-6">
+              <h3 className="mb-4 text-lg font-bold tracking-tight text-white">Create Server</h3>
+              <input
+                type="text"
+                value={newServerName}
+                onChange={(e) => setNewServerName(e.target.value)}
+                placeholder="Server name"
+                className="field mb-4"
+                onKeyDown={(e) => e.key === "Enter" && createServer()}
+                autoFocus
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setShowCreateModal(false)}
+                  className="btn-ghost px-4 py-2 text-sm"
+                >
+                  Cancel
+                </button>
+                <button onClick={createServer} disabled={busyCreate} className="btn-primary px-4 py-2 text-sm">
+                  {busyCreate ? "Creating..." : "Create"}
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
 
-      {showJoinModal && (
-        <div className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm">
-          <div className="anim-pop-in glass-panel w-full max-w-md rounded-2xl bg-gray-900/95 p-6">
-            <h3 className="mb-1 text-lg font-bold tracking-tight text-white">Join a Server</h3>
-            <p className="mb-4 text-sm text-gray-400">Enter an invite code to join.</p>
-            <input
-              type="text"
-              value={inviteCode}
-              onChange={(e) => setInviteCode(e.target.value)}
-              placeholder="Invite code"
-              autoCapitalize="none"
-              autoCorrect="off"
-              spellCheck={false}
-              className="field mb-4"
-              onKeyDown={(e) => e.key === "Enter" && joinServer()}
-              autoFocus
-            />
-            <div className="flex justify-end gap-2">
-              <button
-                onClick={() => setShowJoinModal(false)}
-                className="btn-ghost px-4 py-2 text-sm"
-              >
-                Cancel
-              </button>
-              <button onClick={joinServer} disabled={busyJoin} className="btn-primary px-4 py-2 text-sm">
-                {busyJoin ? "Joining..." : "Join"}
-              </button>
+      {showJoinModal &&
+        createPortal(
+          <div className="anim-fade-in fixed inset-0 layer-overlay flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm">
+            <div className="anim-pop-in glass-panel w-full max-w-md rounded-2xl bg-gray-900/95 p-6">
+              <h3 className="mb-1 text-lg font-bold tracking-tight text-white">Join a Server</h3>
+              <p className="mb-4 text-sm text-gray-400">Enter an invite code to join.</p>
+              <input
+                type="text"
+                value={inviteCode}
+                onChange={(e) => setInviteCode(e.target.value)}
+                placeholder="Invite code"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                className="field mb-4"
+                onKeyDown={(e) => e.key === "Enter" && joinServer()}
+                autoFocus
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={() => setShowJoinModal(false)}
+                  className="btn-ghost px-4 py-2 text-sm"
+                >
+                  Cancel
+                </button>
+                <button onClick={joinServer} disabled={busyJoin} className="btn-primary px-4 py-2 text-sm">
+                  {busyJoin ? "Joining..." : "Join"}
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
-      )}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

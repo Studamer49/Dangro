@@ -144,7 +144,7 @@ export default function StoryViewer({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/80 p-4 backdrop-blur-md animate-overlay-in"
+      className="fixed inset-0 layer-overlay flex items-center justify-center bg-gray-950/80 p-4 backdrop-blur-md animate-overlay-in"
       role="dialog"
       aria-modal="true"
       aria-label={`${group.author.username}'s story`}

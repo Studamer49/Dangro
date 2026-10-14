@@ -89,7 +89,7 @@ export default function VideoCallModal() {
   const remoteHasVideo = !!remoteStream?.getVideoTracks().length;
 
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/80 p-4 backdrop-blur-sm animate-overlay-in">
+    <div className="fixed inset-0 layer-call flex items-center justify-center bg-gray-950/80 p-4 backdrop-blur-sm animate-overlay-in">
       <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
       {/*
         The stage is the one deliberate exception to "never paint a dark

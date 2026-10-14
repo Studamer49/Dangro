@@ -533,7 +533,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
 
   return (
     <div className="flex h-full flex-col">
-      <div className="glass sticky top-0 z-20 flex items-center gap-3 border-b px-4 py-3">
+      <div className="glass sticky top-0 z-10 flex items-center gap-3 border-b px-4 py-3">
         <div className="relative">
           <Avatar user={conversation.otherUser} className="h-9 w-9 text-sm" />
           <div
@@ -817,7 +817,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
               </svg>
             </button>
             {showAttachMenu && (
-              <div className="glass-panel animate-pop-in absolute bottom-full left-0 z-20 mb-2 w-48 rounded-xl py-1">
+              <div className="glass-panel layer-popup animate-pop-in absolute bottom-full left-0 mb-2 w-48 rounded-xl py-1">
                 <button
                   onClick={() => fileInputRef.current?.click()}
                   className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-300 transition-colors duration-200 ease-out hover:bg-white/5 hover:text-white"

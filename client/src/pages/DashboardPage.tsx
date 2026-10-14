@@ -44,7 +44,7 @@ export default function DashboardPage() {
           scrolls underneath — without it the header would need an opaque
           fill and the ambient field would stop at the top of the viewport.
         */}
-        <header className="glass sticky top-0 z-30 flex items-center justify-between border-b px-4 py-3">
+        <header className="glass layer-chrome sticky top-0 flex items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-3">
             <Avatar user={user} className="h-8 w-8 text-sm" lit />
             <div className="flex flex-col leading-tight">

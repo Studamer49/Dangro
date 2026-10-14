@@ -390,7 +390,7 @@ export default function ChannelSidebar() {
   const serverInitial = server.name?.[0]?.toUpperCase() ?? "?";
 
   return (
-    <div className="glass flex w-60 flex-col border-r">
+    <div className="glass relative layer-chrome flex w-60 flex-col border-r">
       <div className="flex items-center justify-between border-b border-gray-800/70 px-4 py-3">
         <button onClick={() => setShowSettings(true)} className="flex max-w-[70%] items-center gap-2">
           {server.icon ? (

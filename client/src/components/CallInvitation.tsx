@@ -72,7 +72,7 @@ export default function CallInvitation() {
   if (!incomingCall) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm animate-overlay-in">
+    <div className="fixed inset-0 layer-call flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm animate-overlay-in">
       <div className="w-full max-w-sm animate-pop-in">
         {/* The glow lives on a wrapper rather than on the card itself, so the
             panel keeps its own wide elevation shadow underneath the accent

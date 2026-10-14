@@ -32,7 +32,7 @@ export default function Toaster() {
       // the user is focused elsewhere on the page.
       role="status"
       aria-live="polite"
-      className="pointer-events-none fixed bottom-4 right-4 z-[100] flex w-[22rem] max-w-[calc(100vw-2rem)] flex-col gap-2"
+      className="pointer-events-none layer-toast fixed bottom-4 right-4 flex w-[22rem] max-w-[calc(100vw-2rem)] flex-col gap-2"
     >
       {toasts.map((toast) => (
         <button

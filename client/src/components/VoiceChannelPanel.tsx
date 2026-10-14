@@ -106,7 +106,7 @@ export default function VoiceChannelPanel({
   }, [localStream, cameraEnabled]);
 
   return createPortal(
-    <div className="anim-pop-in fixed bottom-4 right-4 z-40 w-72 overflow-hidden rounded-xl border border-gray-700 bg-gray-900 shadow-2xl">
+    <div className="anim-pop-in layer-popup fixed bottom-4 right-4 w-72 overflow-hidden rounded-xl border border-gray-700 bg-gray-900 shadow-2xl">
       <div className="flex items-center justify-between border-b border-gray-800 px-3 py-2">
         <div className="min-w-0">
           <p className="flex items-center gap-1.5 text-sm font-semibold text-white">

@@ -319,6 +319,49 @@
     transform: translateY(-2px);
   }
 
+  /* -----------------------------------------------------------------------
+   * Stacking order.
+   *
+   * The whole app is one stack with a fixed set of named layers. Every base
+   * screen — Home, Chat, Explore, a profile — lives in the first layer and
+   * carries no z-index of its own. Anything that floats uses a layer below.
+   * Sticky bars stay inside their screen but need `z-10` so scrolled content
+   * passes underneath them.
+   *
+   *   (base)          Home / Chat / Explore / profile — the content layer
+   *   z-10            sticky bars inside a screen
+   *   layer-chrome    app chrome: the top bar and the channel rail
+   *   layer-popup     dropdowns, tooltips, slide-out sidebar labels, the
+   *                   voice panel, and the server rail (raised so its labels
+   *                   can slide out over the channel rail)
+   *   layer-overlay   modals and the story viewer
+   *   layer-call      incoming and active calls
+   *   layer-toast     toasts, always on top
+   *
+   * Why named layers and not raw numbers: `.glass`/`.glass-panel` use
+   * `backdrop-filter`, which makes every glass element its own stacking
+   * context. A child's z-index only competes inside its nearest glass
+   * ancestor, so floating UI inside a glass panel cannot rise above a sibling
+   * panel no matter how high its number is. Naming the layers keeps that rule
+   * visible at every call site. Overlays that must escape their glass ancestor
+   * entirely are portaled to `document.body` (see `createPortal` usage).
+   * --------------------------------------------------------------------- */
+  .layer-chrome {
+    z-index: 20;
+  }
+  .layer-popup {
+    z-index: 30;
+  }
+  .layer-overlay {
+    z-index: 40;
+  }
+  .layer-call {
+    z-index: 50;
+  }
+  .layer-toast {
+    z-index: 60;
+  }
+
   .elev-1 {
     box-shadow: var(--ui-elev-1);
   }
