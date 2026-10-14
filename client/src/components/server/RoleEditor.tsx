@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Modal from "@/components/Modal";
 import api, { apiErrorMessage } from "@/lib/api";
 import { useToast } from "@/stores/toastStore";
+import { useConfirm } from "@/hooks/useConfirm";
 import type { PermissionGroup, ServerRole } from "@/types";
 
 interface Props {
@@ -36,6 +37,7 @@ export default function RoleEditor({
   onRolesChanged,
 }: Props) {
   const toast = useToast();
+  const confirm = useConfirm();
   const [catalogue, setCatalogue] = useState<PermissionGroup[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(roles[0]?.id ?? null);
   const [creating, setCreating] = useState(false);
@@ -102,7 +104,13 @@ export default function RoleEditor({
 
   const remove = async (role: ServerRole) => {
     if (role.isEveryone) return;
-    if (!window.confirm(`Delete the role "${role.name}"? Everyone holding it loses those permissions.`)) return;
+    const ok = await confirm({
+      title: `Delete the role "${role.name}"?`,
+      message: "Everyone holding it loses those permissions.",
+      confirmLabel: "Delete",
+      tone: "danger",
+    });
+    if (!ok) return;
     try {
       await api.delete(`/servers/${serverId}/roles/${role.id}`);
       await refresh();

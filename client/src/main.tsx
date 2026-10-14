@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import ThemeProvider from "@/components/ThemeProvider";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import { ConfirmProvider } from "@/components/ConfirmDialog";
 import Toaster from "@/components/Toaster";
 import App from "./App";
 import "./index.css";
@@ -12,8 +13,10 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <ErrorBoundary>
       <BrowserRouter>
         <ThemeProvider>
-          <App />
-          <Toaster />
+          <ConfirmProvider>
+            <App />
+            <Toaster />
+          </ConfirmProvider>
         </ThemeProvider>
       </BrowserRouter>
     </ErrorBoundary>

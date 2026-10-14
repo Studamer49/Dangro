@@ -8,6 +8,8 @@ interface ModalProps {
   children: React.ReactNode;
   footer?: React.ReactNode;
   maxWidth?: string;
+  /** Overrides the overlay layer. Confirmation dialogs sit above other modals. */
+  overlayClassName?: string;
 }
 
 /**
@@ -28,6 +30,7 @@ export default function Modal({
   children,
   footer,
   maxWidth = "max-w-md",
+  overlayClassName = "layer-overlay",
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -57,7 +60,7 @@ export default function Modal({
 
   return createPortal(
     <div
-      className="fixed inset-0 layer-overlay flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm animate-overlay-in"
+      className={`fixed inset-0 ${overlayClassName} flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm animate-overlay-in`}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}

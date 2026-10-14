@@ -5,6 +5,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { useToast } from "@/stores/toastStore";
 import { useVoiceChannel } from "@/hooks/useVoiceChannel";
 import Modal from "@/components/Modal";
+import { useConfirm } from "@/hooks/useConfirm";
 import InviteModal from "@/components/server/InviteModal";
 import ServerSettingsModal from "@/components/server/ServerSettingsModal";
 import ChannelEditModal from "@/components/server/ChannelEditModal";
@@ -31,6 +32,7 @@ export default function ChannelSidebar() {
   const navigate = useNavigate();
   const currentUser = useAuthStore((s) => s.user);
   const toast = useToast();
+  const confirm = useConfirm();
 
   const [server, setServer] = useState<Server | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -221,7 +223,13 @@ export default function ChannelSidebar() {
 
   const deleteCategory = async (category: Category) => {
     if (!server) return;
-    if (!window.confirm(`Delete "${category.name}"? Its channels move out, they are not deleted.`)) return;
+    const ok = await confirm({
+      title: `Delete "${category.name}"?`,
+      message: "Its channels move out, they are not deleted.",
+      confirmLabel: "Delete",
+      tone: "danger",
+    });
+    if (!ok) return;
     try {
       await api.delete(`/categories/${category.id}`);
       setCategories((prev) => prev.filter((c) => c.id !== category.id));

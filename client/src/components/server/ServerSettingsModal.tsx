@@ -5,6 +5,7 @@ import RoleEditor from "@/components/server/RoleEditor";
 import api, { apiErrorMessage } from "@/lib/api";
 import { useToast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
+import { useConfirm } from "@/hooks/useConfirm";
 import type { Member, Role, Server, ServerRole } from "@/types";
 
 interface Props {
@@ -38,6 +39,7 @@ function RoleChip({ name, color }: { name: string; color: string | null }) {
 
 export default function ServerSettingsModal({ server, myRole, onClose, onOpenInvites, onSaved }: Props) {
   const toast = useToast();
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const currentUser = useAuthStore((s) => s.user);
   const [tab, setTab] = useState<Tab>("overview");
@@ -133,7 +135,13 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
   };
 
   const transfer = async (member: Member) => {
-    if (!confirm(`Transfer ownership to ${member.user?.username}? You will become an admin.`)) return;
+    const ok = await confirm({
+      title: `Transfer ownership to ${member.user?.username}?`,
+      message: "You will become an admin.",
+      confirmLabel: "Transfer",
+      tone: "danger",
+    });
+    if (!ok) return;
     try {
       await api.post(`/servers/${server.id}/transfer`, { memberId: member.id });
       toast.success("Ownership transferred");

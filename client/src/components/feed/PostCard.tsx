@@ -1,6 +1,7 @@
 import { useState } from "react";
 import api, { apiErrorMessage } from "@/lib/api";
 import { useToast } from "@/stores/toastStore";
+import { useConfirm } from "@/hooks/useConfirm";
 import { useBounce } from "@/hooks/useBounce";
 import type { Post, User } from "@/types";
 import CommentsSection from "./CommentsSection";
@@ -25,6 +26,7 @@ export default function PostCard({
   onEdit,
 }: PostCardProps) {
   const toast = useToast();
+  const confirm = useConfirm();
   const [showComments, setShowComments] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(post.caption ?? "");
@@ -42,8 +44,14 @@ export default function PostCard({
   const commentCount = post._count?.comments ?? 0;
   const isOwnPost = viewer !== null && post.authorId === viewer.id;
 
-  const handleDelete = () => {
-    if (window.confirm("Delete this post?")) onDelete(post.id);
+  const handleDelete = async () => {
+    const ok = await confirm({
+      title: "Delete this post?",
+      message: "This cannot be undone.",
+      confirmLabel: "Delete",
+      tone: "danger",
+    });
+    if (ok) onDelete(post.id);
   };
 
   const startEditing = () => {

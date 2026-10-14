@@ -4,6 +4,7 @@ import { getSocket } from "@/lib/socket";
 import { useBounce } from "@/hooks/useBounce";
 import api from "@/lib/api";
 import Avatar from "@/components/Avatar";
+import { useConfirm } from "@/hooks/useConfirm";
 import type { Conversation, DirectMessage, User } from "@/types";
 
 interface Props {
@@ -43,6 +44,7 @@ function ConversationRow({
 
 export default function ConversationList({ activeConversation, onSelectConversation }: Props) {
   const user = useAuthStore((s) => s.user);
+  const confirm = useConfirm();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<User[]>([]);
@@ -265,7 +267,12 @@ export default function ConversationList({ activeConversation, onSelectConversat
   };
 
   const declineRequest = async (conversation: Conversation) => {
-    if (!window.confirm(`Delete the message request from ${conversation.otherUser?.username ?? "this user"}?`)) {
+    const ok = await confirm({
+      title: `Delete the message request from ${conversation.otherUser?.username ?? "this user"}?`,
+      confirmLabel: "Delete",
+      tone: "danger",
+    });
+    if (!ok) {
       return;
     }
     try {

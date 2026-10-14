@@ -135,9 +135,11 @@ export default function LoginPage() {
           />
 
           <div className="relative flex items-center gap-2.5">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-accent-400 to-accent-600 shadow-glow">
-              <span className="text-lg font-bold text-white">D</span>
-            </div>
+            <img
+              src="/logo.png"
+              alt="Dangro"
+              className="h-9 w-9 rounded-xl object-cover shadow-glow"
+            />
             <span className="text-lg font-bold tracking-tight text-white">Dangro</span>
           </div>
 

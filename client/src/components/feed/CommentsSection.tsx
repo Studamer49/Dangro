@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import api, { apiErrorMessage } from "@/lib/api";
 import { useToast } from "@/stores/toastStore";
+import { useConfirm } from "@/hooks/useConfirm";
 import Avatar from "@/components/Avatar";
 import type { PostComment, User } from "@/types";
 
@@ -13,6 +14,7 @@ interface CommentsSectionProps {
 
 export default function CommentsSection({ postId, viewer, onCountChange }: CommentsSectionProps) {
   const toast = useToast();
+  const confirm = useConfirm();
   const [comments, setComments] = useState<PostComment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +98,12 @@ export default function CommentsSection({ postId, viewer, onCountChange }: Comme
   };
 
   const remove = async (comment: PostComment) => {
-    if (!window.confirm("Delete this comment?")) return;
+    const ok = await confirm({
+      title: "Delete this comment?",
+      confirmLabel: "Delete",
+      tone: "danger",
+    });
+    if (!ok) return;
     try {
       await api.delete(`/posts/comments/${comment.id}`);
       setComments((prev) => prev.filter((entry) => entry.id !== comment.id));

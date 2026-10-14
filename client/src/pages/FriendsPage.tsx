@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import api, { apiErrorMessage } from "@/lib/api";
 import { useToast } from "@/stores/toastStore";
 import type { Friend, FriendRequest, User } from "@/types";
+import { useConfirm } from "@/hooks/useConfirm";
 import EmptyState from "@/components/friends/EmptyState";
 import NavTab from "@/components/friends/NavTab";
 import UserRow from "@/components/friends/UserRow";
@@ -41,6 +42,7 @@ export default function FriendsPage() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const toast = useToast();
+  const confirm = useConfirm();
   const toastRef = useRef(toast);
   const searchSeqRef = useRef(0);
 
@@ -178,7 +180,12 @@ export default function FriendsPage() {
   const removeFriend = async (friend: Friend) => {
     const target = friend.friend;
     if (!target) return;
-    if (!window.confirm(`Remove ${target.username} from your friends?`)) return;
+    const ok = await confirm({
+      title: `Remove ${target.username} from your friends?`,
+      confirmLabel: "Remove",
+      tone: "danger",
+    });
+    if (!ok) return;
 
     setBusyId(target.id);
     try {
