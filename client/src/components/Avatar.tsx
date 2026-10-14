@@ -1,19 +1,21 @@
+import { Link } from "react-router-dom";
 import type { User } from "@/types";
 
 interface AvatarProps {
-  user?: Pick<User, "username" | "avatar"> | null;
+  user?: Pick<User, "id" | "username" | "avatar"> | null;
   className?: string;
-  /** Optional presence dot. Omit in tight layouts where the ring would clip. */
+  /**
+   * Wraps the picture in a link to the user's profile. Turn it off where the
+   * avatar already sits inside a button or a call overlay.
+   */
+  linkToProfile?: boolean;
   status?: User["status"];
-  /** Adds the lit rim — use for the viewer's own identity, not every user. */
   lit?: boolean;
 }
 
 /**
- * Presence colours are keyed to the status rather than the theme, because
- * "this person is busy" has to mean the same thing in every theme. Busy/idle
- * also get a soft halo so they separate from the surface without needing a
- * second shape.
+ * Status colour: the online/away/busy/offline dot. Kept as a small palette
+ * rather than the full accent system because it reads as a signal, not chrome.
  */
 const STATUS_STYLES: Record<User["status"], { dot: string; ring: string }> = {
   online: { dot: "bg-emerald-400", ring: "" },
@@ -22,10 +24,16 @@ const STATUS_STYLES: Record<User["status"], { dot: string; ring: string }> = {
   offline: { dot: "bg-gray-500", ring: "" },
 };
 
-export default function Avatar({ user, className = "", status, lit = false }: AvatarProps) {
+export default function Avatar({
+  user,
+  className = "",
+  linkToProfile = true,
+  status,
+  lit = false,
+}: AvatarProps) {
   // Gradient from the accent hue keeps the placeholder initials from looking
   // like a flat grey block, while still tracking whatever accent is selected.
-  return (
+  const avatar = (
     <span className={`relative inline-flex shrink-0 select-none ${className}`}>
       <span
         className={`flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-accent-500 to-accent-700 font-bold text-white ${
@@ -49,4 +57,19 @@ export default function Avatar({ user, className = "", status, lit = false }: Av
       )}
     </span>
   );
+
+  if (linkToProfile && user?.id) {
+    return (
+      <Link
+        to={`/profile/${user.id}`}
+        onClick={(event) => event.stopPropagation()}
+        className="inline-flex"
+        aria-label={`View ${user.username}'s profile`}
+      >
+        {avatar}
+      </Link>
+    );
+  }
+
+  return avatar;
 }

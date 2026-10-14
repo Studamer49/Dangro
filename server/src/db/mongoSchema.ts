@@ -69,6 +69,7 @@ export const MODELS: Record<string, ModelDef> = {
       password: { type: "string" },
       bio: { type: "string", optional: true },
       avatar: { type: "string", optional: true },
+      isPrivate: { type: "boolean", default: false },
       status: { type: "string", default: "offline" },
       lastSeen: { type: "date", default: () => new Date() },
       createdAt: { type: "date", default: () => new Date() },

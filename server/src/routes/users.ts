@@ -15,6 +15,7 @@ const updateProfileSchema = z.object({
   bio: z.string().max(500).optional(),
   avatar: nullableMediaUrl(),
   status: z.enum(["online", "idle", "dnd", "offline"]).optional(),
+  isPrivate: z.boolean().optional(),
 });
 
 const searchQuerySchema = z.object({
@@ -27,6 +28,7 @@ const publicUserSelect = {
   avatar: true,
   bio: true,
   status: true,
+  isPrivate: true,
 } as const;
 
 router.get(
@@ -70,6 +72,7 @@ router.get(
         username: true,
         bio: true,
         avatar: true,
+        isPrivate: true,
         status: true,
         lastSeen: true,
         createdAt: true,
@@ -93,7 +96,7 @@ router.patch(
       throw AppError.of("BAD_REQUEST", "Nothing to update");
     }
 
-    const data: Record<string, string | null> = {};
+    const data: Record<string, string | null | boolean> = {};
 
     if (input.username !== undefined) {
       const existing = await prisma.user.findFirst({
@@ -117,6 +120,7 @@ router.patch(
     if (input.bio !== undefined) data.bio = input.bio;
     if (input.avatar !== undefined) data.avatar = input.avatar ?? null;
     if (input.status !== undefined) data.status = input.status;
+    if (input.isPrivate !== undefined) data.isPrivate = input.isPrivate;
 
     // Read the outgoing avatar before the write, because nothing but this
     // route knows which asset the row used to point at. Without it a replaced
@@ -138,6 +142,7 @@ router.patch(
         email: true,
         bio: true,
         avatar: true,
+        isPrivate: true,
         status: true,
         lastSeen: true,
         createdAt: true,

@@ -92,6 +92,26 @@ router.get(
     const viewerId = requireUser(req);
     const authorId = paramId(req.params.userId, "user id");
 
+    const author = await prisma.user.findUnique({
+      where: { id: authorId },
+      select: { isPrivate: true },
+    });
+    if (!author) throw AppError.of("NOT_FOUND", "User not found");
+
+    // A private profile hides its posts from everyone except itself and the
+    // people it has accepted a follow from. Enforced here as well as in the UI,
+    // because the profile page is not the only way to reach this endpoint.
+    if (author.isPrivate && viewerId !== authorId) {
+      const follows = await prisma.follow.findUnique({
+        where: { followerId_followingId: { followerId: viewerId, followingId: authorId } },
+        select: { id: true },
+      });
+      if (!follows) {
+        ok(res, { posts: [] });
+        return;
+      }
+    }
+
     const posts = await prisma.post.findMany({
       where: { authorId },
       include: withViewer(viewerId),

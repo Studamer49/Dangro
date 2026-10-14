@@ -352,7 +352,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
                   onClick={() => startConversation(u.id)}
                   className="flex w-full items-center gap-3 rounded-xl px-2 py-2 text-left transition-colors duration-200 ease-out hover:bg-accent-500/10"
                 >
-                  <Avatar user={u} className="h-8 w-8 text-xs" />
+                  <Avatar user={u} className="h-8 w-8 text-xs" linkToProfile={false} />
                   <span className="truncate text-sm font-medium text-gray-200">{u.username}</span>
                 </button>
               ))}
@@ -439,6 +439,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
                     user={conv.otherUser}
                     status={conv.otherUser?.status}
                     className="h-10 w-10 text-sm"
+                    linkToProfile={false}
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between">

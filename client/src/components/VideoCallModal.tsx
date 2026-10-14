@@ -121,7 +121,7 @@ export default function VideoCallModal() {
               />
               <div className="relative text-center">
                 <div className={isConnected ? "" : "animate-pulse"}>
-                  <Avatar user={targetUser} className="mx-auto mb-4 h-24 w-24 text-4xl" />
+                  <Avatar user={targetUser} className="mx-auto mb-4 h-24 w-24 text-4xl" linkToProfile={false} />
                 </div>
                 <p className="text-xl font-semibold tracking-tight text-white">{targetUser?.username}</p>
                 <p className="tabular mt-2 text-sm text-gray-400">

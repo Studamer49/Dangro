@@ -71,7 +71,7 @@ export default function StoriesBar({ groups, viewer, onAdded }: StoriesBarProps)
                 }`}
               >
                 <span className="block rounded-full bg-gray-950 p-[2px]">
-                  <Avatar user={myGroup?.author ?? viewer} className="h-14 w-14" />
+                  <Avatar user={myGroup?.author ?? viewer} className="h-14 w-14" linkToProfile={false} />
                 </span>
               </span>
               <span
@@ -96,7 +96,7 @@ export default function StoriesBar({ groups, viewer, onAdded }: StoriesBarProps)
             >
               <span className={`block rounded-full p-[2.5px] transition-transform duration-200 ease-out group-hover:scale-105 ${RING_UNSEEN}`}>
                 <span className="block rounded-full bg-gray-950 p-[2px]">
-                  <Avatar user={group.author} className="h-14 w-14" />
+                  <Avatar user={group.author} className="h-14 w-14" linkToProfile={false} />
                 </span>
               </span>
               <span className="w-full truncate text-center text-[11px] font-medium text-gray-400 transition-colors duration-200 ease-out group-hover:text-white">

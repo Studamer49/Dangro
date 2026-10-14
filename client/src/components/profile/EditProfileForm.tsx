@@ -16,6 +16,7 @@ interface ProfileUpdatePayload {
   username?: string;
   bio?: string;
   avatar?: string | null;
+  isPrivate?: boolean;
 }
 
 export default function EditProfileForm({ user, onSaved, onCancel }: EditProfileFormProps) {
@@ -25,6 +26,7 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
   const [username, setUsername] = useState(user.username);
   const [bio, setBio] = useState(user.bio ?? "");
   const [avatar, setAvatar] = useState<string | null>(user.avatar);
+  const [isPrivate, setIsPrivate] = useState(user.isPrivate ?? false);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -64,6 +66,7 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
     if (trimmedUsername !== user.username) payload.username = trimmedUsername;
     if (trimmedBio !== (user.bio ?? "")) payload.bio = trimmedBio;
     if (avatar !== user.avatar) payload.avatar = avatar;
+    if (isPrivate !== (user.isPrivate ?? false)) payload.isPrivate = isPrivate;
 
     if (Object.keys(payload).length === 0) {
       toast.info("No changes to save.");
@@ -78,6 +81,7 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
       setUsername(updated.username);
       setBio(updated.bio ?? "");
       setAvatar(updated.avatar);
+      setIsPrivate(updated.isPrivate ?? false);
       toast.success("Profile updated.");
       onSaved?.(updated);
     } catch (err) {
@@ -175,6 +179,21 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
             sideways on every keystroke as the digit count changes width. */}
         <p className="tabular mt-1.5 text-right text-xs text-gray-500">{bio.length}/500</p>
       </div>
+
+      <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-700 bg-gray-800 p-3">
+        <input
+          type="checkbox"
+          checked={isPrivate}
+          onChange={(e) => setIsPrivate(e.target.checked)}
+          className="mt-0.5 h-4 w-4 accent-accent-600"
+        />
+        <span>
+          <span className="block text-sm font-medium text-gray-200">Private account</span>
+          <span className="block text-xs text-gray-500">
+            Only followers can see your posts.
+          </span>
+        </span>
+      </label>
 
       <div className="flex justify-end gap-2">
         {onCancel && (

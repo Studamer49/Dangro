@@ -26,6 +26,7 @@ const userSelect = {
   email: true,
   bio: true,
   avatar: true,
+  isPrivate: true,
   status: true,
   lastSeen: true,
   createdAt: true,

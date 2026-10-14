@@ -55,7 +55,7 @@ function RemoteTile({
           <video ref={videoRef} autoPlay playsInline muted className="h-full w-full object-cover" />
         ) : (
           <div className="flex h-full w-full items-center justify-center">
-            <Avatar user={peer.user} className="h-10 w-10 text-sm" />
+            <Avatar user={peer.user} className="h-10 w-10 text-sm" linkToProfile={false} />
           </div>
         )}
         {!showVideo && (
@@ -132,7 +132,7 @@ export default function VoiceChannelPanel({
               <video ref={localVideoRef} autoPlay playsInline muted className="h-full w-full object-cover" style={{ transform: "scaleX(-1)" }} />
             ) : (
               <div className="flex h-full w-full items-center justify-center">
-                <Avatar user={localUser} className="h-10 w-10 text-sm" />
+                <Avatar user={localUser} className="h-10 w-10 text-sm" linkToProfile={false} />
               </div>
             )}
             <span className="absolute bottom-1 left-1 max-w-[90%] truncate rounded bg-black/60 px-1.5 py-0.5 text-[11px] text-gray-200">

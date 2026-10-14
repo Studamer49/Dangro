@@ -83,7 +83,7 @@ export default function CallInvitation() {
                 ringing ? "animate-glow-pulse" : ""
               }`}
             >
-              <Avatar user={incomingCall.caller} className="h-20 w-20 text-3xl" />
+              <Avatar user={incomingCall.caller} className="h-20 w-20 text-3xl" linkToProfile={false} />
             </div>
 
             <p className="eyebrow">Incoming {incomingCall.callType} call</p>

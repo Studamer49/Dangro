@@ -186,9 +186,16 @@ export default function ProfilePage() {
               </div>
             </div>
 
-            <h1 className="mt-4 text-2xl font-bold tracking-tight text-white">
-              {profileUser.username}
-            </h1>
+            <div className="mt-4 flex items-center gap-2">
+              <h1 className="text-2xl font-bold tracking-tight text-white">
+                {profileUser.username}
+              </h1>
+              {profileUser.isPrivate && (
+                <span className="rounded-full border border-gray-700/60 bg-gray-800/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                  Private
+                </span>
+              )}
+            </div>
             {profileUser.bio && (
               <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-gray-400">
                 {profileUser.bio}
@@ -218,7 +225,27 @@ export default function ProfilePage() {
         </div>
 
         <div className="mt-6">
-          {posts.length === 0 ? (
+          {profileUser.isPrivate && !isOwnProfile && !isFollowing ? (
+            <div className="glass-card animate-fade-up flex flex-col items-center gap-3 rounded-2xl px-6 py-14 text-center">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-gray-700/60 bg-gray-800/40 text-gray-500">
+                <svg
+                  className="h-7 w-7"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth={1.6}
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zM16 8V7a4 4 0 00-8 0v1"
+                  />
+                </svg>
+              </div>
+              <p className="text-sm font-semibold text-gray-300">This account is private</p>
+              <p className="text-xs text-gray-500">Follow this account to see their posts.</p>
+            </div>
+          ) : posts.length === 0 ? (
             <div className="glass-card animate-fade-up flex flex-col items-center gap-3 rounded-2xl px-6 py-14 text-center">
               <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-gray-700/60 bg-gray-800/40 text-gray-500">
                 <svg
