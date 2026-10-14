@@ -10,14 +10,14 @@ interface EditProfileModalProps {
 export default function EditProfileModal({ user, onClose, onSaved }: EditProfileModalProps) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       onMouseDown={onClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label="Edit profile"
-        className="max-h-full w-full max-w-md overflow-y-auto rounded-xl bg-gray-900 p-6"
+        className="anim-pop-in max-h-full w-full max-w-md overflow-y-auto rounded-xl bg-gray-900 p-6"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="mb-5 flex items-center justify-between">

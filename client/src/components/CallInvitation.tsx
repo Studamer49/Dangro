@@ -71,8 +71,8 @@ export default function CallInvitation() {
   if (!incomingCall) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70">
-      <div className="w-full max-w-sm rounded-2xl bg-gray-900 p-6 text-center shadow-2xl">
+    <div className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/70">
+      <div className="anim-pop-in w-full max-w-sm rounded-2xl bg-gray-900 p-6 text-center shadow-2xl">
         <Avatar user={incomingCall.caller} className={`h-20 w-20 text-3xl ${ringing ? "animate-pulse" : ""}`} />
         <h3 className="text-lg font-bold text-white">{incomingCall.caller?.username || "Unknown"}</h3>
         <p className="mt-1 text-sm text-gray-400">

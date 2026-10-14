@@ -457,7 +457,10 @@ export default function ChatArea() {
       )}
 
       {replyTo && (
-        <div className="flex items-center gap-2 border-t border-gray-800 bg-gray-900 px-4 py-2">
+        <div
+          key={replyTo.id}
+          className="anim-reply-in flex items-center gap-2 border-t border-gray-800 bg-gray-900 px-4 py-2"
+        >
           <span className="text-xs text-gray-400">
             Replying to <span className="font-medium text-gray-300">{replyTo.author?.username}</span>: {replyTo.content}
           </span>

@@ -50,7 +50,7 @@ export default function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -61,7 +61,7 @@ export default function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`w-full ${maxWidth} rounded-xl bg-gray-900 p-6 shadow-2xl outline-none`}
+        className={`anim-pop-in w-full ${maxWidth} rounded-xl bg-gray-900 p-6 shadow-2xl outline-none`}
       >
         <div className="mb-4 flex items-start justify-between gap-4">
           <h3 className="text-lg font-bold text-white">{title}</h3>

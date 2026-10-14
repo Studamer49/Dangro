@@ -745,7 +745,10 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
       )}
 
       {replyTo && (
-        <div className="flex items-center gap-2 border-t border-gray-800 bg-gray-900 px-4 py-2">
+        <div
+          key={replyTo.id}
+          className="anim-reply-in flex items-center gap-2 border-t border-gray-800 bg-gray-900 px-4 py-2"
+        >
           <div className="min-w-0 flex-1">
             <p className="text-xs text-gray-400">
               Replying to <span className="font-medium text-gray-300">{replyTo.sender?.username}</span>

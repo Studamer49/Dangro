@@ -1,6 +1,7 @@
 import { useState } from "react";
 import api, { apiErrorMessage } from "@/lib/api";
 import { useToast } from "@/stores/toastStore";
+import { useBounce } from "@/hooks/useBounce";
 import type { Post, User } from "@/types";
 import CommentsSection from "./CommentsSection";
 import Avatar from "@/components/Avatar";
@@ -28,6 +29,10 @@ export default function PostCard({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(post.caption ?? "");
   const [saving, setSaving] = useState(false);
+
+  // Heart pop + count nudge, played on every like/unlike tap.
+  const { ref: heartRef, bounce: bounceHeart } = useBounce<HTMLSpanElement>();
+  const { ref: likeCountRef, bounce: bounceLikeCount } = useBounce<HTMLSpanElement>();
 
   const liked = (post.likes?.length ?? 0) > 0;
   const likeCount = post._count?.likes ?? 0;
@@ -119,22 +124,30 @@ export default function PostCard({
         <div className="flex items-center gap-4">
           <button
             type="button"
-            onClick={() => onLike(post)}
+            onClick={() => {
+              bounceHeart("like");
+              bounceLikeCount("pop");
+              onLike(post);
+            }}
             aria-pressed={liked}
             aria-label={liked ? "Unlike post" : "Like post"}
             className={`flex items-center gap-1.5 transition-colors ${
               liked ? "text-red-500 hover:text-red-400" : "text-gray-400 hover:text-red-400"
             }`}
           >
-            <svg className="h-6 w-6" fill={liked ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
-              />
-            </svg>
-            <span className="text-sm font-medium">{likeCount}</span>
+            <span ref={heartRef} className="inline-flex">
+              <svg className="h-6 w-6" fill={liked ? "currentColor" : "none"} stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"
+                />
+              </svg>
+            </span>
+            <span ref={likeCountRef} className="inline-block text-sm font-medium">
+              {likeCount}
+            </span>
           </button>
           <button
             type="button"

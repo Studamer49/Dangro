@@ -156,13 +156,13 @@ export default function StoryViewer({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/95"
+      className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/95"
       role="dialog"
       aria-modal="true"
       aria-label={`${group.author.username}'s story`}
       data-testid="story-viewer"
     >
-      <div className="relative w-full max-w-md">
+      <div className="anim-pop-in relative w-full max-w-md">
         {/* Progress segments */}
         <div className="mb-2 flex gap-1 px-3">
           {stories.map((entry, entryIndex) => (

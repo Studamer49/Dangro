@@ -1,9 +1,36 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, type ButtonHTMLAttributes } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { useToast } from "@/stores/toastStore";
+import { useBounce, type BounceVariant } from "@/hooks/useBounce";
 import api, { apiErrorMessage } from "@/lib/api";
 import type { Server } from "@/types";
+
+/**
+ * Sidebar button that plays a short bounce on click and forwards a click
+ * handler for navigation. The bounce is decorative, so it runs before the
+ * handler and never blocks it.
+ */
+function BouncyButton({
+  variant = "pop",
+  onClick,
+  children,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: BounceVariant }) {
+  const { ref, bounce } = useBounce<HTMLButtonElement>();
+  return (
+    <button
+      ref={ref}
+      {...rest}
+      onClick={(event) => {
+        bounce(variant);
+        onClick?.(event);
+      }}
+    >
+      {children}
+    </button>
+  );
+}
 
 export default function ServerSidebar() {
   const [servers, setServers] = useState<Server[]>([]);
@@ -81,7 +108,7 @@ export default function ServerSidebar() {
 
   return (
     <div className="flex w-[72px] flex-col items-center gap-2 bg-gray-950 py-3">
-      <button
+      <BouncyButton
         onClick={() => navigate("/feed")}
         className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-gray-400 transition-all hover:rounded-xl hover:bg-accent-600 hover:text-white"
         title="Feed"
@@ -89,9 +116,9 @@ export default function ServerSidebar() {
         <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
         </svg>
-      </button>
+      </BouncyButton>
 
-      <button
+      <BouncyButton
         onClick={() => navigate("/dms")}
         className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-gray-400 transition-all hover:rounded-xl hover:bg-green-600 hover:text-white"
         title="Messages"
@@ -99,9 +126,9 @@ export default function ServerSidebar() {
         <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
           <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" />
         </svg>
-      </button>
+      </BouncyButton>
 
-      <button
+      <BouncyButton
         onClick={() => navigate("/friends")}
         className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-gray-400 transition-all hover:rounded-xl hover:bg-accent-600 hover:text-white"
         title="Friends"
@@ -109,9 +136,9 @@ export default function ServerSidebar() {
         <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
           <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
         </svg>
-      </button>
+      </BouncyButton>
 
-      <button
+      <BouncyButton
         onClick={() => navigate("/explore")}
         className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-gray-400 transition-all hover:rounded-xl hover:bg-purple-600 hover:text-white"
         title="Explore"
@@ -119,12 +146,12 @@ export default function ServerSidebar() {
         <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
         </svg>
-      </button>
+      </BouncyButton>
 
       <div className="mx-2 h-0.5 w-8 rounded-full bg-gray-800" />
 
       {servers.map((server) => (
-        <button
+        <BouncyButton
           key={server.id}
           onClick={() => openChannel(server)}
           className="group relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-white transition-all hover:rounded-xl hover:bg-accent-600"
@@ -135,10 +162,10 @@ export default function ServerSidebar() {
           ) : (
             <span className="text-lg font-bold">{server.name?.[0]?.toUpperCase() ?? "?"}</span>
           )}
-        </button>
+        </BouncyButton>
       ))}
 
-      <button
+      <BouncyButton
         onClick={() => setShowJoinModal(true)}
         className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-purple-400 transition-all hover:rounded-xl hover:bg-purple-600 hover:text-white"
         title="Join a Server"
@@ -146,9 +173,9 @@ export default function ServerSidebar() {
         <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
         </svg>
-      </button>
+      </BouncyButton>
 
-      <button
+      <BouncyButton
         onClick={() => setShowCreateModal(true)}
         className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-green-500 transition-all hover:rounded-xl hover:bg-green-600 hover:text-white"
         title="Create Server"
@@ -156,11 +183,11 @@ export default function ServerSidebar() {
         <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m-7-7h14" />
         </svg>
-      </button>
+      </BouncyButton>
 
       <div className="mt-auto" />
 
-      <button
+      <BouncyButton
         onClick={() => navigate(`/profile/${user?.id}`)}
         className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-white transition-all hover:rounded-xl hover:bg-accent-600"
         title="Profile"
@@ -170,11 +197,11 @@ export default function ServerSidebar() {
         ) : (
           <span className="text-lg font-bold">{user?.username?.[0]?.toUpperCase() ?? "?"}</span>
         )}
-      </button>
+      </BouncyButton>
 
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-gray-900 p-6">
+        <div className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="anim-pop-in w-full max-w-md rounded-xl bg-gray-900 p-6">
             <h3 className="mb-4 text-lg font-bold text-white">Create Server</h3>
             <input
               type="text"
@@ -205,8 +232,8 @@ export default function ServerSidebar() {
       )}
 
       {showJoinModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-md rounded-xl bg-gray-900 p-6">
+        <div className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="anim-pop-in w-full max-w-md rounded-xl bg-gray-900 p-6">
             <h3 className="mb-1 text-lg font-bold text-white">Join a Server</h3>
             <p className="mb-4 text-sm text-gray-400">Enter an invite code to join.</p>
             <input

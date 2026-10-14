@@ -65,7 +65,7 @@ export default function VideoCallModal() {
   const isConnected = !!remoteStream;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-gray-950">
+    <div className="anim-fade-in fixed inset-0 z-50 flex flex-col bg-gray-950">
       <div className="relative flex-1">
         {isConnected && isVideoCall ? (
           <video

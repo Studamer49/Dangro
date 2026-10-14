@@ -186,3 +186,73 @@
 .hover\:bg-accent-900:hover { background-color: rgb(var(--accent-900-rgb) / 1); }
 
 .border-t-transparent { border-top-color: transparent; }
+
+/* Reply banner — slides up with a single soft overshoot, then settles.
+ * One iteration only: the element ends at translateY(0) and stays put. */
+@keyframes dangro-reply-in {
+  0% {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(-4px);
+  }
+  80% {
+    transform: translateY(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.anim-reply-in {
+  animation: dangro-reply-in 0.55s cubic-bezier(0.25, 1, 0.4, 1) both;
+}
+
+/* Popups (story viewer, modals) — scale up with one soft overshoot so they
+ * never just blink onto the screen. Runs once and settles at scale(1). */
+@keyframes dangro-pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.02);
+  }
+  75% {
+    transform: scale(0.995);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.anim-pop-in {
+  animation: dangro-pop-in 0.45s cubic-bezier(0.25, 1, 0.4, 1) both;
+}
+
+/* Backdrop behind a popup — a plain fade so the panel's pop reads clearly. */
+@keyframes dangro-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.anim-fade-in {
+  animation: dangro-fade-in 0.3s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-reply-in,
+  .anim-pop-in,
+  .anim-fade-in {
+    animation: none;
+  }
+}

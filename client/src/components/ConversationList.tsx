@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { getSocket } from "@/lib/socket";
+import { useBounce } from "@/hooks/useBounce";
 import api from "@/lib/api";
 import Avatar from "@/components/Avatar";
 import type { Conversation, DirectMessage, User } from "@/types";
@@ -8,6 +9,35 @@ import type { Conversation, DirectMessage, User } from "@/types";
 interface Props {
   activeConversation: Conversation | null;
   onSelectConversation: (conversation: Conversation) => void;
+}
+
+/**
+ * Conversation row wrapper that plays a short bounce on tap before selecting
+ * the conversation. Bounce and selection stay in the same handler so the
+ * animation always fires, even on the row that is already active.
+ */
+function ConversationRow({
+  onClick,
+  className,
+  children,
+}: {
+  onClick: () => void;
+  className: string;
+  children: ReactNode;
+}) {
+  const { ref, bounce } = useBounce<HTMLButtonElement>();
+  return (
+    <button
+      ref={ref}
+      onClick={() => {
+        bounce("tap");
+        onClick();
+      }}
+      className={className}
+    >
+      {children}
+    </button>
+  );
 }
 
 export default function ConversationList({ activeConversation, onSelectConversation }: Props) {
@@ -396,7 +426,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
                 conv.status === "pending" && conv.requestSenderId === user?.id;
 
               return (
-                <button
+                <ConversationRow
                   key={conv.id}
                   onClick={() => onSelectConversation(conv)}
                   className={`flex w-full items-center gap-3 px-4 py-3 text-left transition-colors ${
@@ -442,7 +472,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
                       </p>
                     )}
                   </div>
-                </button>
+                </ConversationRow>
               );
             })}
           </>

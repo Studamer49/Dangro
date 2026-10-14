@@ -2,6 +2,7 @@ import { create } from "zustand";
 import api, { apiErrorCode, invalidateSession, setAuthListeners } from "@/lib/api";
 import { connectSocket, disconnectSocket, setSocketToken } from "@/lib/socket";
 import { useCallStore } from "@/stores/callStore";
+import { devAuthEnabled, devUser } from "@/lib/devAuth";
 import type { User } from "@/types";
 
 interface AuthState {
@@ -21,6 +22,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   isAuthenticated: false,
 
   login: async (email, password) => {
+    // Local dev runs without a backend, so any credentials "succeed" and land
+    // the developer in the app. Never reachable in a production build.
+    if (devAuthEnabled) {
+      set({ user: devUser, isAuthenticated: true });
+      return;
+    }
     const { data } = await api.post("/auth/login", { email, password });
     localStorage.setItem("accessToken", data.accessToken);
     set({ user: data.user, isAuthenticated: true });
@@ -28,6 +35,10 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   register: async (username, email, password) => {
+    if (devAuthEnabled) {
+      set({ user: devUser, isAuthenticated: true });
+      return;
+    }
     const { data } = await api.post("/auth/register", {
       username,
       email,
@@ -60,6 +71,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   fetchUser: async () => {
+    // Local dev: no backend to ask, so treat the developer as already signed
+    // in. Without this the app would render the login screen on every reload.
+    if (devAuthEnabled) {
+      set({ user: devUser, isAuthenticated: true, isLoading: false });
+      return;
+    }
     try {
       const token = localStorage.getItem("accessToken");
       if (!token) {

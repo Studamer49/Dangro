@@ -18,7 +18,7 @@ export default function Toaster() {
         <button
           key={toast.id}
           onClick={() => dismiss(toast.id)}
-          className={`pointer-events-auto w-full rounded-lg border px-4 py-3 text-left text-sm shadow-xl backdrop-blur transition-opacity hover:opacity-90 ${styles[toast.variant]}`}
+          className={`anim-pop-in pointer-events-auto w-full rounded-lg border px-4 py-3 text-left text-sm shadow-xl backdrop-blur transition-opacity hover:opacity-90 ${styles[toast.variant]}`}
         >
           {toast.message}
         </button>
