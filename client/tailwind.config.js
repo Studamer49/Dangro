@@ -34,6 +34,9 @@ export default {
           950: "rgb(var(--ui-gray-950-rgb, 3 7 18) / <alpha-value>)",
         },
         white: "rgb(var(--ui-text-rgb, 255 255 255) / <alpha-value>)",
+        // Literal `black` (letterboxes, scrims, media chrome) inverts with the
+        // theme too: black in the dark themes, the page colour in light.
+        black: "rgb(var(--ui-bg-rgb, 5 6 15) / <alpha-value>)",
       },
       borderRadius: {
         lg: "var(--ui-radius-lg)",

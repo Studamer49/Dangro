@@ -190,11 +190,19 @@
   --ui-elev-2: 0 2px 4px rgb(23 37 84 / 0.06), 0 14px 30px -8px rgb(23 37 84 / 0.14);
   --ui-elev-3: 0 4px 10px rgb(23 37 84 / 0.08), 0 30px 60px -12px rgb(23 37 84 / 0.2);
 
-  --ui-gray-600-rgb: 71 85 118;
-  --ui-gray-500-rgb: 100 112 140;
-  --ui-gray-200-rgb: 223 229 241;
-  --ui-gray-100-rgb: 238 242 251;
-  --ui-gray-50-rgb: 247 249 253;
+  /* The gray ramp inverts along with the planes: in the dark themes the low
+     numbers (50–300) are the *brightest* shades and are used almost entirely
+     as text, while the high numbers (700–950) are surfaces. On a light page
+     that has to flip, so 50–200 become near-black text and 500–600 become the
+     faded text a placeholder wants. Leaving 50–200 light (as they were) made
+     every `text-gray-200` — comments, messages, names — near-white on white.
+     300/400/700/800/900/950 resolve from the planes above via the `:root`
+     aliases, so they already trail the theme. */
+  --ui-gray-600-rgb: 148 158 181;
+  --ui-gray-500-rgb: 122 133 158;
+  --ui-gray-200-rgb: 38 48 71;
+  --ui-gray-100-rgb: 23 30 50;
+  --ui-gray-50-rgb: 12 17 33;
 }
 
 .amoled {
