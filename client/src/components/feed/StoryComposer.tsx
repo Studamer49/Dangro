@@ -290,7 +290,10 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
             </button>
           )}
           {mode === "photo" && (
-            <label className="cursor-pointer rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500">
+            <label
+              data-bounce-subtle
+              className="cursor-pointer rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
+            >
               {busy ? "Uploading…" : editing ? "Replace" : "Choose a file"}
               <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => void sharePhoto(e)} />
             </label>

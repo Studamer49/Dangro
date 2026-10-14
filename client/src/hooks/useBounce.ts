@@ -106,11 +106,29 @@ export function useBounce<T extends Element = HTMLElement>() {
 }
 
 /**
+ * Everything that should read as "press" feedback. Real `<button>`s plus the
+ * other things people click that are not buttons: anchors/links, `<summary>`
+ * disclosure toggles, anything wearing a button-ish ARIA role, colour swatches,
+ * and any element explicitly opting in with `data-bounce-subtle`.
+ */
+const CLICKABLE_SELECTOR = [
+  "button",
+  "a[href]",
+  "summary",
+  '[role="button"]',
+  '[role="tab"]',
+  '[role="menuitem"]',
+  'input[type="color"]',
+  "[data-bounce-subtle]",
+].join(", ");
+
+/**
  * App-wide press feedback: one capture-phase listener on `document` plays the
- * subtle bounce on whichever `<button>` was clicked.
+ * subtle bounce on whichever clickable element was pressed.
  *
- * Opt a button out when it already animates itself with `data-bounce="self"`,
+ * Opt an element out when it already animates itself with `data-bounce="self"`,
  * or suppress it entirely with `data-no-bounce` (e.g. invisible tap zones).
+ * Elements that are not buttons can opt in with `data-bounce-subtle`.
  */
 export function useGlobalButtonBounce(): void {
   useEffect(() => {
@@ -118,13 +136,14 @@ export function useGlobalButtonBounce(): void {
       const target = event.target;
       if (!(target instanceof Element)) return;
 
-      const button = target.closest("button");
-      if (!(button instanceof HTMLElement)) return;
-      if (button.disabled) return;
-      if (button.dataset.bounce === "self") return;
-      if (button.dataset.noBounce !== undefined) return;
+      const el = target.closest(CLICKABLE_SELECTOR);
+      if (!(el instanceof HTMLElement)) return;
+      if (el.dataset.bounce === "self") return;
+      if (el.dataset.noBounce !== undefined) return;
+      // Skip anything the browser or the app has marked as not actionable.
+      if (el.matches(":disabled, [disabled], [aria-disabled='true']")) return;
 
-      playBounce(button, "subtle");
+      playBounce(el, "subtle");
     };
 
     document.addEventListener("click", handleClick, true);
