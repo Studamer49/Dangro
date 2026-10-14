@@ -9,20 +9,25 @@ import { destroyImageForUrl } from "../lib/cloudinary.js";
 
 const router = Router();
 
-const createPostSchema = z.object({
-  caption: z.string().max(2200).optional(),
-  media: z
-    .array(
-      z.object({
-        url: mediaUrl(),
-        type: z.enum(["image", "video"]),
-        width: z.number().int().min(0).max(10000).optional(),
-        height: z.number().int().min(0).max(10000).optional(),
-      })
-    )
-    .min(1)
-    .max(10),
-});
+const createPostSchema = z
+  .object({
+    caption: z.string().max(2200).optional(),
+    media: z
+      .array(
+        z.object({
+          url: mediaUrl(),
+          type: z.enum(["image", "video"]),
+          width: z.number().int().min(0).max(10000).optional(),
+          height: z.number().int().min(0).max(10000).optional(),
+        })
+      )
+      .max(10)
+      .default([]),
+  })
+  // A post with neither words nor media has nothing to show.
+  .refine((value) => Boolean(value.caption?.trim()) || value.media.length > 0, {
+    message: "Add a caption or some media",
+  });
 
 const createCommentSchema = z.object({ content: z.string().trim().min(1).max(500) });
 

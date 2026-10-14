@@ -1,13 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMatch, useNavigate } from "react-router-dom";
 import api, { apiErrorCode, apiErrorMessage } from "@/lib/api";
-import { getSocket } from "@/lib/socket";
 import { useAuthStore } from "@/stores/authStore";
 import { useToast } from "@/stores/toastStore";
+import { useVoiceChannel } from "@/hooks/useVoiceChannel";
 import Modal from "@/components/Modal";
 import InviteModal from "@/components/server/InviteModal";
 import ServerSettingsModal from "@/components/server/ServerSettingsModal";
 import ChannelEditModal from "@/components/server/ChannelEditModal";
+import VoiceChannelPanel from "@/components/VoiceChannelPanel";
 import type { Server, Channel, Category } from "@/types";
 
 /** Discord's sidebar: collapsible category folders, each holding channels. */
@@ -47,7 +48,8 @@ export default function ChannelSidebar() {
   const [newChannelCategory, setNewChannelCategory] = useState("");
   const [newCategoryName, setNewCategoryName] = useState("");
 
-  const [joinedVoiceId, setJoinedVoiceId] = useState<string | null>(null);
+  const voice = useVoiceChannel(currentUser);
+  const joinedVoiceId = voice.channelId;
   const [busy, setBusy] = useState(false);
 
   // useToast() is memoised on the store's push, but it is still safer to read
@@ -73,7 +75,7 @@ export default function ChannelSidebar() {
       if (loadedServerIdRef.current && nextId && loadedServerIdRef.current !== nextId) {
         // A voice session belongs to the channel it was joined in, so the bar
         // must not survive the jump into a different server.
-        setJoinedVoiceId(null);
+        voice.leave();
       }
       loadedServerIdRef.current = nextId;
       setServer(data.server);
@@ -93,7 +95,7 @@ export default function ChannelSidebar() {
         navigate("/explore", { replace: true });
       }
     }
-  }, [navigate]);
+  }, [navigate, voice.leave]);
 
   useEffect(() => {
     if (channelId) {
@@ -101,9 +103,13 @@ export default function ChannelSidebar() {
     } else {
       setServer(null);
       setChannels([]);
-      setJoinedVoiceId(null);
+      voice.leave();
     }
-  }, [channelId, fetchServerForChannel]);
+  }, [channelId, fetchServerForChannel, voice.leave]);
+
+  useEffect(() => {
+    if (voice.error) toastRef.current.error(voice.error);
+  }, [voice.error]);
 
   /**
    * The viewer's effective permissions, straight from the server.
@@ -246,18 +252,12 @@ export default function ChannelSidebar() {
     if (id === channelId) navigate("/explore");
   };
 
-  const joinVoice = (voiceChannelId: string) => {
-    const socket = getSocket();
-    socket.emit("voice_leave", { channelId: joinedVoiceId });
-    socket.emit("voice_join", { channelId: voiceChannelId });
-    setJoinedVoiceId(voiceChannelId);
+  const joinVoice = (channel: Channel) => {
+    void voice.join(channel.id, channel.name);
   };
 
   const leaveVoice = () => {
-    if (joinedVoiceId) {
-      getSocket().emit("voice_leave", { channelId: joinedVoiceId });
-      setJoinedVoiceId(null);
-    }
+    voice.leave();
   };
 
   if (!server) {
@@ -275,7 +275,7 @@ export default function ChannelSidebar() {
     return (
       <div key={channel.id} className="group/channel relative flex items-center">
         <button
-          onClick={() => (isVoice ? joinVoice(channel.id) : navigate(`/channels/${channel.id}`))}
+          onClick={() => (isVoice ? joinVoice(channel) : navigate(`/channels/${channel.id}`))}
           className={`flex-1 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
             active
               ? isVoice
@@ -599,6 +599,21 @@ export default function ChannelSidebar() {
             setShowInvites(true);
           }}
           onSaved={(updated) => setServer((prev) => (prev ? { ...prev, ...updated } : prev))}
+        />
+      )}
+
+      {joinedVoiceId && (
+        <VoiceChannelPanel
+          channelName={voice.channelName}
+          connecting={voice.connecting}
+          localUser={currentUser}
+          localStream={voice.localStream}
+          micEnabled={voice.micEnabled}
+          cameraEnabled={voice.cameraEnabled}
+          peers={voice.peers}
+          onToggleMic={voice.toggleMic}
+          onToggleCamera={voice.toggleCamera}
+          onLeave={voice.leave}
         />
       )}
     </div>

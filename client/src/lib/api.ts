@@ -18,7 +18,6 @@ const AUTH_ENDPOINTS = ["/auth/login", "/auth/register", "/auth/refresh", "/auth
 const api = axios.create({
   baseURL: API_BASE,
   withCredentials: true,
-  headers: { "Content-Type": "application/json" },
 });
 
 api.interceptors.request.use((config) => {

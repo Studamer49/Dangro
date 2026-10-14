@@ -268,8 +268,20 @@ export function setupSocketHandlers(io: SocketServer): void {
       const data = parse(channelRef, payload);
       if (!data) return;
       if (!(await isChannelMember(data.channelId, userId))) return;
-      void socket.join(`voice:${data.channelId}`);
-      socket.to(`voice:${data.channelId}`).emit("voice_user_join", { userId, channelId: data.channelId });
+
+      const room = `voice:${data.channelId}`;
+      // Read the room BEFORE this socket joins it: the members already inside
+      // only learn about the newcomer from the broadcast below, so the
+      // newcomer is the only side that needs — and can be given — the roster.
+      const existing = await io.in(room).fetchSockets();
+      const peers = existing
+        .map((member) => member.data.userId as string | undefined)
+        .filter((id): id is string => Boolean(id) && id !== userId)
+        .map((id) => ({ userId: id }));
+
+      void socket.join(room);
+      socket.emit("voice_peers", { channelId: data.channelId, peers });
+      socket.to(room).emit("voice_user_join", { userId, channelId: data.channelId });
     });
 
     socket.on("voice_leave", (payload: unknown) => {
@@ -395,6 +407,20 @@ export function setupSocketHandlers(io: SocketServer): void {
       if (!data) return;
       if (!callBetween(userId, data.targetUserId)) return;
       io.to(`user:${data.targetUserId}`).emit("ice_candidate", { userId, candidate: data.signal });
+    });
+
+    socket.on("disconnecting", () => {
+      // A dropped connection never gets to emit `voice_leave`, so the other
+      // members would keep a ghost participant. `disconnecting` still has the
+      // socket's rooms; `disconnect` has already left them.
+      for (const room of socket.rooms) {
+        if (room.startsWith("voice:")) {
+          socket.to(room).emit("voice_user_leave", {
+            userId,
+            channelId: room.slice("voice:".length),
+          });
+        }
+      }
     });
 
     socket.on("disconnect", () => {

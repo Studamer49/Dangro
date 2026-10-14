@@ -1,14 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { getSocket } from "@/lib/socket";
+import { ICE_SERVERS } from "@/lib/iceServers";
 import { useCallStore } from "@/stores/callStore";
-
-const ICE_SERVERS: RTCConfiguration = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    { urls: "stun:stun2.l.google.com:19302" },
-  ],
-};
 
 export function useWebRTC() {
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
@@ -57,8 +50,17 @@ export function useWebRTC() {
     };
 
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "disconnected" || pc.connectionState === "failed") {
+      if (pc.connectionState === "failed") {
         endCall();
+      } else if (pc.connectionState === "disconnected") {
+        // "disconnected" is frequently transient — a brief network blip that
+        // recovers to "connected" on its own. Ending the call at once tore down
+        // sessions that would have survived, so give it a grace period first.
+        window.setTimeout(() => {
+          if (peerConnectionRef.current === pc && pc.connectionState === "disconnected") {
+            endCall();
+          }
+        }, 5000);
       }
     };
 

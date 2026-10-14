@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useCallStore } from "@/stores/callStore";
 import { useWebRTC } from "@/hooks/useWebRTC";
 import { useToast } from "@/stores/toastStore";
@@ -24,6 +24,11 @@ export default function VideoCallModal() {
   const { callError } = useWebRTC();
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  // Remote audio is played through its own element, not the remote <video>,
+  // so a voice-only call (which renders no video) still produces sound.
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
+  const [volume, setVolume] = useState(1);
+  const [needsAudioTap, setNeedsAudioTap] = useState(false);
 
   // useToast() returns a new wrapper object every render. Depending on it
   // here would re-run this effect on every render and, with a persistent
@@ -50,7 +55,19 @@ export default function VideoCallModal() {
     if (remoteVideoRef.current && remoteStream) {
       remoteVideoRef.current.srcObject = remoteStream;
     }
+    const audio = remoteAudioRef.current;
+    if (audio && remoteStream) {
+      audio.srcObject = remoteStream;
+      // Autoplay can be refused (the "connected" click is not always counted
+      // as the gesture that unlocks audio); surface a tap-to-hear button when
+      // that happens rather than staying silent for the whole call.
+      audio.play().catch(() => setNeedsAudioTap(true));
+    }
   }, [remoteStream]);
+
+  useEffect(() => {
+    if (remoteAudioRef.current) remoteAudioRef.current.volume = volume;
+  }, [volume, remoteStream]);
 
   // Caller hears a ringtone while waiting for the other side to answer.
   useEffect(() => {
@@ -66,12 +83,14 @@ export default function VideoCallModal() {
 
   return (
     <div className="anim-fade-in fixed inset-0 z-50 flex flex-col bg-gray-950">
+      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
       <div className="relative flex-1">
         {isConnected && isVideoCall ? (
           <video
             ref={remoteVideoRef}
             autoPlay
             playsInline
+            muted
             className="h-full w-full object-cover"
           />
         ) : (
@@ -105,6 +124,21 @@ export default function VideoCallModal() {
               style={{ transform: "scaleX(-1)" }}
             />
           </div>
+        )}
+
+        {needsAudioTap && (
+          <button
+            type="button"
+            onClick={() => {
+              remoteAudioRef.current
+                ?.play()
+                .then(() => setNeedsAudioTap(false))
+                .catch(() => undefined);
+            }}
+            className="anim-pop-in absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-accent-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:bg-accent-500"
+          >
+            Tap to hear the call
+          </button>
         )}
       </div>
 
@@ -145,6 +179,38 @@ export default function VideoCallModal() {
             )}
           </button>
         )}
+
+        <div className="flex items-center gap-2 rounded-full bg-gray-800 px-3 py-1.5 text-gray-300">
+          <button
+            type="button"
+            onClick={() => setVolume((v) => (v > 0 ? 0 : 1))}
+            aria-label={volume > 0 ? "Mute speaker" : "Unmute speaker"}
+            title={volume > 0 ? "Mute speaker" : "Unmute speaker"}
+            className="text-gray-300 hover:text-white"
+          >
+            {volume > 0 ? (
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5L6 9H3v6h3l5 4V5z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.5 8.5a5 5 0 010 7M18 6a8 8 0 010 12" />
+              </svg>
+            ) : (
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M11 5L6 9H2v6h4l5 4V5z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M22 9l-6 6M16 9l6 6" />
+              </svg>
+            )}
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.01}
+            value={volume}
+            onChange={(event) => setVolume(Number(event.target.value))}
+            aria-label="Call volume"
+            className="h-1 w-24 cursor-pointer accent-accent-500"
+          />
+        </div>
 
         <button
           onClick={() => {

@@ -58,7 +58,8 @@ export default function CreatePostComposer({ onCreated }: CreatePostComposerProp
   };
 
   const publish = async () => {
-    if (files.length === 0 || posting) return;
+    const trimmedCaption = caption.trim();
+    if (posting || (files.length === 0 && !trimmedCaption)) return;
     setPosting(true);
     try {
       const media: Array<{
@@ -86,9 +87,10 @@ export default function CreatePostComposer({ onCreated }: CreatePostComposerProp
         });
       }
 
-      const trimmed = caption.trim();
-      const payload = trimmed ? { caption: trimmed, media } : { media };
-      const { data } = await api.post("/posts", payload);
+      const { data } = await api.post("/posts", {
+        caption: trimmedCaption || undefined,
+        media,
+      });
       const post = data.post as Post | undefined;
       if (!post) throw new Error("The post was created but no post data was returned");
 
@@ -177,7 +179,7 @@ export default function CreatePostComposer({ onCreated }: CreatePostComposerProp
         <button
           type="button"
           onClick={() => void publish()}
-          disabled={posting || files.length === 0}
+          disabled={posting || (files.length === 0 && !caption.trim())}
           className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-500 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {posting ? "Posting..." : "Post"}
