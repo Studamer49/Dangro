@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useCallStore } from "@/stores/callStore";
 import { getSocket } from "@/lib/socket";
 import { startRingtone } from "@/lib/ringtone";
@@ -70,8 +71,8 @@ export default function CallInvitation() {
 
   if (!incomingCall) return null;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm animate-overlay-in">
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm animate-overlay-in">
       <div className="w-full max-w-sm animate-pop-in">
         {/* The glow lives on a wrapper rather than on the card itself, so the
             panel keeps its own wide elevation shadow underneath the accent
@@ -132,6 +133,7 @@ export default function CallInvitation() {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

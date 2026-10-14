@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useCallStore } from "@/stores/callStore";
 import { useWebRTC } from "@/hooks/useWebRTC";
 import { useToast } from "@/stores/toastStore";
@@ -87,8 +88,8 @@ export default function VideoCallModal() {
   // still carries the sound either way.
   const remoteHasVideo = !!remoteStream?.getVideoTracks().length;
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/80 p-4 backdrop-blur-sm animate-overlay-in">
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-950/80 p-4 backdrop-blur-sm animate-overlay-in">
       <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
       {/*
         The stage is the one deliberate exception to "never paint a dark
@@ -273,6 +274,7 @@ export default function VideoCallModal() {
         </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

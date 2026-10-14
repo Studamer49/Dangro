@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 
 interface ModalProps {
   title: string;
@@ -54,7 +55,7 @@ export default function Modal({
     panelRef.current?.focus();
   }, []);
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm animate-overlay-in"
       onMouseDown={(event) => {
@@ -85,6 +86,7 @@ export default function Modal({
 
         {footer && <div className="mt-6 flex justify-end gap-2">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

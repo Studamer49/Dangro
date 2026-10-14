@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import type { User } from "@/types";
 import EditProfileForm from "@/components/profile/EditProfileForm";
 
@@ -18,7 +19,7 @@ interface EditProfileModalProps {
  * "above" everything else.
  */
 export default function EditProfileModal({ user, onClose, onSaved }: EditProfileModalProps) {
-  return (
+  return createPortal(
     <div
       className="animate-overlay-in fixed inset-0 z-50 flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm"
       onMouseDown={onClose}
@@ -40,6 +41,7 @@ export default function EditProfileModal({ user, onClose, onSaved }: EditProfile
         </div>
         <EditProfileForm user={user} onSaved={onSaved} onCancel={onClose} />
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

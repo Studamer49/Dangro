@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Avatar from "@/components/Avatar";
 import api from "@/lib/api";
 import type { Story, StoryGroup } from "@/types";
@@ -141,7 +142,7 @@ export default function StoryViewer({
 
   if (!story) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/80 p-4 backdrop-blur-md animate-overlay-in"
       role="dialog"
@@ -253,6 +254,7 @@ export default function StoryViewer({
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Avatar from "@/components/Avatar";
 import type { VoicePeer } from "@/hooks/useVoiceChannel";
 import type { User } from "@/types";
@@ -104,7 +105,7 @@ export default function VoiceChannelPanel({
     }
   }, [localStream, cameraEnabled]);
 
-  return (
+  return createPortal(
     <div className="anim-pop-in fixed bottom-4 right-4 z-40 w-72 overflow-hidden rounded-xl border border-gray-700 bg-gray-900 shadow-2xl">
       <div className="flex items-center justify-between border-b border-gray-800 px-3 py-2">
         <div className="min-w-0">
@@ -217,6 +218,7 @@ export default function VoiceChannelPanel({
           Connecting to voice…
         </p>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }
