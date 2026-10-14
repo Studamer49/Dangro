@@ -144,7 +144,7 @@ export default function FeedPage() {
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       {/* Pinned header: a sibling of the scroll area, not a child of it, so the
           stories strip is structurally incapable of scrolling away. */}
       <div className="glass-panel z-10 w-full shrink-0 border-x-0 border-t-0 px-4 py-4">

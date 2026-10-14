@@ -35,10 +35,10 @@ export default function DashboardPage() {
   }, []);
 
   return (
-    <div className="flex h-full text-white">
+    <div className="flex h-screen overflow-hidden text-white">
       <ServerSidebar />
       {showChannelSidebar && <ChannelSidebar />}
-      <div className="flex flex-1 flex-col">
+      <div className="flex min-w-0 flex-1 flex-col">
         {/*
           Sticky glass bar. The blur is what keeps the chat legible as it
           scrolls underneath — without it the header would need an opaque
@@ -73,7 +73,7 @@ export default function DashboardPage() {
             </button>
           </div>
         </header>
-        <main className="flex-1 overflow-hidden">
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <Routes>
             <Route path="/" element={<FeedPage />} />
             <Route path="/feed" element={<FeedPage />} />
