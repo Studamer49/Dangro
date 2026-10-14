@@ -29,6 +29,7 @@ function ConversationRow({
   return (
     <button
       ref={ref}
+      data-bounce="self"
       onClick={() => {
         bounce("tap");
         onClick();

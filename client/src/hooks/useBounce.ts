@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 /**
  * Tiny bounce animations for taps/clicks.
@@ -12,9 +12,17 @@ import { useCallback, useRef } from "react";
  * Every animation ends at `transform: scale(1)`, so the element settles back
  * to its resting shape and never loops.
  */
-export type BounceVariant = "tap" | "pop" | "like";
+export type BounceVariant = "subtle" | "tap" | "pop" | "like";
 
 const KEYFRAMES: Record<BounceVariant, Keyframe[]> = {
+  // Barely-there press feedback for the hundreds of small buttons (search,
+  // settings, send, add-media…). Noticeable only if you look for it.
+  subtle: [
+    { transform: "scale(1)" },
+    { transform: "scale(0.975)", offset: 0.4 },
+    { transform: "scale(1.012)", offset: 0.72 },
+    { transform: "scale(1)" },
+  ],
   // Gentle press feedback for nav tabs and list rows.
   tap: [
     { transform: "scale(1)" },
@@ -41,10 +49,21 @@ const KEYFRAMES: Record<BounceVariant, Keyframe[]> = {
 };
 
 const DURATION: Record<BounceVariant, number> = {
+  subtle: 220,
   tap: 520,
   pop: 600,
   like: 680,
 };
+
+const EASING: Record<BounceVariant, string> = {
+  subtle: "cubic-bezier(0.22, 1, 0.36, 1)",
+  tap: "cubic-bezier(0.34, 1.25, 0.5, 1)",
+  pop: "cubic-bezier(0.34, 1.25, 0.5, 1)",
+  like: "cubic-bezier(0.34, 1.25, 0.5, 1)",
+};
+
+/** The most recent bounce we started per element, so a re-click cancels it. */
+const running = new WeakMap<Element, Animation>();
 
 function prefersReducedMotion(): boolean {
   return (
@@ -54,25 +73,61 @@ function prefersReducedMotion(): boolean {
   );
 }
 
+/**
+ * Plays one finite bounce on any element. Exported so a single document-level
+ * listener can bounce buttons that never opted into the hook themselves.
+ */
+export function playBounce(el: Element | null, variant: BounceVariant = "subtle"): void {
+  // Older browsers without Element.animate simply skip the flourish.
+  if (!el || typeof (el as HTMLElement).animate !== "function" || prefersReducedMotion()) return;
+
+  // Cancel any in-flight run so a rapid second click replays cleanly from 0.
+  running.get(el)?.cancel();
+  const animation = el.animate(KEYFRAMES[variant], {
+    duration: DURATION[variant],
+    easing: EASING[variant],
+    iterations: 1,
+    fill: "none",
+  });
+  running.set(el, animation);
+  animation.onfinish = () => {
+    if (running.get(el) === animation) running.delete(el);
+  };
+}
+
 export function useBounce<T extends Element = HTMLElement>() {
   const ref = useRef<T | null>(null);
-  const animationRef = useRef<Animation | null>(null);
 
   const bounce = useCallback((variant: BounceVariant = "tap") => {
-    const el = ref.current;
-    // Older browsers without Element.animate simply skip the flourish.
-    if (!el || typeof el.animate !== "function" || prefersReducedMotion()) return;
-
-    // Cancel any in-flight run so a rapid second click replays cleanly from 0.
-    animationRef.current?.cancel();
-    const animation = el.animate(KEYFRAMES[variant], {
-      duration: DURATION[variant],
-      easing: "cubic-bezier(0.34, 1.25, 0.5, 1)",
-      iterations: 1,
-      fill: "none",
-    });
-    animationRef.current = animation;
+    playBounce(ref.current, variant);
   }, []);
 
   return { ref, bounce };
+}
+
+/**
+ * App-wide press feedback: one capture-phase listener on `document` plays the
+ * subtle bounce on whichever `<button>` was clicked.
+ *
+ * Opt a button out when it already animates itself with `data-bounce="self"`,
+ * or suppress it entirely with `data-no-bounce` (e.g. invisible tap zones).
+ */
+export function useGlobalButtonBounce(): void {
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      const button = target.closest("button");
+      if (!(button instanceof HTMLElement)) return;
+      if (button.disabled) return;
+      if (button.dataset.bounce === "self") return;
+      if (button.dataset.noBounce !== undefined) return;
+
+      playBounce(button, "subtle");
+    };
+
+    document.addEventListener("click", handleClick, true);
+    return () => document.removeEventListener("click", handleClick, true);
+  }, []);
 }

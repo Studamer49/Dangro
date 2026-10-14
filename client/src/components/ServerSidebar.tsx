@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ButtonHTMLAttributes } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { useToast } from "@/stores/toastStore";
 import { useBounce, type BounceVariant } from "@/hooks/useBounce";
@@ -7,27 +7,49 @@ import api, { apiErrorMessage } from "@/lib/api";
 import type { Server } from "@/types";
 
 /**
- * Sidebar button that plays a short bounce on click and forwards a click
- * handler for navigation. The bounce is decorative, so it runs before the
- * handler and never blocks it.
+ * Sidebar button that plays a short bounce on click, forwards a click handler
+ * for navigation, and reveals a label that slides in beside it on hover. The
+ * bounce is decorative, so it runs before the handler and never blocks it.
+ *
+ * The label hides again as soon as the pointer leaves — and also on click, so
+ * it never lingers over the page you just navigated to.
  */
 function BouncyButton({
   variant = "pop",
   onClick,
   children,
+  tooltip,
+  className,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: BounceVariant }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: BounceVariant; tooltip?: string }) {
   const { ref, bounce } = useBounce<HTMLButtonElement>();
+  const [showTooltip, setShowTooltip] = useState(false);
   return (
     <button
       ref={ref}
       {...rest}
+      data-bounce="self"
+      onMouseEnter={() => setShowTooltip(true)}
+      onMouseLeave={() => setShowTooltip(false)}
       onClick={(event) => {
+        setShowTooltip(false);
         bounce(variant);
         onClick?.(event);
       }}
+      className={`relative ${className ?? ""}`}
     >
       {children}
+      {tooltip && (
+        <span
+          role="tooltip"
+          className={`pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap rounded-md bg-gray-950 px-2.5 py-1.5 text-sm font-semibold text-white shadow-lg ring-1 ring-gray-700 transition-all duration-150 ease-out ${
+            showTooltip ? "translate-x-0 opacity-100" : "-translate-x-1.5 opacity-0"
+          }`}
+        >
+          {tooltip}
+          <span className="absolute right-full top-1/2 -translate-y-1/2 border-[5px] border-transparent border-r-gray-950" />
+        </span>
+      )}
     </button>
   );
 }
@@ -43,6 +65,7 @@ export default function ServerSidebar() {
   const user = useAuthStore((s) => s.user);
   const toast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const fetchServers = useCallback(async () => {
     try {
@@ -109,9 +132,17 @@ export default function ServerSidebar() {
   return (
     <div className="flex w-[72px] flex-col items-center gap-2 bg-gray-950 py-3">
       <BouncyButton
-        onClick={() => navigate("/feed")}
+        onClick={() => {
+          // Clicking Home while already on Home reloads the feed instead of
+          // doing nothing.
+          if (location.pathname === "/" || location.pathname === "/feed") {
+            window.location.reload();
+          } else {
+            navigate("/feed");
+          }
+        }}
         className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-gray-400 transition-all hover:rounded-xl hover:bg-accent-600 hover:text-white"
-        title="Feed"
+        tooltip="Home"
       >
         <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
@@ -121,7 +152,7 @@ export default function ServerSidebar() {
       <BouncyButton
         onClick={() => navigate("/dms")}
         className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-gray-400 transition-all hover:rounded-xl hover:bg-green-600 hover:text-white"
-        title="Messages"
+        tooltip="Messages"
       >
         <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
           <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" />
@@ -131,7 +162,7 @@ export default function ServerSidebar() {
       <BouncyButton
         onClick={() => navigate("/friends")}
         className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-gray-400 transition-all hover:rounded-xl hover:bg-accent-600 hover:text-white"
-        title="Friends"
+        tooltip="Friends"
       >
         <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
           <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
@@ -141,7 +172,7 @@ export default function ServerSidebar() {
       <BouncyButton
         onClick={() => navigate("/explore")}
         className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-gray-400 transition-all hover:rounded-xl hover:bg-purple-600 hover:text-white"
-        title="Explore"
+        tooltip="Explore"
       >
         <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
@@ -155,7 +186,7 @@ export default function ServerSidebar() {
           key={server.id}
           onClick={() => openChannel(server)}
           className="group relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-white transition-all hover:rounded-xl hover:bg-accent-600"
-          title={server.name}
+          tooltip={server.name}
         >
           {server.icon ? (
             <img src={server.icon} alt={server.name} className="h-full w-full rounded-xl object-cover" />
@@ -168,7 +199,7 @@ export default function ServerSidebar() {
       <BouncyButton
         onClick={() => setShowJoinModal(true)}
         className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-purple-400 transition-all hover:rounded-xl hover:bg-purple-600 hover:text-white"
-        title="Join a Server"
+        tooltip="Join a Server"
       >
         <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -178,7 +209,7 @@ export default function ServerSidebar() {
       <BouncyButton
         onClick={() => setShowCreateModal(true)}
         className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-green-500 transition-all hover:rounded-xl hover:bg-green-600 hover:text-white"
-        title="Create Server"
+        tooltip="Create Server"
       >
         <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v14m-7-7h14" />
@@ -190,7 +221,7 @@ export default function ServerSidebar() {
       <BouncyButton
         onClick={() => navigate(`/profile/${user?.id}`)}
         className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-white transition-all hover:rounded-xl hover:bg-accent-600"
-        title="Profile"
+        tooltip="Profile"
       >
         {user?.avatar ? (
           <img src={user.avatar} alt="Profile" className="h-full w-full rounded-xl object-cover" />

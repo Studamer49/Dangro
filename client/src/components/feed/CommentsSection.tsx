@@ -109,7 +109,7 @@ export default function CommentsSection({ postId, viewer, onCountChange }: Comme
   };
 
   return (
-    <div className="border-t border-gray-800 p-4 pt-3">
+    <div className="anim-reply-in border-t border-gray-800 p-4 pt-3">
       {loading ? (
         <div className="flex justify-center py-6">
           <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />

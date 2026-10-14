@@ -243,11 +243,13 @@ export default function StoryViewer({
           <button
             onClick={goPrevious}
             aria-label="Previous story"
+            data-no-bounce
             className="absolute inset-y-0 left-0 w-1/3 cursor-pointer"
           />
           <button
             onClick={paused ? undefined : goNext}
             aria-label="Next story"
+            data-no-bounce
             className="absolute inset-y-0 right-0 w-1/3 cursor-pointer"
           />
 

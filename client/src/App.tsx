@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
+import { useGlobalButtonBounce } from "@/hooks/useBounce";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
@@ -46,6 +47,9 @@ function GuestRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const fetchUser = useAuthStore((s) => s.fetchUser);
+
+  // One subtle press bounce for every button that does not animate itself.
+  useGlobalButtonBounce();
 
   useEffect(() => {
     fetchUser();

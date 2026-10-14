@@ -33,6 +33,9 @@ export default function PostCard({
   // Heart pop + count nudge, played on every like/unlike tap.
   const { ref: heartRef, bounce: bounceHeart } = useBounce<HTMLSpanElement>();
   const { ref: likeCountRef, bounce: bounceLikeCount } = useBounce<HTMLSpanElement>();
+  // Comment bubble pop + count nudge, played when the comment thread toggles.
+  const { ref: commentBtnRef, bounce: bounceComment } = useBounce<HTMLButtonElement>();
+  const { ref: commentCountRef, bounce: bounceCommentCount } = useBounce<HTMLSpanElement>();
 
   const liked = (post.likes?.length ?? 0) > 0;
   const likeCount = post._count?.likes ?? 0;
@@ -131,6 +134,7 @@ export default function PostCard({
             }}
             aria-pressed={liked}
             aria-label={liked ? "Unlike post" : "Like post"}
+            data-bounce="self"
             className={`flex items-center gap-1.5 transition-colors ${
               liked ? "text-red-500 hover:text-red-400" : "text-gray-400 hover:text-red-400"
             }`}
@@ -150,10 +154,16 @@ export default function PostCard({
             </span>
           </button>
           <button
+            ref={commentBtnRef}
             type="button"
-            onClick={() => setShowComments((value) => !value)}
+            onClick={() => {
+              bounceComment("pop");
+              bounceCommentCount("pop");
+              setShowComments((value) => !value);
+            }}
             aria-expanded={showComments}
             aria-label="Toggle comments"
+            data-bounce="self"
             className="flex items-center gap-1.5 text-gray-400 transition-colors hover:text-white"
           >
             <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -164,7 +174,9 @@ export default function PostCard({
                 d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
               />
             </svg>
-            <span className="text-sm font-medium">{commentCount}</span>
+            <span ref={commentCountRef} className="inline-block text-sm font-medium">
+              {commentCount}
+            </span>
           </button>
         </div>
 
