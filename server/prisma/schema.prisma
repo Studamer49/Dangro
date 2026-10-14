@@ -12,9 +12,11 @@ model User {
   username       String         @unique
   email          String         @unique
   password       String
-  bio            String?
-  avatar         String?
-  isPrivate      Boolean        @default(false)
+  bio        String?
+  avatar     String?
+  /// Profile banner image. Null falls back to the accent gradient cover.
+  cover      String?
+  isPrivate  Boolean  @default(false)
   status         String         @default("offline") // online, idle, dnd, offline
   lastSeen       DateTime       @default(now())
   createdAt      DateTime       @default(now())

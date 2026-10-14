@@ -14,6 +14,7 @@ const updateProfileSchema = z.object({
   email: z.string().email().max(254).optional(),
   bio: z.string().max(500).optional(),
   avatar: nullableMediaUrl(),
+  cover: nullableMediaUrl(),
   status: z.enum(["online", "idle", "dnd", "offline"]).optional(),
   isPrivate: z.boolean().optional(),
 });
@@ -26,6 +27,7 @@ const publicUserSelect = {
   id: true,
   username: true,
   avatar: true,
+  cover: true,
   bio: true,
   status: true,
   isPrivate: true,
@@ -72,6 +74,7 @@ router.get(
         username: true,
         bio: true,
         avatar: true,
+        cover: true,
         isPrivate: true,
         status: true,
         lastSeen: true,
@@ -119,6 +122,7 @@ router.patch(
 
     if (input.bio !== undefined) data.bio = input.bio;
     if (input.avatar !== undefined) data.avatar = input.avatar ?? null;
+    if (input.cover !== undefined) data.cover = input.cover ?? null;
     if (input.status !== undefined) data.status = input.status;
     if (input.isPrivate !== undefined) data.isPrivate = input.isPrivate;
 
@@ -133,6 +137,15 @@ router.patch(
           }))?.avatar ?? null)
         : null;
 
+    // Same reasoning as the avatar: a replaced banner should not linger.
+    const replacedCover =
+      input.cover !== undefined && input.cover !== null
+        ? ((await prisma.user.findUnique({
+            where: { id: userId },
+            select: { cover: true },
+          }))?.cover ?? null)
+        : null;
+
     const user = await prisma.user.update({
       where: { id: userId },
       data,
@@ -142,6 +155,7 @@ router.patch(
         email: true,
         bio: true,
         avatar: true,
+        cover: true,
         isPrivate: true,
         status: true,
         lastSeen: true,
@@ -154,6 +168,9 @@ router.patch(
     // profile update has already succeeded.
     if (replacedAvatar && replacedAvatar !== user.avatar) {
       await destroyImageForUrl(replacedAvatar, `the avatar of ${userId}`);
+    }
+    if (replacedCover && replacedCover !== user.cover) {
+      await destroyImageForUrl(replacedCover, `the cover of ${userId}`);
     }
 
     ok(res, { user });

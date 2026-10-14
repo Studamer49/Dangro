@@ -16,18 +16,22 @@ interface ProfileUpdatePayload {
   username?: string;
   bio?: string;
   avatar?: string | null;
+  cover?: string | null;
   isPrivate?: boolean;
 }
 
 export default function EditProfileForm({ user, onSaved, onCancel }: EditProfileFormProps) {
   const toast = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const coverInputRef = useRef<HTMLInputElement>(null);
 
   const [username, setUsername] = useState(user.username);
   const [bio, setBio] = useState(user.bio ?? "");
   const [avatar, setAvatar] = useState<string | null>(user.avatar);
+  const [cover, setCover] = useState<string | null>(user.cover ?? null);
   const [isPrivate, setIsPrivate] = useState(user.isPrivate ?? false);
   const [uploading, setUploading] = useState(false);
+  const [uploadingCover, setUploadingCover] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const trimmedUsername = username.trim();
@@ -59,13 +63,30 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
     }
   };
 
+  const handleCoverChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    setUploadingCover(true);
+    try {
+      const uploaded = await uploadMedia(file);
+      setCover(uploaded.url);
+    } catch (err) {
+      toast.error(uploadErrorMessage(err, "Could not upload your banner"));
+    } finally {
+      setUploadingCover(false);
+    }
+  };
+
   const handleSave = async () => {
-    if (saving || uploading || usernameError) return;
+    if (saving || uploading || uploadingCover || usernameError) return;
 
     const payload: ProfileUpdatePayload = {};
     if (trimmedUsername !== user.username) payload.username = trimmedUsername;
     if (trimmedBio !== (user.bio ?? "")) payload.bio = trimmedBio;
     if (avatar !== user.avatar) payload.avatar = avatar;
+    if (cover !== (user.cover ?? null)) payload.cover = cover;
     if (isPrivate !== (user.isPrivate ?? false)) payload.isPrivate = isPrivate;
 
     if (Object.keys(payload).length === 0) {
@@ -81,6 +102,7 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
       setUsername(updated.username);
       setBio(updated.bio ?? "");
       setAvatar(updated.avatar);
+      setCover(updated.cover ?? null);
       setIsPrivate(updated.isPrivate ?? false);
       toast.success("Profile updated.");
       onSaved?.(updated);
@@ -133,6 +155,47 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
         />
       </div>
 
+      {/*
+        Banner. Same upload path as the avatar; the profile draws it as the
+        wide cover sitting behind the avatar, so it is previewed at the same
+        wide aspect ratio here.
+      */}
+      <div>
+        <span className="field-label">Banner</span>
+        <div className="relative mb-2 h-24 overflow-hidden rounded-xl border border-gray-700 bg-gradient-to-br from-accent-600/45 via-accent-500/20 to-accent-400/5">
+          {cover && (
+            <img src={cover} alt="" className="absolute inset-0 h-full w-full object-cover" />
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => coverInputRef.current?.click()}
+            disabled={uploadingCover}
+            className="btn-ghost"
+          >
+            {uploadingCover ? "Uploading..." : "Upload banner"}
+          </button>
+          {cover && (
+            <button
+              type="button"
+              onClick={() => setCover(null)}
+              disabled={uploadingCover}
+              className="btn-danger"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+        <input
+          ref={coverInputRef}
+          type="file"
+          accept="image/*"
+          className="hidden"
+          onChange={handleCoverChange}
+        />
+      </div>
+
       <div>
         <label htmlFor="edit-profile-avatar-url" className="field-label">
           Avatar URL
@@ -143,6 +206,20 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
           value={avatar ?? ""}
           onChange={(e) => setAvatar(e.target.value || null)}
           placeholder="https://example.com/avatar.png"
+          className="field"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="edit-profile-cover-url" className="field-label">
+          Banner URL
+        </label>
+        <input
+          id="edit-profile-cover-url"
+          type="text"
+          value={cover ?? ""}
+          onChange={(e) => setCover(e.target.value || null)}
+          placeholder="https://example.com/banner.png"
           className="field"
         />
       </div>
@@ -204,7 +281,7 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
         <button
           type="button"
           onClick={handleSave}
-          disabled={saving || uploading || !!usernameError}
+          disabled={saving || uploading || uploadingCover || !!usernameError}
           className="btn-primary"
         >
           {saving ? "Saving..." : "Save"}

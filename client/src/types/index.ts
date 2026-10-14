@@ -4,6 +4,8 @@ export interface User {
   email: string;
   bio: string | null;
   avatar: string | null;
+  /** Profile banner image; null falls back to the accent gradient cover. */
+  cover?: string | null;
   /** When true, this profile's posts are hidden from non-followers. */
   isPrivate?: boolean;
   status: "online" | "idle" | "dnd" | "offline";

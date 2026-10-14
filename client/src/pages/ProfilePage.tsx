@@ -144,20 +144,33 @@ export default function ProfilePage() {
     <div className="flex h-full flex-col overflow-y-auto">
       <div className="mx-auto w-full max-w-2xl px-6 pb-12 pt-6">
         {/*
-          Identity block. A wide frosted panel whose top third is the "cover":
-          an accent gradient that re-tints itself to whatever accent the user
-          picked, with the avatar dropped into it on a negative margin so the
-          two read as one object instead of a card with a picture stuck on it.
-          The cover is a gradient rather than an image precisely because it has
-          no hard edge for the avatar to hide behind.
+          Identity block. A wide frosted panel whose top is the "cover": the
+          user's banner image, or the accent gradient when none is set, with the
+          avatar dropped into it on a negative margin so the two read as one
+          object instead of a card with a picture stuck on it.
+
+          The content under the cover is lifted onto its own layer (`relative
+          z-10`). The cover's fills are absolutely positioned, and positioned
+          elements paint above in-flow siblings — without the lift the banner
+          would cover the avatar and buttons that overlap it.
         */}
-        <div className="glass-panel animate-fade-up overflow-hidden rounded-3xl">
-          <div className="relative h-28 sm:h-36">
-            <div className="absolute inset-0 bg-gradient-to-br from-accent-600/45 via-accent-500/20 to-accent-400/5" />
-            <div className="absolute inset-0 bg-gradient-to-t from-accent-950/35 to-transparent" />
+        <div className="glass-panel animate-fade-up relative overflow-hidden rounded-3xl">
+          <div className="relative h-32 sm:h-44">
+            {profileUser.cover ? (
+              <img
+                src={profileUser.cover}
+                alt=""
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+            ) : (
+              <div className="absolute inset-0 bg-gradient-to-br from-accent-600/45 via-accent-500/20 to-accent-400/5" />
+            )}
+            {/* Legibility scrim, so the avatar rim reads against a bright
+                banner as well as against the gradient. */}
+            <div className="absolute inset-0 bg-gradient-to-t from-gray-950/70 via-gray-950/10 to-transparent" />
           </div>
 
-          <div className="px-5 pb-5">
+          <div className="relative z-10 px-5 pb-5">
             <div className="-mt-12 flex items-end justify-between gap-4">
               <ProfileAvatar
                 username={profileUser.username}
