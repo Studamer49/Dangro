@@ -118,6 +118,15 @@ export default function SettingsPage() {
                 </button>
               ))}
             </div>
+
+            <div className="mt-4">
+              <ToggleRow
+                label="Glass effect"
+                description="Frosted, translucent panels. Turn off for solid surfaces."
+                enabled={settings.glassEffect}
+                onToggle={settings.toggleGlassEffect}
+              />
+            </div>
           </section>
 
           <section className="glass-panel rounded-2xl p-6 animate-fade-up">

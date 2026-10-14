@@ -30,6 +30,7 @@ interface SettingsState {
   baseFontSize: number;
   radius: number;
   customColors: CustomColors;
+  glassEffect: boolean;
   animationsEnabled: boolean;
   developerMode: boolean;
   notificationsEnabled: boolean;
@@ -42,6 +43,7 @@ interface SettingsState {
   setRadius: (radius: number) => void;
   setCustomColor: (key: keyof CustomColors, value: string) => void;
   resetCustomColors: () => void;
+  toggleGlassEffect: () => void;
   toggleAnimations: () => void;
   toggleDeveloperMode: () => void;
   toggleNotifications: () => void;
@@ -82,6 +84,7 @@ const DEFAULTS = {
   baseFontSize: 16,
   radius: 12,
   customColors: { bg: "", surface: "", border: "", text: "" } as CustomColors,
+  glassEffect: true,
   animationsEnabled: true,
   developerMode: false,
   notificationsEnabled: true,
@@ -108,6 +111,7 @@ function sanitize(persisted: unknown): typeof DEFAULTS {
       border: hex(colors.border),
       text: hex(colors.text),
     },
+    glassEffect: bool(p.glassEffect, DEFAULTS.glassEffect),
     animationsEnabled: bool(p.animationsEnabled, DEFAULTS.animationsEnabled),
     developerMode: bool(p.developerMode, DEFAULTS.developerMode),
     notificationsEnabled: bool(p.notificationsEnabled, DEFAULTS.notificationsEnabled),
@@ -130,6 +134,7 @@ export const useSettingsStore = create<SettingsState>()(
         set((s) => ({ customColors: { ...s.customColors, [key]: hex(value) } })),
       resetCustomColors: () =>
         set({ customColors: { bg: "", surface: "", border: "", text: "" } }),
+      toggleGlassEffect: () => set((s) => ({ glassEffect: !s.glassEffect })),
       toggleAnimations: () => set((s) => ({ animationsEnabled: !s.animationsEnabled })),
       toggleDeveloperMode: () => set((s) => ({ developerMode: !s.developerMode })),
       toggleNotifications: () => set((s) => ({ notificationsEnabled: !s.notificationsEnabled })),
@@ -137,7 +142,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "dangro-settings",
-      version: 2,
+      version: 3,
       migrate: (persisted) => sanitize(persisted),
       partialize: (state) => ({
         theme: state.theme,
@@ -147,6 +152,7 @@ export const useSettingsStore = create<SettingsState>()(
         baseFontSize: state.baseFontSize,
         radius: state.radius,
         customColors: state.customColors,
+        glassEffect: state.glassEffect,
         animationsEnabled: state.animationsEnabled,
         developerMode: state.developerMode,
         notificationsEnabled: state.notificationsEnabled,

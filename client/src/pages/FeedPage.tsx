@@ -144,12 +144,14 @@ export default function FeedPage() {
   );
 
   return (
-    <div className="flex h-full flex-col items-center overflow-y-auto pb-10">
-      <div className="glass-panel sticky top-0 z-10 w-full max-w-lg border-x-0 border-t-0 px-4 py-4">
+    <div className="flex h-full flex-col items-center">
+      {/* A real header, not a sticky one: it lives outside the scrolling area
+          so the stories strip stays put while the feed scrolls under it. */}
+      <div className="glass-panel w-full max-w-lg shrink-0 border-x-0 border-t-0 px-4 py-4">
         <StoriesBar groups={stories} viewer={user} onAdded={handleStoryAdded} />
       </div>
 
-      <div className="w-full max-w-lg space-y-4 p-4">
+      <div className="w-full max-w-lg flex-1 space-y-4 overflow-y-auto p-4 pb-10">
         <CreatePostComposer onCreated={handleCreated} />
 
         {loading ? (

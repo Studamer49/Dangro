@@ -74,12 +74,18 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
   const baseFontSize = useSettingsStore((s) => s.baseFontSize);
   const radius = useSettingsStore((s) => s.radius);
   const customColors = useSettingsStore((s) => s.customColors);
+  const glassEffect = useSettingsStore((s) => s.glassEffect);
 
   useEffect(() => {
     const root = document.documentElement;
     root.classList.remove("dark", "light", "amoled");
     root.classList.add(theme);
   }, [theme]);
+
+  // `no-glass` swaps the three frosted surfaces for opaque ones in index.css.
+  useEffect(() => {
+    document.documentElement.classList.toggle("no-glass", !glassEffect);
+  }, [glassEffect]);
 
   useEffect(() => {
     const root = document.documentElement;

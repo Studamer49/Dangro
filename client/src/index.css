@@ -317,6 +317,28 @@
       transform 200ms var(--ease-out);
   }
 
+  /* Non-glass mode (a Settings toggle, on by default as glass). Same three
+     levels, but every surface is opaque and the blur is dropped, so panels
+     read as real material instead of frosted panes. Scoped to the `.glass*`
+     classes: the page backdrop and overlay blurs elsewhere are untouched. */
+  html.no-glass .glass {
+    background-color: rgb(var(--ui-surface-rgb) / 0.95);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  html.no-glass .glass-panel {
+    background-color: var(--ui-surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  html.no-glass .glass-card {
+    background-color: var(--ui-surface-2);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
   /* Lift on hover. `-2px` is deliberately small: enough to feel alive, not
      enough to make a dense list hard to hit with the mouse. */
   .glass-card-hover:hover {
