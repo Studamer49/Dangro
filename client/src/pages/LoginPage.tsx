@@ -41,67 +41,117 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-950 px-4">
-      <div className="w-full max-w-md space-y-8 rounded-xl bg-gray-900 p-8 shadow-2xl">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-white">Welcome back</h1>
-          <p className="mt-2 text-gray-400">Sign in to Dangro</p>
+    <div className="flex min-h-screen items-center justify-center px-4 py-12">
+      <div className="grid w-full max-w-4xl overflow-hidden rounded-3xl glass-panel md:grid-cols-2">
+        {/* Left: the form. Kept on the opaque-ish surface so the inputs stay
+            crisp and the ambient field only shows around the card. */}
+        <div className="p-8 sm:p-10">
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold tracking-tight text-white">Welcome back</h1>
+            <p className="mt-2 text-gray-400">Sign in to pick up where you left off.</p>
+          </div>
+
+          {error && (
+            <div
+              role="alert"
+              className="mb-5 flex items-start gap-2.5 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300 animate-fade-up"
+            >
+              <svg className="mt-0.5 h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zM9 9a1 1 0 012 0v4a1 1 0 11-2 0V9zm1-4a1 1 0 100 2 1 1 0 000-2z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              <span>{error}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+            <div>
+              <label htmlFor="email" className="field-label">
+                Email
+              </label>
+              <input
+                id="email"
+                type="email"
+                autoComplete="email"
+                {...register("email")}
+                className="field"
+                placeholder="you@example.com"
+              />
+              {errors.email && (
+                <p className="mt-1.5 text-xs text-red-400">{errors.email.message}</p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="password" className="field-label">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                {...register("password")}
+                className="field"
+                placeholder="••••••••"
+              />
+              {errors.password && (
+                <p className="mt-1.5 text-xs text-red-400">{errors.password.message}</p>
+              )}
+            </div>
+
+            <button type="submit" disabled={isSubmitting} className="btn-primary w-full py-3">
+              {isSubmitting ? "Signing in…" : "Sign In"}
+            </button>
+          </form>
+
+          <p className="mt-8 text-center text-sm text-gray-400">
+            Need an account?{" "}
+            <Link
+              to="/register"
+              className="font-semibold text-accent-400 transition-colors hover:text-accent-300"
+            >
+              Sign Up
+            </Link>
+          </p>
         </div>
 
-        {error && (
-          <div className="rounded-lg bg-red-500/10 p-3 text-center text-sm text-red-400">
-            {error}
-          </div>
-        )}
+        {/* Right: the brand panel. Hidden on mobile where it would just push
+            the form below the fold. Carries its own accent wash so the card
+            reads as two materials meeting at a seam. */}
+        <div
+          className="relative hidden flex-col justify-between overflow-hidden p-10 md:flex"
+          style={{
+            backgroundImage:
+              "linear-gradient(150deg, rgb(var(--accent-600-rgb) / 0.32) 0%, rgb(var(--accent-400-rgb) / 0.12) 55%, transparent 100%)",
+          }}
+        >
+          {/* A single soft light source, offset off-panel. */}
+          <div
+            className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full opacity-60 blur-3xl"
+            style={{ background: "rgb(var(--accent-400-rgb) / 0.45)" }}
+          />
 
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-300">
-              Email
-            </label>
-            <input
-              type="email"
-              {...register("email")}
-              className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-              placeholder="you@example.com"
-            />
-            {errors.email && (
-              <p className="mt-1 text-xs text-red-400">{errors.email.message}</p>
-            )}
-          </div>
-
-          <div>
-            <label className="mb-1 block text-sm font-medium text-gray-300">
-              Password
-            </label>
-            <input
-              type="password"
-              {...register("password")}
-              className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none focus:ring-1 focus:ring-accent-500"
-              placeholder="••••••••"
-            />
-            {errors.password && (
-              <p className="mt-1 text-xs text-red-400">
-                {errors.password.message}
-              </p>
-            )}
+          <div className="relative flex items-center gap-2.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-accent-400 to-accent-600 shadow-glow">
+              <span className="text-lg font-bold text-white">D</span>
+            </div>
+            <span className="text-lg font-bold tracking-tight text-white">Dangro</span>
           </div>
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full rounded-lg bg-accent-600 px-4 py-3 font-medium text-white transition-colors hover:bg-accent-500 disabled:opacity-50"
-          >
-            {isSubmitting ? "Signing in..." : "Sign In"}
-          </button>
-        </form>
-
-        <p className="text-center text-sm text-gray-400">
-          Need an account?{" "}
-          <Link to="/register" className="text-accent-400 hover:underline">
-            Sign Up
-          </Link>
-        </p>
+          <div className="relative">
+            <h2 className="text-2xl font-bold leading-snug tracking-tight text-white">
+              Your servers, your people,
+              <br />
+              one place.
+            </h2>
+            <p className="mt-3 max-w-xs text-sm leading-relaxed text-gray-300">
+              Chat, share and hang out with the people who matter — without the noise.
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );

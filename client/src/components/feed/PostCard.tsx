@@ -69,12 +69,12 @@ export default function PostCard({
   };
 
   return (
-    <article className="overflow-hidden rounded-xl border border-gray-800 bg-gray-900">
+    <article className="glass-card glass-card-hover overflow-hidden rounded-2xl">
       <div className="flex items-center gap-3 p-4">
         <Avatar user={post.author} className="h-9 w-9 text-sm" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-white">{post.author?.username ?? "Unknown"}</p>
-          <p className="text-xs text-gray-500">{new Date(post.createdAt).toLocaleDateString()}</p>
+          <p className="truncate text-sm font-semibold tracking-tight text-white">{post.author?.username ?? "Unknown"}</p>
+          <p className="tabular text-xs text-gray-600">{new Date(post.createdAt).toLocaleDateString()}</p>
         </div>
         {isOwnPost && (
           <div className="flex items-center gap-1">
@@ -83,7 +83,7 @@ export default function PostCard({
               onClick={startEditing}
               aria-label="Edit post"
               title="Edit post"
-              className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-800 hover:text-white"
+              className="icon-btn !h-8 !w-8"
             >
               <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M4 20h4l10.5-10.5a2.12 2.12 0 00-3-3L5 17v3zm14.7-11.7a1 1 0 000-1.4l-2.6-2.6a1 1 0 00-1.4 0l-1.8 1.8 3 3 1.8-1.8z" />
@@ -94,7 +94,7 @@ export default function PostCard({
               onClick={handleDelete}
               aria-label="Delete post"
               title="Delete post"
-              className="rounded-lg p-2 text-gray-500 transition-colors hover:bg-gray-800 hover:text-red-400"
+              className="icon-btn !h-8 !w-8 hover:!text-red-400"
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path
@@ -110,16 +110,26 @@ export default function PostCard({
       </div>
 
       {post.media && post.media.length > 0 && (
-        <div className="flex snap-x snap-mandatory overflow-x-auto">
-          {post.media.map((media) => (
-            <div key={media.id} className="aspect-square w-full shrink-0 snap-center bg-gray-800">
-              {media.type === "video" ? (
-                <video src={media.url} controls className="h-full w-full object-cover" />
-              ) : (
-                <img src={media.url} alt="" className="h-full w-full object-cover" />
-              )}
+        <div className="px-4 pb-1 pt-0.5">
+          {/* The media carousel sits in a recessed glass well rather than
+              flush against the card edge, so the images read as sitting on the
+              card instead of replacing it. */}
+          <div className="glass overflow-hidden rounded-2xl border p-2">
+            <div className="flex snap-x snap-mandatory gap-2 overflow-x-auto">
+              {post.media.map((media) => (
+                <div
+                  key={media.id}
+                  className="aspect-square w-full shrink-0 snap-center overflow-hidden rounded-xl bg-gray-950/40"
+                >
+                  {media.type === "video" ? (
+                    <video src={media.url} controls className="h-full w-full object-cover" />
+                  ) : (
+                    <img src={media.url} alt="" className="h-full w-full object-cover" />
+                  )}
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
       )}
 
@@ -135,8 +145,10 @@ export default function PostCard({
             aria-pressed={liked}
             aria-label={liked ? "Unlike post" : "Like post"}
             data-bounce="self"
-            className={`flex items-center gap-1.5 transition-colors ${
-              liked ? "text-red-500 hover:text-red-400" : "text-gray-400 hover:text-red-400"
+            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 transition-all duration-200 ease-out ${
+              liked
+                ? "border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                : "border-gray-700/70 bg-gray-800/30 text-gray-400 hover:border-gray-600 hover:bg-gray-800/60 hover:text-gray-200"
             }`}
           >
             <span ref={heartRef} className="inline-flex">
@@ -149,7 +161,7 @@ export default function PostCard({
                 />
               </svg>
             </span>
-            <span ref={likeCountRef} className="inline-block text-sm font-medium">
+            <span ref={likeCountRef} className="tabular inline-block text-sm font-semibold">
               {likeCount}
             </span>
           </button>
@@ -164,7 +176,11 @@ export default function PostCard({
             aria-expanded={showComments}
             aria-label="Toggle comments"
             data-bounce="self"
-            className="flex items-center gap-1.5 text-gray-400 transition-colors hover:text-white"
+            className={`flex items-center gap-1.5 rounded-full border px-3 py-1.5 transition-all duration-200 ease-out ${
+              showComments
+                ? "border-accent-400/40 bg-accent-500/15 text-accent-200"
+                : "border-gray-700/70 bg-gray-800/30 text-gray-400 hover:border-gray-600 hover:bg-gray-800/60 hover:text-gray-200"
+            }`}
           >
             <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path
@@ -174,13 +190,13 @@ export default function PostCard({
                 d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
               />
             </svg>
-            <span ref={commentCountRef} className="inline-block text-sm font-medium">
+            <span ref={commentCountRef} className="tabular inline-block text-sm font-semibold">
               {commentCount}
             </span>
           </button>
         </div>
 
-        <p className="text-sm text-white">
+        <p className="tabular text-xs text-gray-500">
           {likeCount} {likeCount === 1 ? "like" : "likes"}
         </p>
         {editing ? (
@@ -191,7 +207,7 @@ export default function PostCard({
               rows={3}
               maxLength={2200}
               autoFocus
-              className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+              className="field resize-none text-sm"
               placeholder="Add a caption..."
             />
             <div className="flex items-center justify-end gap-2">
@@ -199,7 +215,7 @@ export default function PostCard({
                 type="button"
                 onClick={() => setEditing(false)}
                 disabled={saving}
-                className="rounded-lg bg-gray-800 px-3 py-1.5 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-50"
+                className="btn-ghost px-3 py-1.5 text-xs"
               >
                 Cancel
               </button>
@@ -207,7 +223,7 @@ export default function PostCard({
                 type="button"
                 onClick={saveEdit}
                 disabled={saving || draft === (post.caption ?? "")}
-                className="rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-500 disabled:opacity-50"
+                className="btn-primary px-3 py-1.5 text-xs"
               >
                 {saving ? "Saving…" : "Save"}
               </button>
@@ -215,8 +231,8 @@ export default function PostCard({
           </div>
         ) : (
           post.caption && (
-            <p className="whitespace-pre-wrap text-sm text-gray-300">
-              <span className="font-medium text-white">{post.author?.username ?? "Unknown"}</span>{" "}
+            <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-200">
+              <span className="font-semibold tracking-tight text-white">{post.author?.username ?? "Unknown"}</span>{" "}
               {post.caption}
             </p>
           )
@@ -225,7 +241,7 @@ export default function PostCard({
           <button
             type="button"
             onClick={() => setShowComments(true)}
-            className="block text-sm text-gray-400 transition-colors hover:text-white"
+            className="tabular block text-sm font-medium text-gray-400 transition-colors duration-200 ease-out hover:text-white"
           >
             View all {commentCount} {commentCount === 1 ? "comment" : "comments"}
           </button>

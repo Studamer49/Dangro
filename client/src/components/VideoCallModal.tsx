@@ -82,73 +82,98 @@ export default function VideoCallModal() {
   const isConnected = !!remoteStream;
 
   return (
-    <div className="anim-fade-in fixed inset-0 z-50 flex flex-col bg-gray-950">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/80 p-4 backdrop-blur-sm animate-overlay-in">
       <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
-      <div className="relative flex-1">
-        {isConnected && isVideoCall ? (
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            playsInline
-            muted
-            className="h-full w-full object-cover"
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center bg-gray-900">
-            <div className="text-center">
-              <div className={isConnected ? "" : "animate-pulse"}>
-                <Avatar user={targetUser} className="mx-auto mb-4 h-24 w-24 text-4xl" />
-              </div>
-              <p className="text-xl font-medium text-white">{targetUser?.username}</p>
-              <p className="mt-2 text-sm text-gray-400">
-                {!isConnected
-                  ? isCaller
-                    ? "Ringing..."
-                    : "Connecting..."
-                  : isVideoCall
-                  ? "Connected"
-                  : "Voice call"}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {localStream && isVideoCall && (
-          <div className="absolute right-4 top-4 h-40 w-32 overflow-hidden rounded-xl border-2 border-gray-700 bg-gray-800 shadow-lg">
+      {/*
+        The stage is the one deliberate exception to "never paint a dark
+        surface": while a call is up it is the focus of the app, so it stays the
+        darkest thing on screen. It is still wrapped as a glass panel, so it
+        picks up the border, the inset hairline and a wide shadow rather than
+        reading as a hole cut into the page.
+      */}
+      <div className="glass-panel shadow-elev3 flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-3xl">
+        <div className="relative flex-1 overflow-hidden bg-gray-950/70">
+          {isConnected && isVideoCall ? (
             <video
-              ref={localVideoRef}
+              ref={remoteVideoRef}
               autoPlay
               playsInline
               muted
               className="h-full w-full object-cover"
-              style={{ transform: "scaleX(-1)" }}
             />
-          </div>
-        )}
+          ) : (
+            <div className="relative flex h-full items-center justify-center overflow-hidden">
+              {/* Decorative accent bloom behind the avatar: the one lit thing on
+                  an otherwise black stage, so the eye lands on the person. */}
+              <span
+                aria-hidden
+                className="pointer-events-none absolute h-80 w-80 rounded-full"
+                style={{
+                  background:
+                    "radial-gradient(circle, rgb(var(--accent-500-rgb) / 0.3), transparent 70%)",
+                }}
+              />
+              <div className="relative text-center">
+                <div className={isConnected ? "" : "animate-pulse"}>
+                  <Avatar user={targetUser} className="mx-auto mb-4 h-24 w-24 text-4xl" />
+                </div>
+                <p className="text-xl font-semibold tracking-tight text-white">{targetUser?.username}</p>
+                <p className="tabular mt-2 text-sm text-gray-400">
+                  {!isConnected
+                    ? isCaller
+                      ? "Ringing..."
+                      : "Connecting..."
+                    : isVideoCall
+                    ? "Connected"
+                    : "Voice call"}
+                </p>
+              </div>
+            </div>
+          )}
 
-        {needsAudioTap && (
+          {localStream && isVideoCall && (
+            <div className="absolute right-4 top-4 h-40 w-32 overflow-hidden rounded-2xl border border-white/15 bg-gray-950/60 shadow-elev2">
+              <video
+                ref={localVideoRef}
+                autoPlay
+                playsInline
+                muted
+                className="h-full w-full object-cover"
+                style={{ transform: "scaleX(-1)" }}
+              />
+            </div>
+          )}
+
+          {needsAudioTap && (
+            <button
+              type="button"
+              onClick={() => {
+                remoteAudioRef.current
+                  ?.play()
+                  .then(() => setNeedsAudioTap(false))
+                  .catch(() => undefined);
+              }}
+              className="animate-pop-in absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full border border-accent-400/40 bg-accent-600 px-4 py-2 text-sm font-semibold text-white shadow-elev2 transition-colors duration-200 ease-out hover:bg-accent-500"
+            >
+              Tap to hear the call
+            </button>
+          )}
+        </div>
+
+        {/* Controls ride a frosted strip under the stage rather than a solid
+            bar, so the panel keeps reading as one lit surface. */}
+        <div className="glass flex flex-wrap items-center justify-center gap-3 border-t border-gray-700/50 px-6 py-4 sm:gap-4">
+          {/* Mic: red fill when muted, neutral glass when live. The state has
+              to read at a glance, so the off state is the loud one and the on
+              state stays quiet. */}
           <button
-            type="button"
-            onClick={() => {
-              remoteAudioRef.current
-                ?.play()
-                .then(() => setNeedsAudioTap(false))
-                .catch(() => undefined);
-            }}
-            className="anim-pop-in absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-accent-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:bg-accent-500"
+            onClick={toggleMute}
+            className={`icon-btn !h-12 !w-12 !rounded-full border transition-all duration-200 ease-out ${
+              isMuted
+                ? "border-red-500/50 bg-red-600 text-white shadow-elev2 hover:bg-red-500"
+                : "border-gray-700/70 bg-gray-800/50 text-gray-200 hover:border-gray-600 hover:bg-gray-800 hover:text-white"
+            }`}
           >
-            Tap to hear the call
-          </button>
-        )}
-      </div>
-
-      <div className="flex items-center justify-center gap-4 bg-gray-900 px-6 py-4">
-        <button
-          onClick={toggleMute}
-          className={`flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
-            isMuted ? "bg-red-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-          }`}
-        >
           {isMuted ? (
             <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
@@ -164,8 +189,10 @@ export default function VideoCallModal() {
         {isVideoCall && (
           <button
             onClick={toggleVideo}
-            className={`flex h-12 w-12 items-center justify-center rounded-full transition-colors ${
-              isVideoOff ? "bg-red-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+            className={`icon-btn !h-12 !w-12 !rounded-full border transition-all duration-200 ease-out ${
+              isVideoOff
+                ? "border-red-500/50 bg-red-600 text-white shadow-elev2 hover:bg-red-500"
+                : "border-gray-700/70 bg-gray-800/50 text-gray-200 hover:border-gray-600 hover:bg-gray-800 hover:text-white"
             }`}
           >
             {isVideoOff ? (
@@ -180,13 +207,15 @@ export default function VideoCallModal() {
           </button>
         )}
 
-        <div className="flex items-center gap-2 rounded-full bg-gray-800 px-3 py-1.5 text-gray-300">
+        <div className="glass flex items-center gap-2 rounded-full border px-1.5 py-1.5 shadow-elev1">
           <button
             type="button"
             onClick={() => setVolume((v) => (v > 0 ? 0 : 1))}
             aria-label={volume > 0 ? "Mute speaker" : "Unmute speaker"}
             title={volume > 0 ? "Mute speaker" : "Unmute speaker"}
-            className="text-gray-300 hover:text-white"
+            className={`icon-btn !h-7 !w-7 !rounded-full ${
+              volume > 0 ? "" : "!text-red-400"
+            }`}
           >
             {volume > 0 ? (
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -208,7 +237,7 @@ export default function VideoCallModal() {
             value={volume}
             onChange={(event) => setVolume(Number(event.target.value))}
             aria-label="Call volume"
-            className="h-1 w-24 cursor-pointer accent-accent-500"
+            className="h-1 w-24 cursor-pointer accent-accent-400"
           />
         </div>
 
@@ -216,12 +245,13 @@ export default function VideoCallModal() {
           onClick={() => {
             endCall();
           }}
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-red-600 text-white hover:bg-red-500"
+          className="flex h-12 w-12 items-center justify-center rounded-full bg-red-600 text-white shadow-[0_8px_24px_-6px_rgb(239_68_68/0.75)] ring-1 ring-red-400/40 transition-colors duration-200 ease-out hover:bg-red-500"
         >
           <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z" />
           </svg>
         </button>
+        </div>
       </div>
     </div>
   );

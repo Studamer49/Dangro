@@ -106,7 +106,7 @@ export default function CreatePostComposer({ onCreated }: CreatePostComposerProp
   };
 
   return (
-    <div className="rounded-xl border border-gray-800 bg-gray-900 p-4">
+    <div className="glass-card rounded-2xl p-4">
       <div className="flex items-start gap-3">
         <Avatar user={user} className="h-9 w-9 text-sm" />
         <textarea
@@ -116,7 +116,7 @@ export default function CreatePostComposer({ onCreated }: CreatePostComposerProp
           rows={2}
           placeholder="Write a caption..."
           aria-label="Post caption"
-          className="min-w-0 flex-1 resize-none rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+          className="field min-w-0 flex-1 resize-none py-2.5"
         />
       </div>
 
@@ -128,7 +128,7 @@ export default function CreatePostComposer({ onCreated }: CreatePostComposerProp
             return (
               <div
                 key={`${src}-${index}`}
-                className="relative aspect-square overflow-hidden rounded-lg border border-gray-800 bg-gray-800"
+                className="glass relative aspect-square overflow-hidden rounded-xl border shadow-elev1"
               >
                 {file.type.startsWith("video/") ? (
                   <video src={src} muted className="h-full w-full object-cover" />
@@ -139,7 +139,7 @@ export default function CreatePostComposer({ onCreated }: CreatePostComposerProp
                   type="button"
                   onClick={() => removeFile(index)}
                   aria-label={`Remove ${file.name}`}
-                  className="absolute right-1 top-1 rounded-full bg-black/70 p-1 text-gray-300 transition-colors hover:text-white"
+                  className="glass absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded-full border shadow-elev2 text-gray-300 transition-colors duration-200 ease-out hover:text-white"
                 >
                   <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -164,14 +164,14 @@ export default function CreatePostComposer({ onCreated }: CreatePostComposerProp
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={posting}
-          className="flex items-center gap-1.5 rounded-lg border border-gray-700 px-3 py-2 text-sm text-gray-300 transition-colors hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          className="btn-ghost px-3 py-2 text-sm"
         >
           <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
           Add media
           {files.length > 0 && (
-            <span className="text-xs text-gray-500">
+            <span className="tabular text-xs text-gray-500">
               ({files.length}/{MAX_MEDIA})
             </span>
           )}
@@ -180,7 +180,7 @@ export default function CreatePostComposer({ onCreated }: CreatePostComposerProp
           type="button"
           onClick={() => void publish()}
           disabled={posting || (files.length === 0 && !caption.trim())}
-          className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-500 disabled:cursor-not-allowed disabled:opacity-50"
+          className="btn-primary px-4 py-2 text-sm"
         >
           {posting ? "Posting..." : "Post"}
         </button>

@@ -42,12 +42,12 @@ function BouncyButton({
       {tooltip && (
         <span
           role="tooltip"
-          className={`pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap rounded-md bg-gray-950 px-2.5 py-1.5 text-sm font-semibold text-white shadow-lg ring-1 ring-gray-700 transition-all duration-150 ease-out ${
+          className={`glass-panel pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap rounded-xl px-2.5 py-1.5 text-sm font-semibold text-white transition-all duration-150 ease-out ${
             showTooltip ? "translate-x-0 opacity-100" : "-translate-x-1.5 opacity-0"
           }`}
         >
           {tooltip}
-          <span className="absolute right-full top-1/2 -translate-y-1/2 border-[5px] border-transparent border-r-gray-950" />
+          <span className="absolute right-full top-1/2 -translate-y-1/2 border-[5px] border-transparent border-r-gray-800" />
         </span>
       )}
     </button>
@@ -130,7 +130,7 @@ export default function ServerSidebar() {
   };
 
   return (
-    <div className="flex w-[72px] flex-col items-center gap-2 bg-gray-950 py-3">
+    <div className="glass flex w-[72px] flex-col items-center gap-2 border-r py-3">
       <BouncyButton
         onClick={() => {
           // Clicking Home while already on Home reloads the feed instead of
@@ -141,7 +141,7 @@ export default function ServerSidebar() {
             navigate("/feed");
           }
         }}
-        className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-gray-400 transition-all hover:rounded-xl hover:bg-accent-600 hover:text-white"
+        className="glass-card glass-card-hover group flex h-12 w-12 items-center justify-center rounded-2xl text-gray-400 transition-all duration-200 ease-out hover:rounded-xl hover:bg-accent-500/15 hover:text-accent-200"
         tooltip="Home"
       >
         <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -151,7 +151,7 @@ export default function ServerSidebar() {
 
       <BouncyButton
         onClick={() => navigate("/dms")}
-        className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-gray-400 transition-all hover:rounded-xl hover:bg-green-600 hover:text-white"
+        className="glass-card glass-card-hover group flex h-12 w-12 items-center justify-center rounded-2xl text-gray-400 transition-all duration-200 ease-out hover:rounded-xl hover:bg-green-500/15 hover:text-green-300"
         tooltip="Messages"
       >
         <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
@@ -161,7 +161,7 @@ export default function ServerSidebar() {
 
       <BouncyButton
         onClick={() => navigate("/friends")}
-        className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-gray-400 transition-all hover:rounded-xl hover:bg-accent-600 hover:text-white"
+        className="glass-card glass-card-hover group flex h-12 w-12 items-center justify-center rounded-2xl text-gray-400 transition-all duration-200 ease-out hover:rounded-xl hover:bg-accent-500/15 hover:text-accent-200"
         tooltip="Friends"
       >
         <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
@@ -171,7 +171,7 @@ export default function ServerSidebar() {
 
       <BouncyButton
         onClick={() => navigate("/explore")}
-        className="group flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-gray-400 transition-all hover:rounded-xl hover:bg-purple-600 hover:text-white"
+        className="glass-card glass-card-hover group flex h-12 w-12 items-center justify-center rounded-2xl text-gray-400 transition-all duration-200 ease-out hover:rounded-xl hover:bg-accent-500/15 hover:text-accent-200"
         tooltip="Explore"
       >
         <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -179,13 +179,13 @@ export default function ServerSidebar() {
         </svg>
       </BouncyButton>
 
-      <div className="mx-2 h-0.5 w-8 rounded-full bg-gray-800" />
+      <div className="mx-2 h-0.5 w-8 rounded-full bg-white/10" />
 
       {servers.map((server) => (
         <BouncyButton
           key={server.id}
           onClick={() => openChannel(server)}
-          className="group relative flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-white transition-all hover:rounded-xl hover:bg-accent-600"
+          className="glass-card glass-card-hover group relative flex h-12 w-12 items-center justify-center rounded-2xl text-white transition-all duration-200 ease-out hover:rounded-xl hover:bg-accent-500/20"
           tooltip={server.name}
         >
           {server.icon ? (
@@ -198,7 +198,7 @@ export default function ServerSidebar() {
 
       <BouncyButton
         onClick={() => setShowJoinModal(true)}
-        className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-purple-400 transition-all hover:rounded-xl hover:bg-purple-600 hover:text-white"
+        className="glass-card glass-card-hover flex h-12 w-12 items-center justify-center rounded-2xl text-accent-300 transition-all duration-200 ease-out hover:rounded-xl hover:bg-accent-500/15 hover:text-white"
         tooltip="Join a Server"
       >
         <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -208,7 +208,7 @@ export default function ServerSidebar() {
 
       <BouncyButton
         onClick={() => setShowCreateModal(true)}
-        className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-green-500 transition-all hover:rounded-xl hover:bg-green-600 hover:text-white"
+        className="glass-card glass-card-hover flex h-12 w-12 items-center justify-center rounded-2xl text-green-400 transition-all duration-200 ease-out hover:rounded-xl hover:bg-green-500/15 hover:text-green-300"
         tooltip="Create Server"
       >
         <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -220,7 +220,7 @@ export default function ServerSidebar() {
 
       <BouncyButton
         onClick={() => navigate(`/profile/${user?.id}`)}
-        className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gray-800 text-white transition-all hover:rounded-xl hover:bg-accent-600"
+        className="glass-card glass-card-hover flex h-12 w-12 items-center justify-center rounded-2xl text-white transition-all duration-200 ease-out hover:rounded-xl hover:bg-accent-500/20"
         tooltip="Profile"
       >
         {user?.avatar ? (
@@ -231,30 +231,26 @@ export default function ServerSidebar() {
       </BouncyButton>
 
       {showCreateModal && (
-        <div className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="anim-pop-in w-full max-w-md rounded-xl bg-gray-900 p-6">
-            <h3 className="mb-4 text-lg font-bold text-white">Create Server</h3>
+        <div className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm">
+          <div className="anim-pop-in glass-panel w-full max-w-md rounded-2xl bg-gray-900/95 p-6">
+            <h3 className="mb-4 text-lg font-bold tracking-tight text-white">Create Server</h3>
             <input
               type="text"
               value={newServerName}
               onChange={(e) => setNewServerName(e.target.value)}
               placeholder="Server name"
-              className="mb-4 w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+              className="field mb-4"
               onKeyDown={(e) => e.key === "Enter" && createServer()}
               autoFocus
             />
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="rounded-lg bg-gray-800 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+                className="btn-ghost px-4 py-2 text-sm"
               >
                 Cancel
               </button>
-              <button
-                onClick={createServer}
-                disabled={busyCreate}
-                className="rounded-lg bg-accent-600 px-4 py-2 text-sm text-white hover:bg-accent-500 disabled:opacity-50"
-              >
+              <button onClick={createServer} disabled={busyCreate} className="btn-primary px-4 py-2 text-sm">
                 {busyCreate ? "Creating..." : "Create"}
               </button>
             </div>
@@ -263,9 +259,9 @@ export default function ServerSidebar() {
       )}
 
       {showJoinModal && (
-        <div className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="anim-pop-in w-full max-w-md rounded-xl bg-gray-900 p-6">
-            <h3 className="mb-1 text-lg font-bold text-white">Join a Server</h3>
+        <div className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm">
+          <div className="anim-pop-in glass-panel w-full max-w-md rounded-2xl bg-gray-900/95 p-6">
+            <h3 className="mb-1 text-lg font-bold tracking-tight text-white">Join a Server</h3>
             <p className="mb-4 text-sm text-gray-400">Enter an invite code to join.</p>
             <input
               type="text"
@@ -275,22 +271,18 @@ export default function ServerSidebar() {
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              className="mb-4 w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+              className="field mb-4"
               onKeyDown={(e) => e.key === "Enter" && joinServer()}
               autoFocus
             />
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setShowJoinModal(false)}
-                className="rounded-lg bg-gray-800 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+                className="btn-ghost px-4 py-2 text-sm"
               >
                 Cancel
               </button>
-              <button
-                onClick={joinServer}
-                disabled={busyJoin}
-                className="rounded-lg bg-purple-600 px-4 py-2 text-sm text-white hover:bg-purple-500 disabled:opacity-50"
-              >
+              <button onClick={joinServer} disabled={busyJoin} className="btn-primary px-4 py-2 text-sm">
                 {busyJoin ? "Joining..." : "Join"}
               </button>
             </div>

@@ -109,49 +109,82 @@ export default function CommentsSection({ postId, viewer, onCountChange }: Comme
   };
 
   return (
-    <div className="anim-reply-in border-t border-gray-800 p-4 pt-3">
+    <div className="border-t border-gray-700/50 p-4 pt-3">
       {loading ? (
-        <div className="flex justify-center py-6">
-          <div className="h-6 w-6 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
+        <div className="space-y-3 py-1">
+          {[0, 1, 2].map((row) => (
+            <div key={row} className="flex gap-2.5">
+              <div className="skeleton h-7 w-7 shrink-0 rounded-full" />
+              <div className="flex-1 space-y-1.5 pt-1">
+                <div className="skeleton h-2.5 w-24 rounded-full" />
+                <div className="skeleton h-2.5 w-full rounded-full" />
+              </div>
+            </div>
+          ))}
         </div>
       ) : error ? (
-        <div className="py-4 text-center">
-          <p className="text-sm text-red-400">{error}</p>
-          <button
-            type="button"
-            onClick={() => void loadComments()}
-            className="mt-2 rounded-lg bg-gray-800 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:bg-gray-700"
-          >
+        <div className="flex flex-col items-center gap-3 py-4 text-center">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-red-500/15 text-red-400">
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+                d="M12 9v4m0 4h.01M10.3 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.7 3.86a2 2 0 00-3.4 0z"
+              />
+            </svg>
+          </div>
+          <div>
+            <p className="text-sm font-semibold text-white">Could not load comments</p>
+            <p className="mt-1 text-xs text-red-400">{error}</p>
+          </div>
+          <button type="button" onClick={() => void loadComments()} className="btn-ghost px-3 py-1.5 text-xs">
             Retry
           </button>
         </div>
       ) : comments.length === 0 ? (
-        <p className="py-2 text-sm text-gray-500">No comments yet. Be the first.</p>
+        <div className="flex flex-col items-center gap-2 py-5 text-center">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gray-500/10 text-gray-500">
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.8}
+                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+              />
+            </svg>
+          </div>
+          <p className="text-sm font-semibold text-gray-300">No comments yet.</p>
+          <p className="text-xs text-gray-500">Be the first.</p>
+        </div>
       ) : (
-        <ul className="space-y-3">
+        <ul className="space-y-1">
           {comments.map((comment) => {
             const isOwn = viewer !== null && comment.authorId === viewer.id;
             const isEditing = editingId === comment.id;
 
             return (
-              <li key={comment.id} className="group flex gap-2">
+              <li
+                key={comment.id}
+                className="group -ml-2 flex gap-2.5 rounded-r-lg border-l-2 border-transparent py-2 pl-2 pr-1 transition-all duration-200 ease-out hover:border-accent-400/50 hover:bg-gray-500/5"
+              >
                 <Avatar user={comment.author} className="h-7 w-7 text-xs" />
                 <div className="min-w-0 flex-1">
                   {isEditing ? (
-                    <div className="space-y-1">
+                    <div className="space-y-2">
                       <textarea
                         value={editDraft}
                         onChange={(e) => setEditDraft(e.target.value.slice(0, 500))}
                         rows={2}
                         maxLength={500}
                         autoFocus
-                        className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-1.5 text-sm text-white focus:border-accent-500 focus:outline-none"
+                        className="field resize-none"
                       />
-                      <div className="flex justify-end gap-1">
+                      <div className="flex justify-end gap-2">
                         <button
                           type="button"
                           onClick={() => setEditingId(null)}
-                          className="rounded bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+                          className="btn-ghost px-2.5 py-1 text-xs"
                         >
                           Cancel
                         </button>
@@ -159,7 +192,7 @@ export default function CommentsSection({ postId, viewer, onCountChange }: Comme
                           type="button"
                           onClick={() => void saveEdit(comment)}
                           disabled={!editDraft.trim()}
-                          className="rounded bg-accent-600 px-2 py-1 text-xs font-medium text-white hover:bg-accent-500 disabled:opacity-50"
+                          className="btn-primary px-2.5 py-1 text-xs"
                         >
                           Save
                         </button>
@@ -167,12 +200,14 @@ export default function CommentsSection({ postId, viewer, onCountChange }: Comme
                     </div>
                   ) : (
                     <>
-                      <p className="text-sm text-white">
-                        <span className="font-medium">{comment.author?.username ?? "Unknown"}</span>{" "}
-                        <span className="whitespace-pre-wrap break-words text-gray-300">{comment.content}</span>
+                      <p className="text-sm leading-relaxed text-gray-200">
+                        <span className="font-semibold tracking-tight text-white">
+                          {comment.author?.username ?? "Unknown"}
+                        </span>{" "}
+                        <span className="whitespace-pre-wrap break-words">{comment.content}</span>
                       </p>
-                      <div className="flex items-center gap-2">
-                        <p className="text-[11px] text-gray-500">
+                      <div className="mt-0.5 flex items-center gap-2">
+                        <p className="tabular text-[11px] text-gray-500">
                           {new Date(comment.createdAt).toLocaleDateString()}
                         </p>
                         {isOwn && !comment.id.startsWith("temp-") && (
@@ -180,14 +215,14 @@ export default function CommentsSection({ postId, viewer, onCountChange }: Comme
                             <button
                               type="button"
                               onClick={() => startEdit(comment)}
-                              className="text-[11px] text-gray-400 hover:text-white"
+                              className="rounded px-1 text-[11px] font-medium text-gray-400 transition-colors duration-150 ease-out hover:text-white"
                             >
                               Edit
                             </button>
                             <button
                               type="button"
                               onClick={() => void remove(comment)}
-                              className="text-[11px] text-gray-400 hover:text-red-400"
+                              className="rounded px-1 text-[11px] font-medium text-gray-400 transition-colors duration-150 ease-out hover:text-red-400"
                             >
                               Delete
                             </button>
@@ -203,7 +238,7 @@ export default function CommentsSection({ postId, viewer, onCountChange }: Comme
         </ul>
       )}
 
-      <form onSubmit={(event) => void submitComment(event)} className="mt-3 flex gap-2">
+      <form onSubmit={(event) => void submitComment(event)} className="mt-3 flex items-center gap-2">
         <input
           type="text"
           value={draft}
@@ -211,12 +246,12 @@ export default function CommentsSection({ postId, viewer, onCountChange }: Comme
           maxLength={500}
           placeholder="Add a comment..."
           aria-label="Add a comment"
-          className="min-w-0 flex-1 rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+          className="field flex-1"
         />
         <button
           type="submit"
           disabled={!draft.trim() || sending}
-          className="shrink-0 rounded-lg bg-accent-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-accent-500 disabled:cursor-not-allowed disabled:opacity-50"
+          className="btn-primary shrink-0 px-3.5 py-2"
         >
           {sending ? "Posting..." : "Post"}
         </button>

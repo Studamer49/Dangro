@@ -294,7 +294,18 @@ export default function ChatArea() {
     return (
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
-          <p className="text-lg text-gray-400">Select a channel to start chatting</p>
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gray-800/60 text-gray-500">
+            <svg className="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={1.5}
+                d="M8 10.5h8M8 14h5m-4.5 6L12 17h5a3 3 0 003-3V6a3 3 0 00-3-3H7a3 3 0 00-3 3v8a3 3 0 003 3h.5z"
+              />
+            </svg>
+          </div>
+          <p className="text-lg font-semibold text-gray-300">No channel selected</p>
+          <p className="mt-1 text-sm text-gray-500">Pick one from the sidebar to start chatting.</p>
         </div>
       </div>
     );
@@ -302,10 +313,13 @@ export default function ChatArea() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-y-auto p-4" ref={scrollRef} onScroll={handleScroll}>
+      <div className="flex-1 overflow-y-auto px-4 py-4" ref={scrollRef} onScroll={handleScroll}>
         {messages.length === 0 ? (
           <div className="flex h-full items-center justify-center">
-            <p className="text-gray-500">No messages yet. Start the conversation!</p>
+            <div className="text-center">
+              <p className="text-lg font-semibold text-gray-400">This channel is quiet</p>
+              <p className="mt-1 text-sm text-gray-600">Be the first to say something.</p>
+            </div>
           </div>
         ) : (
           <div className="space-y-1">
@@ -313,18 +327,21 @@ export default function ChatArea() {
               <div
                 key={message.id}
                 id={message.id.startsWith("temp-") ? undefined : `message-${message.id}`}
-                className={`group relative flex gap-3 rounded-lg px-2 py-1 hover:bg-gray-900/50 ${
+                className={`group relative flex gap-3 rounded-xl px-3 py-1.5 transition-colors duration-150 hover:bg-gray-800/40 ${
                   flashId === message.id ? "ring-1 ring-accent-400" : ""
                 }`}
               >
                 <Avatar user={message.author} className="h-10 w-10 text-sm" />
-                <div className="flex-1 min-w-0">
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-white">
+                    <span className="font-semibold tracking-tight text-white">
                       {message.author?.username}
                     </span>
-                    <span className="text-xs text-gray-500">
-                      {new Date(message.createdAt).toLocaleTimeString()}
+                    <span className="text-xs tabular-nums text-gray-600">
+                      {new Date(message.createdAt).toLocaleTimeString([], {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
                     </span>
                     {message.edited && (
                       <span className="text-xs text-gray-600">(edited)</span>
@@ -333,10 +350,12 @@ export default function ChatArea() {
                   {message.replyTo && (
                     <button
                       onClick={() => scrollToMessage(message.replyTo!.id)}
-                      className="mb-1 block rounded border-l-2 border-accent-600 bg-gray-900/50 px-2 py-1 text-left text-xs text-gray-400 hover:text-gray-300"
+                      className="mb-1.5 mt-1 block rounded-lg border-l-2 border-accent-500 bg-gray-900/50 px-2.5 py-1.5 text-left text-xs text-gray-400 transition-colors hover:bg-gray-900 hover:text-gray-300"
                       title={`Reply to ${message.replyTo.author?.username ?? ""}`}
                     >
-                      Replying to {message.replyTo.author?.username}:{" "}
+                      <span className="font-semibold text-accent-300">
+                        {message.replyTo.author?.username}
+                      </span>{" "}
                       {message.replyTo.content}
                     </button>
                   )}
@@ -347,23 +366,23 @@ export default function ChatArea() {
                         value={editContent}
                         onChange={(e) => setEditContent(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        className="w-full rounded border border-accent-500 bg-gray-800 px-2 py-1 text-white focus:outline-none"
+                        className="field py-2"
                         autoFocus
                       />
-                      <p className="mt-1 text-[10px] text-gray-400">
+                      <p className="mt-1.5 text-[10px] text-gray-500">
                         <button
                           onClick={() => {
                             setEditingId(null);
                             setEditContent("");
                           }}
-                          className="underline hover:text-white"
+                          className="font-semibold text-gray-400 underline-offset-2 hover:text-white hover:underline"
                         >
                           escape
                         </button>{" "}
                         to cancel ·{" "}
                         <button
                           onClick={() => void editMessage(message.id)}
-                          className="underline hover:text-white"
+                          className="font-semibold text-gray-400 underline-offset-2 hover:text-white hover:underline"
                         >
                           enter
                         </button>{" "}
@@ -371,19 +390,19 @@ export default function ChatArea() {
                       </p>
                     </div>
                   ) : (
-                    <p className="text-gray-300 break-words">{message.content}</p>
+                    <p className="break-words leading-relaxed text-gray-200">{message.content}</p>
                   )}
 
                   {message.reactions && message.reactions.length > 0 && (
-                    <div className="mt-1 flex flex-wrap gap-1">
+                    <div className="mt-1.5 flex flex-wrap gap-1">
                       {message.reactions.map((reaction) => (
                         <button
                           key={reaction.id}
                           onClick={() => toggleReaction(message.id, reaction.emoji)}
-                          className={`rounded-full border px-2 py-0.5 text-xs transition-colors ${
+                          className={`rounded-full border px-2 py-0.5 text-xs tabular-nums transition-all duration-150 ${
                             reaction.userId === user?.id
-                              ? "border-accent-500 bg-accent-600/20 text-accent-300"
-                              : "border-gray-700 bg-gray-800 text-gray-400 hover:border-gray-600"
+                              ? "border-accent-400 bg-accent-500/20 text-accent-200"
+                              : "border-gray-700 bg-gray-800/60 text-gray-400 hover:border-gray-600 hover:text-gray-200"
                           }`}
                         >
                           {reaction.emoji}
@@ -395,12 +414,12 @@ export default function ChatArea() {
 
                 {editingId !== message.id && !message.id.startsWith("temp-") && (
                   <div className="absolute -top-3 right-2 z-10 transition-opacity">
-                    <div className="flex items-center rounded-lg border border-gray-700 bg-gray-900 px-1 py-0.5 opacity-0 shadow-lg group-hover:opacity-100 focus-within:opacity-100">
+                    <div className="glass-panel flex items-center rounded-xl px-1 py-0.5 opacity-0 shadow-elev3 group-hover:opacity-100 focus-within:opacity-100">
                       {quickReactions.map((emoji) => (
                         <button
                           key={emoji}
                           onClick={() => toggleReaction(message.id, emoji)}
-                          className="rounded p-1.5 text-sm text-gray-400 hover:bg-gray-800 hover:text-white"
+                          className="icon-btn !h-7 !w-7 text-base"
                           title={`React ${emoji}`}
                         >
                           {emoji}
@@ -408,7 +427,7 @@ export default function ChatArea() {
                       ))}
                       <button
                         onClick={() => setReplyTo(message)}
-                        className="rounded p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white"
+                        className="icon-btn !h-7 !w-7"
                         title="Reply"
                       >
                         <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -422,7 +441,7 @@ export default function ChatArea() {
                               setEditingId(message.id);
                               setEditContent(message.content);
                             }}
-                            className="rounded p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white"
+                            className="icon-btn !h-7 !w-7"
                             title="Edit"
                           >
                             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -431,7 +450,7 @@ export default function ChatArea() {
                           </button>
                           <button
                             onClick={() => void deleteMessage(message.id)}
-                            className="rounded p-1.5 text-gray-400 hover:bg-red-600/20 hover:text-red-400"
+                            className="icon-btn !h-7 !w-7 hover:!text-red-400"
                             title="Delete"
                           >
                             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -451,30 +470,39 @@ export default function ChatArea() {
       </div>
 
       {typingUsers.length > 0 && (
-        <div className="px-4 py-1 text-xs text-gray-400">
-          Someone is typing...
+        <div className="flex items-center gap-1.5 px-4 py-1 text-xs text-gray-400">
+          {/* Three-dot typing indicator — a stagger rather than a static row so
+              it reads as "active", not as stray punctuation. */}
+          <span className="flex gap-0.5" aria-hidden>
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className="h-1 w-1 animate-pulse rounded-full bg-accent-400"
+                style={{ animationDelay: `${i * 160}ms` }}
+              />
+            ))}
+          </span>
+          Someone is typing…
         </div>
       )}
 
       {replyTo && (
-        <div
-          key={replyTo.id}
-          className="anim-reply-in flex items-center gap-2 border-t border-gray-800 bg-gray-900 px-4 py-2"
-        >
-          <span className="text-xs text-gray-400">
-            Replying to <span className="font-medium text-gray-300">{replyTo.author?.username}</span>: {replyTo.content}
+        <div className="flex items-center gap-2 border-t border-gray-800/70 bg-gray-900/40 px-4 py-2.5">
+          <span className="min-w-0 flex-1 truncate text-xs text-gray-400">
+            Replying to{" "}
+            <span className="font-semibold text-gray-200">{replyTo.author?.username}</span>:{" "}
+            {replyTo.content}
           </span>
-          <button
-            onClick={() => setReplyTo(null)}
-            className="ml-auto text-xs text-gray-500 hover:text-white"
-          >
-            ✕
+          <button onClick={() => setReplyTo(null)} className="icon-btn !h-6 !w-6" aria-label="Cancel reply">
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
           </button>
         </div>
       )}
 
-      <div className="border-t border-gray-800 p-4">
-        <div className="flex gap-2">
+      <div className="p-4 pt-2">
+        <div className="glass-panel flex items-end gap-2 rounded-2xl p-2">
           <textarea
             value={newMessage}
             onChange={(e) => {
@@ -483,13 +511,15 @@ export default function ChatArea() {
             }}
             onKeyDown={handleKeyDown}
             placeholder="Type a message..."
-            className="flex-1 resize-none rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+            aria-label="Message"
+            className="max-h-40 min-h-[2.75rem] flex-1 resize-none bg-transparent px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none"
             rows={1}
           />
           <button
             onClick={sendMessage}
             disabled={!newMessage.trim()}
-            className="rounded-lg bg-accent-600 px-4 py-3 text-white transition-colors hover:bg-accent-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-primary !h-11 !w-11 shrink-0 !p-0"
+            aria-label="Send message"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

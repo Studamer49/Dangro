@@ -262,7 +262,7 @@ export default function ChannelSidebar() {
 
   if (!server) {
     return (
-      <div className="w-60 bg-gray-900 p-4">
+      <div className="glass w-60 border-r p-4">
         <p className="text-sm text-gray-500">Select a server</p>
       </div>
     );
@@ -276,12 +276,12 @@ export default function ChannelSidebar() {
       <div key={channel.id} className="group/channel relative flex items-center">
         <button
           onClick={() => (isVoice ? joinVoice(channel) : navigate(`/channels/${channel.id}`))}
-          className={`flex-1 rounded-lg px-2 py-1.5 text-left text-sm transition-colors ${
+          className={`flex-1 rounded-lg px-2 py-1.5 text-left text-sm transition-colors duration-200 ease-out ${
             active
               ? isVoice
-                ? "bg-green-600/20 text-green-400"
-                : "bg-gray-700 text-white"
-              : "text-gray-400 hover:bg-gray-800 hover:text-gray-200"
+                ? "bg-green-500/15 font-medium text-green-300 ring-1 ring-inset ring-green-400/30"
+                : "row-active font-medium"
+              : "text-gray-400 hover:bg-gray-800/60 hover:text-gray-200"
           }`}
         >
           {isVoice ? (active ? "● " : "🔊 ") : "# "}
@@ -293,7 +293,7 @@ export default function ChannelSidebar() {
             onClick={() => setEditingChannel(channel)}
             aria-label={`Edit #${channel.name}`}
             title="Channel settings"
-            className="absolute right-1 hidden rounded p-0.5 text-gray-500 hover:bg-gray-700 hover:text-white group-hover/channel:block"
+            className="icon-btn absolute right-1 hidden !h-6 !w-6 group-hover/channel:block"
           >
             <svg className="h-3.5 w-3.5" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12 15.5A3.5 3.5 0 1115.5 12 3.5 3.5 0 0112 15.5z" />
@@ -317,7 +317,7 @@ export default function ChannelSidebar() {
           <button
             onClick={() => toggleGroup(id)}
             aria-expanded={!isCollapsed}
-            className="flex flex-1 items-center gap-1 py-1 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 hover:text-gray-300"
+            className="eyebrow flex flex-1 items-center gap-1 py-1 text-left hover:text-gray-300"
           >
             <svg
               className={`h-3 w-3 transition-transform ${isCollapsed ? "" : "rotate-90"}`}
@@ -338,7 +338,7 @@ export default function ChannelSidebar() {
               }}
               aria-label={`Create channel in ${label}`}
               title="Create channel"
-              className="hidden rounded p-0.5 text-gray-500 hover:text-gray-300 group-hover/cat:block"
+              className="icon-btn hidden !h-6 !w-6 hover:!text-white group-hover/cat:block"
             >
               <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M11 5a1 1 0 112 0v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H6a1 1 0 110-2h5V5z" />
@@ -351,7 +351,7 @@ export default function ChannelSidebar() {
               <button
                 onClick={() => renameCategory(group.category as Category)}
                 aria-label={`Rename ${label}`}
-                className="hidden rounded p-0.5 text-gray-500 hover:text-gray-300 group-hover/cat:block"
+                className="icon-btn hidden !h-6 !w-6 group-hover/cat:block"
               >
                 <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M4 20h4l10.5-10.5a2.12 2.12 0 00-3-3L5 17v3zm14.7-11.7a1 1 0 000-1.4l-2.6-2.6a1 1 0 00-1.4 0l-1.8 1.8 3 3 1.8-1.8z" />
@@ -360,7 +360,7 @@ export default function ChannelSidebar() {
               <button
                 onClick={() => deleteCategory(group.category as Category)}
                 aria-label={`Delete ${label}`}
-                className="hidden rounded p-0.5 text-gray-500 hover:text-red-400 group-hover/cat:block"
+                className="icon-btn hidden !h-6 !w-6 hover:!text-red-400 group-hover/cat:block"
               >
                 <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M6 7h12l-1 13a1 1 0 01-1 1H8a1 1 0 01-1-1L6 7zm3-3h6l1 2h4v2H4V6h4l1-2z" />
@@ -390,21 +390,21 @@ export default function ChannelSidebar() {
   const serverInitial = server.name?.[0]?.toUpperCase() ?? "?";
 
   return (
-    <div className="flex w-60 flex-col bg-gray-900">
-      <div className="flex items-center justify-between border-b border-gray-800 px-4 py-3">
+    <div className="glass flex w-60 flex-col border-r">
+      <div className="flex items-center justify-between border-b border-gray-800/70 px-4 py-3">
         <button onClick={() => setShowSettings(true)} className="flex max-w-[70%] items-center gap-2">
           {server.icon ? (
             <img src={server.icon} alt={server.name} className="h-6 w-6 rounded-md object-cover" />
           ) : (
-            <span className="flex h-6 w-6 items-center justify-center rounded bg-gray-700 text-xs font-bold text-white">
+            <span className="ring-lit flex h-6 w-6 items-center justify-center rounded bg-accent-600 text-xs font-bold text-white">
               {serverInitial}
             </span>
           )}
-          <h2 className="truncate text-sm font-bold text-white">{server.name}</h2>
+          <h2 className="truncate text-sm font-bold tracking-tight text-white">{server.name}</h2>
         </button>
         <button
           onClick={() => setShowSettings(true)}
-          className="rounded p-1 text-gray-500 transition-colors hover:bg-gray-800 hover:text-white"
+          className="icon-btn !h-8 !w-8"
           title="Server settings"
           aria-label="Server settings"
         >
@@ -419,36 +419,33 @@ export default function ChannelSidebar() {
       </div>
 
       {joinedVoiceId && (
-        <div className="border-t border-gray-800 p-3">
+        <div className="border-t border-gray-800/70 p-3">
           <div className="mb-2 flex items-center gap-2">
-            <div className="h-2 w-2 animate-pulse rounded-full bg-green-500" />
+            <div className="h-2 w-2 animate-pulse rounded-full bg-green-500 shadow-[0_0_8px_1px_rgb(34_197_94/0.45)]" />
             <span className="text-xs font-medium text-green-400">Voice Connected</span>
           </div>
-          <button
-            onClick={leaveVoice}
-            className="w-full rounded-lg bg-red-600/20 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-600/30"
-          >
+          <button onClick={leaveVoice} className="btn-danger w-full px-3 py-1.5 text-xs">
             Disconnect
           </button>
         </div>
       )}
 
       {canManageChannels && (
-        <div className="flex gap-1 border-t border-gray-800 p-2">
+        <div className="flex gap-1 border-t border-gray-800/70 p-2">
           <button
             onClick={() => {
               setNewChannelCategory("");
               setNewChannelType("text");
               setShowCreateChannel(true);
             }}
-            className="flex-1 rounded-lg bg-accent-600 px-2 py-2 text-xs font-medium text-white hover:bg-accent-500"
+            className="btn-primary flex-1 px-2 py-2 text-xs"
           >
             + Channel
           </button>
           {canManageCategories && (
             <button
               onClick={() => setShowCreateCategory(true)}
-              className="rounded-lg bg-gray-800 px-3 py-2 text-xs font-medium text-gray-300 hover:bg-gray-700"
+              className="btn-ghost px-3 py-2 text-xs"
               title="Create category"
             >
               + Category
@@ -465,14 +462,14 @@ export default function ChannelSidebar() {
             <>
               <button
                 onClick={() => setShowCreateChannel(false)}
-                className="rounded-lg bg-gray-800 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+                className="btn-ghost"
               >
                 Cancel
               </button>
               <button
                 onClick={createChannel}
                 disabled={busy || !newChannelName.trim()}
-                className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
+                className="btn-primary"
               >
                 {busy ? "Creating…" : "Create"}
               </button>
@@ -480,7 +477,7 @@ export default function ChannelSidebar() {
           }
         >
           <div className="mb-4 flex items-center gap-1">
-            <span className="text-gray-500">#</span>
+            <span className="select-none font-semibold text-gray-500">#</span>
             <input
               value={newChannelName}
               onChange={(e) => setNewChannelName(e.target.value)}
@@ -488,21 +485,21 @@ export default function ChannelSidebar() {
               placeholder="channel-name"
               maxLength={100}
               autoFocus
-              className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+              className="field"
             />
           </div>
 
           <div className="mb-4">
-            <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">
-              Channel type
-            </label>
-            <div className="flex gap-2">
+            <label className="field-label">Channel type</label>
+            <div className="segment w-full">
               {(["text", "voice"] as const).map((type) => (
                 <button
                   key={type}
                   onClick={() => setNewChannelType(type)}
-                  className={`flex-1 rounded-lg px-3 py-2 text-sm capitalize ${
-                    newChannelType === type ? "bg-accent-600 text-white" : "bg-gray-800 text-gray-400"
+                  className={`segment-item flex-1 capitalize ${
+                    newChannelType === type
+                      ? "bg-accent-500/20 text-white ring-1 ring-inset ring-accent-400/40"
+                      : "text-gray-400 hover:bg-white/5 hover:text-white"
                   }`}
                 >
                   {type}
@@ -513,13 +510,11 @@ export default function ChannelSidebar() {
 
           {categories.length > 0 && (
             <div>
-              <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">
-                Category
-              </label>
+              <label className="field-label">Category</label>
               <select
                 value={newChannelCategory}
                 onChange={(e) => setNewChannelCategory(e.target.value)}
-                className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-2 text-sm text-white focus:border-accent-500 focus:outline-none"
+                className="field"
               >
                 <option value="">No category</option>
                 {categories.map((category) => (
@@ -541,23 +536,21 @@ export default function ChannelSidebar() {
             <>
               <button
                 onClick={() => setShowCreateCategory(false)}
-                className="rounded-lg bg-gray-800 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+                className="btn-ghost"
               >
                 Cancel
               </button>
               <button
                 onClick={createCategory}
                 disabled={busy || !newCategoryName.trim()}
-                className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
+                className="btn-primary"
               >
                 {busy ? "Creating…" : "Create"}
               </button>
             </>
           }
         >
-          <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">
-            Category name
-          </label>
+          <label className="field-label">Category name</label>
           <input
             value={newCategoryName}
             onChange={(e) => setNewCategoryName(e.target.value)}
@@ -565,7 +558,7 @@ export default function ChannelSidebar() {
             placeholder="New Category"
             maxLength={100}
             autoFocus
-            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+            className="field"
           />
         </Modal>
       )}

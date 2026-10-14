@@ -6,6 +6,16 @@ interface ProfileAvatarProps {
   className?: string;
 }
 
+/**
+ * The identity avatar: the one large avatar on the profile.
+ *
+ * Kept separate from the shared `Avatar` because this one owns the image
+ * fallback state — it swaps in initials when a URL 404s, which the list avatar
+ * deliberately does not do. The placeholder is an accent gradient rather than a
+ * flat fill so the initials still look lit, and the caller passes `ring-lit`
+ * when it wants the halo (the class is applied from the outside so the rim and
+ * the surrounding layout stay in charge of the composition).
+ */
 export default function ProfileAvatar({
   username,
   avatar,
@@ -19,7 +29,7 @@ export default function ProfileAvatar({
 
   return (
     <div
-      className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-accent-600 font-bold text-white ${className}`}
+      className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-accent-500 to-accent-700 font-bold text-white ${className}`}
     >
       {avatar && !failed ? (
         <img

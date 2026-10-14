@@ -91,7 +91,8 @@ export default function NotificationsBell() {
         onClick={() => setOpen((v) => !v)}
         title="Notifications"
         aria-label={`Notifications${unreadCount ? `, ${unreadCount} unread` : ""}`}
-        className="relative rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
+        aria-expanded={open}
+        className="icon-btn relative"
       >
         <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path
@@ -102,20 +103,20 @@ export default function NotificationsBell() {
           />
         </svg>
         {unreadCount > 0 && (
-          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+          <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-gradient-to-br from-red-500 to-red-600 px-1 text-[10px] font-bold tabular-nums text-white shadow-[0_0_10px_-1px_rgb(239_68_68/0.7)]">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="anim-pop-in absolute right-0 z-50 mt-2 w-80 origin-top-right rounded-lg border border-gray-700 bg-gray-900 shadow-2xl">
-          <div className="flex items-center justify-between border-b border-gray-800 px-3 py-2">
-            <span className="text-sm font-semibold text-white">Notifications</span>
+        <div className="glass-panel absolute right-0 z-50 mt-2 w-80 animate-pop-in overflow-hidden rounded-2xl">
+          <div className="flex items-center justify-between border-b border-gray-700/60 px-4 py-3">
+            <span className="text-sm font-bold tracking-tight text-white">Notifications</span>
             {unreadCount > 0 && (
               <button
                 onClick={() => void markAllRead()}
-                className="text-xs text-accent-400 hover:text-accent-300"
+                className="text-xs font-semibold text-accent-400 transition-colors hover:text-accent-300"
               >
                 Mark all read
               </button>
@@ -124,7 +125,12 @@ export default function NotificationsBell() {
 
           <div className="max-h-96 overflow-y-auto">
             {notifications.length === 0 ? (
-              <p className="px-3 py-6 text-center text-sm text-gray-500">Nothing yet.</p>
+              <div className="px-3 py-10 text-center">
+                <p className="text-sm text-gray-500">Nothing yet.</p>
+                <p className="mt-1 text-xs text-gray-600">
+                  Replies, requests and likes will show up here.
+                </p>
+              </div>
             ) : (
               notifications.map((n) => (
                 <button
@@ -135,15 +141,17 @@ export default function NotificationsBell() {
                     if (n.type === "friend_request") navigate("/friends");
                     else if (n.type === "follow" && n.fromUserId) navigate(`/profile/${n.fromUserId}`);
                   }}
-                  className={`flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-gray-800 ${
-                    n.read ? "opacity-70" : ""
+                  className={`flex w-full items-start gap-3 border-l-2 px-4 py-3 text-left transition-colors duration-150 hover:bg-gray-800/40 ${
+                    n.read
+                      ? "border-transparent opacity-60"
+                      : "border-accent-400 bg-accent-500/[0.07]"
                   }`}
                 >
-                  <div className="mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-full bg-gray-700">
+                  <div className="mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-accent-500 to-accent-700">
                     {n.fromUser?.avatar ? (
                       <img src={n.fromUser.avatar} alt="" className="h-full w-full object-cover" />
                     ) : (
-                      <span className="flex h-full w-full items-center justify-center text-xs font-bold text-gray-300">
+                      <span className="flex h-full w-full items-center justify-center text-xs font-bold text-white">
                         {n.fromUser?.username?.[0]?.toUpperCase() ?? "?"}
                       </span>
                     )}
@@ -153,9 +161,14 @@ export default function NotificationsBell() {
                       <span className="font-semibold">{n.fromUser?.username ?? "Someone"}</span>{" "}
                       {n.message}
                     </p>
-                    <span className="text-xs text-gray-500">{timeAgo(n.createdAt)}</span>
+                    <span className="text-xs tabular-nums text-gray-500">{timeAgo(n.createdAt)}</span>
                   </div>
-                  {!n.read && <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-accent-500" />}
+                  {!n.read && (
+                    <span
+                      className="mt-2 h-2 w-2 shrink-0 rounded-full bg-accent-400 shadow-glow"
+                      aria-label="Unread"
+                    />
+                  )}
                 </button>
               ))
             )}

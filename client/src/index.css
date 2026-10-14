@@ -14,11 +14,68 @@
   }
 
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen,
-      Ubuntu, Cantarell, "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
+    font-family: "Inter var", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI",
+      Roboto, Oxygen, Ubuntu, Cantarell, "Fira Sans", "Droid Sans",
+      "Helvetica Neue", sans-serif;
+    font-feature-settings: "cv02" 1, "cv03" 1, "cv04" 1, "ss01" 1;
+    font-synthesis-weight: none;
+    text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    color: var(--ui-text);
+    /*
+     * The ambient field. Three very wide, very soft accent-tinted radials
+     * sitting under the whole app, anchored off-screen so no circle edge is
+     * ever visible. This is what gives the dark theme its depth: instead of a
+     * flat void the background reads as lit space, and it tints itself to
+     * whatever accent the user picked in Settings.
+     *
+     * `fixed` keeps them from scrolling away, and they are painted on the body
+     * rather than a pseudo-element so there is no stacking-context ordering to
+     * get wrong.
+     */
     background-color: var(--ui-bg);
+    background-image:
+      radial-gradient(
+        68rem 46rem at 10% -12%,
+        rgb(var(--accent-500-rgb) / 0.17),
+        transparent 60%
+      ),
+      radial-gradient(
+        56rem 42rem at 94% 2%,
+        rgb(var(--accent-400-rgb) / 0.13),
+        transparent 62%
+      ),
+      radial-gradient(
+        52rem 40rem at 52% 112%,
+        rgb(var(--accent-600-rgb) / 0.1),
+        transparent 60%
+      );
+    background-attachment: fixed;
+  }
+
+  /* Tabular figures wherever numbers matter (counts, timestamps, member
+     counts) so digits stop jittering as they change. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A single, consistent focus treatment. `:focus-visible` keeps it off mouse
+     clicks but guarantees it for keyboard users, which the old
+     `focus:ring-1` inputs did not. */
+  :where(a, button, input, textarea, select, [tabindex]):focus-visible {
+    outline: 2px solid rgb(var(--accent-400-rgb) / 0.9);
+    outline-offset: 2px;
+    border-radius: var(--ui-radius-lg);
+  }
+
+  /* Kill the UA's own outline on the controls we style ourselves. */
+  :where(button, input, textarea, select):focus {
+    outline: none;
+  }
+
+  ::selection {
+    background: rgb(var(--accent-500-rgb) / 0.35);
     color: var(--ui-text);
   }
 }
@@ -31,6 +88,18 @@
  * Each color exists as a hex token (raw CSS: body, scrollbar) and as an
  * `*-rgb` triplet consumed by tailwind.config.js via `rgb(var(…) / <alpha>)`
  * so Tailwind opacity modifiers (bg-gray-800/50, bg-white/5 …) keep working.
+ *
+ * The palette is built as three planes that get progressively lighter and
+ * progressively more reflective:
+ *
+ *   bg        the lit space everything floats in (carries the ambient field)
+ *   surface   opaque; form fields and anything that must not show through
+ *   glass     translucent + blurred; panels, cards, sidebars, modals
+ *
+ * Glass panels are what make the app read as layered rather than stacked, so
+ * the border on them is deliberately semi-transparent and every one carries an
+ * inset top highlight (see `.glass-panel`) — that 1px light edge is what the
+ * eye reads as "a lit surface catching the light".
  * ------------------------------------------------------------------------- */
 :root,
 .dark {
@@ -39,74 +108,122 @@
   --ui-radius-2xl: 1rem;
   --ui-radius-3xl: 1.5rem;
 
-  --ui-bg: #030712;
-  --ui-bg-rgb: 3 7 18;
-  --ui-surface: #111827;
-  --ui-surface-rgb: 17 24 39;
-  --ui-surface-2: #1f2937;
-  --ui-surface-2-rgb: 31 41 55;
-  --ui-border: #374151;
-  --ui-border-rgb: 55 65 81;
+  --ui-bg: #05060f;
+  --ui-bg-rgb: 5 6 15;
+  --ui-surface: #0b0d1a;
+  --ui-surface-rgb: 11 13 26;
+  --ui-surface-2: #151a2e;
+  --ui-surface-2-rgb: 21 26 46;
+  --ui-border: #262c47;
+  --ui-border-rgb: 38 44 71;
   --ui-text: #ffffff;
   --ui-text-rgb: 255 255 255;
-  --ui-text-secondary: #d1d5db;
-  --ui-text-secondary-rgb: 209 213 219;
-  --ui-muted: #9ca3af;
-  --ui-muted-rgb: 156 163 175;
+  --ui-text-secondary: #d9deef;
+  --ui-text-secondary-rgb: 217 222 239;
+  --ui-muted: #8b93b2;
+  --ui-muted-rgb: 139 147 178;
+
+  /*
+   * Glass is expressed as an alpha-free colour plus a separate opacity token,
+   * so a single hue serves every frost level without drifting off-palette.
+   */
+  --ui-glass: #ffffff;
+  --ui-glass-rgb: 255 255 255;
+  --ui-glass-alpha: 0.045;
+  --ui-glass-alpha-strong: 0.075;
+
+  /*
+   * The hairline along a panel's top edge. On a dark panel this is a light
+   * catching a surface; per-theme so light mode can invert it rather than
+   * applying a highlight that is invisible on white.
+   */
+  --ui-glass-highlight: inset 0 1px 0 0 rgb(255 255 255 / 0.08);
+
+  /* Elevation. Each step is a wide, very soft drop shadow — tight shadows
+     read as "cheap material", wide ones read as "large surface, far from the
+     page". */
+  --ui-elev-1: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px -4px rgb(0 0 0 / 0.4);
+  --ui-elev-2: 0 2px 4px rgb(0 0 0 / 0.28), 0 12px 28px -8px rgb(0 0 0 / 0.5);
+  --ui-elev-3: 0 4px 8px rgb(0 0 0 / 0.3), 0 28px 60px -12px rgb(0 0 0 / 0.62);
 
   --ui-gray-950-rgb: var(--ui-bg-rgb);
   --ui-gray-900-rgb: var(--ui-surface-rgb);
   --ui-gray-800-rgb: var(--ui-surface-2-rgb);
   --ui-gray-700-rgb: var(--ui-border-rgb);
-  --ui-gray-600-rgb: 75 85 99;
-  --ui-gray-500-rgb: 107 114 128;
+  --ui-gray-600-rgb: 61 68 102;
+  --ui-gray-500-rgb: 108 116 153;
   --ui-gray-400-rgb: var(--ui-muted-rgb);
   --ui-gray-300-rgb: var(--ui-text-secondary-rgb);
-  --ui-gray-200-rgb: 229 231 235;
-  --ui-gray-100-rgb: 243 244 246;
-  --ui-gray-50-rgb: 249 250 251;
+  --ui-gray-200-rgb: 226 231 244;
+  --ui-gray-100-rgb: 240 243 250;
+  --ui-gray-50-rgb: 248 250 253;
 }
 
 .light {
-  --ui-bg: #eef1f6;
-  --ui-bg-rgb: 238 241 246;
+  --ui-bg: #eaeef8;
+  --ui-bg-rgb: 234 238 248;
   --ui-surface: #ffffff;
   --ui-surface-rgb: 255 255 255;
-  --ui-surface-2: #f8fafc;
-  --ui-surface-2-rgb: 248 250 252;
-  --ui-border: #cbd5e1;
-  --ui-border-rgb: 203 213 225;
-  --ui-text: #0f172a;
-  --ui-text-rgb: 15 23 42;
-  --ui-text-secondary: #334155;
-  --ui-text-secondary-rgb: 51 65 85;
-  --ui-muted: #64748b;
-  --ui-muted-rgb: 100 116 139;
+  --ui-surface-2: #f5f7fd;
+  --ui-surface-2-rgb: 245 247 253;
+  --ui-border: #d3dbec;
+  --ui-border-rgb: 211 219 236;
+  --ui-text: #0b1022;
+  --ui-text-rgb: 11 16 34;
+  --ui-text-secondary: #33405e;
+  --ui-text-secondary-rgb: 51 64 94;
+  --ui-muted: #64708c;
+  --ui-muted-rgb: 100 112 140;
 
-  --ui-gray-600-rgb: 71 85 105;
-  --ui-gray-500-rgb: 100 116 139;
-  --ui-gray-200-rgb: 226 232 240;
-  --ui-gray-100-rgb: 241 245 249;
-  --ui-gray-50-rgb: 248 250 252;
+  /* On a light background the frost comes from white-on-white, so the panel
+     tint is a shade of the page instead and the highlight inverts: a bright
+     top rim for the light, plus a faint dark bottom line for the ambient
+     occlusion a white surface cannot show on its own. */
+  --ui-glass: #0b1022;
+  --ui-glass-rgb: 11 16 34;
+  --ui-glass-alpha: 0.035;
+  --ui-glass-alpha-strong: 0.06;
+  --ui-glass-highlight:
+    inset 0 1px 0 0 rgb(255 255 255 / 0.9), inset 0 -1px 0 0 rgb(0 0 0 / 0.045);
+
+  --ui-elev-1: 0 1px 2px rgb(23 37 84 / 0.06), 0 4px 12px -4px rgb(23 37 84 / 0.1);
+  --ui-elev-2: 0 2px 4px rgb(23 37 84 / 0.06), 0 14px 30px -8px rgb(23 37 84 / 0.14);
+  --ui-elev-3: 0 4px 10px rgb(23 37 84 / 0.08), 0 30px 60px -12px rgb(23 37 84 / 0.2);
+
+  --ui-gray-600-rgb: 71 85 118;
+  --ui-gray-500-rgb: 100 112 140;
+  --ui-gray-200-rgb: 223 229 241;
+  --ui-gray-100-rgb: 238 242 251;
+  --ui-gray-50-rgb: 247 249 253;
 }
 
 .amoled {
   --ui-bg: #000000;
   --ui-bg-rgb: 0 0 0;
-  --ui-surface: #0a0a0a;
-  --ui-surface-rgb: 10 10 10;
-  --ui-surface-2: #141414;
-  --ui-surface-2-rgb: 20 20 20;
-  --ui-border: #2e2e2e;
-  --ui-border-rgb: 46 46 46;
+  --ui-surface: #070709;
+  --ui-surface-rgb: 7 7 9;
+  --ui-surface-2: #101014;
+  --ui-surface-2-rgb: 16 16 20;
+  --ui-border: #232329;
+  --ui-border-rgb: 35 35 41;
   --ui-text: #ffffff;
   --ui-text-rgb: 255 255 255;
-  --ui-text-secondary: #d1d5db;
-  --ui-text-secondary-rgb: 209 213 219;
-  --ui-muted: #9ca3af;
-  --ui-muted-rgb: 156 163 175;
+  --ui-text-secondary: #d4d4dd;
+  --ui-text-secondary-rgb: 212 212 221;
+  --ui-muted: #86869a;
+  --ui-muted-rgb: 134 134 154;
 
-  --ui-gray-600-rgb: 63 63 63;
+  --ui-glass: #ffffff;
+  --ui-glass-rgb: 255 255 255;
+  --ui-glass-alpha: 0.04;
+  --ui-glass-alpha-strong: 0.07;
+  --ui-glass-highlight: inset 0 1px 0 0 rgb(255 255 255 / 0.07);
+
+  --ui-elev-1: 0 1px 2px rgb(0 0 0 / 0.5), 0 4px 12px -4px rgb(0 0 0 / 0.6);
+  --ui-elev-2: 0 2px 4px rgb(0 0 0 / 0.5), 0 12px 28px -8px rgb(0 0 0 / 0.7);
+  --ui-elev-3: 0 4px 8px rgb(0 0 0 / 0.5), 0 28px 60px -12px rgb(0 0 0 / 0.8);
+
+  --ui-gray-600-rgb: 54 54 62;
 }
 
 /* Message density — the chat message lists all use `.space-y-1`. */
@@ -122,24 +239,252 @@
 
 /* Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--ui-surface-2);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgb(var(--accent-700-rgb) / 1);
-  border-radius: 4px;
+  background: rgb(var(--accent-700-rgb) / 0.55);
+  border-radius: 999px;
+  /* Inset so the thumb reads as sitting inside the track, and the transparent
+     border gives it breathing room without changing its hit area. */
+  border: 3px solid transparent;
+  background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgb(var(--accent-600-rgb) / 1);
+  background: rgb(var(--accent-600-rgb) / 0.85);
+  background-clip: content-box;
 }
 
-/* Accent utility classes — static fallbacks so every accent shade exists
- * regardless of which classes Tailwind's content scan picks up. */
+/* ---------------------------------------------------------------------------
+ * Components.
+ *
+ * Anything used by more than one screen lives here as a real class rather than
+ * a repeated Tailwind string. That is what keeps the surface treatment
+ * consistent: a button in a modal and a button in a page are the same element,
+ * so they cannot drift apart.
+ * ------------------------------------------------------------------------- */
+@layer components {
+  /* The core glass surface. Everything translucent in the app is one of these
+     three levels, which is what makes the whole UI feel like one material
+     instead of a pile of differently-shaded boxes. */
+  .glass {
+    background-color: rgb(var(--ui-glass-rgb) / var(--ui-glass-alpha));
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border-color: rgb(var(--ui-border-rgb) / 0.75);
+  }
+
+  /* A panel: frosted, bordered, with a hairline highlight along whichever edge
+     the light comes from, and a wide soft shadow underneath so it sits above
+     the ambient field rather than inside it. */
+  .glass-panel {
+    background-color: rgb(var(--ui-glass-rgb) / var(--ui-glass-alpha-strong));
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid rgb(var(--ui-border-rgb) / 0.8);
+    box-shadow:
+      var(--ui-glass-highlight),
+      var(--ui-elev-2);
+  }
+
+  /* A card. Lighter frost than a panel and a lower shadow: cards repeat many
+     times down a feed, so they have to stay quiet under the content. */
+  .glass-card {
+    background-color: rgb(var(--ui-glass-rgb) / var(--ui-glass-alpha));
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    border: 1px solid rgb(var(--ui-border-rgb) / 0.7);
+    box-shadow:
+      var(--ui-glass-highlight),
+      var(--ui-elev-1);
+    transition:
+      box-shadow 200ms var(--ease-out),
+      border-color 200ms var(--ease-out),
+      transform 200ms var(--ease-out);
+  }
+
+  /* Lift on hover. `-2px` is deliberately small: enough to feel alive, not
+     enough to make a dense list hard to hit with the mouse. */
+  .glass-card-hover:hover {
+    border-color: rgb(var(--accent-400-rgb) / 0.4);
+    box-shadow:
+      var(--ui-glass-highlight),
+      var(--ui-elev-2);
+    transform: translateY(-2px);
+  }
+
+  .elev-1 {
+    box-shadow: var(--ui-elev-1);
+  }
+  .elev-2 {
+    box-shadow: var(--ui-elev-2);
+  }
+  .elev-3 {
+    box-shadow: var(--ui-elev-3);
+  }
+
+  /* Form controls. Transparent rather than filled, sitting on their own inset
+     well so the control has depth without needing a second background layer. */
+  .field {
+    @apply w-full rounded-xl px-4 py-3 text-sm text-white transition-all duration-200;
+    background-color: rgb(var(--ui-bg-rgb) / 0.45);
+    border: 1px solid rgb(var(--ui-border-rgb) / 0.9);
+    box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.25);
+  }
+  .field::placeholder {
+    color: rgb(var(--ui-muted-rgb) / 0.85);
+  }
+  .field:hover:not(:disabled):not(:focus) {
+    border-color: rgb(var(--ui-border-rgb) / 1);
+  }
+  .field:focus {
+    border-color: rgb(var(--accent-400-rgb) / 0.9);
+    box-shadow:
+      inset 0 1px 2px rgb(0 0 0 / 0.25),
+      0 0 0 4px rgb(var(--accent-500-rgb) / 0.18);
+    outline: none;
+  }
+  .field:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  .field-label {
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wider;
+    color: rgb(var(--ui-muted-rgb) / 1);
+  }
+
+  /* Buttons. */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  /* The primary action glows. This is the single most saturated thing in the
+     app by design — one light source per screen. */
+  .btn-primary {
+    @apply btn text-white;
+    background-image: linear-gradient(
+      135deg,
+      rgb(var(--accent-500-rgb)) 0%,
+      rgb(var(--accent-600-rgb)) 100%
+    );
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.22),
+      0 8px 22px -8px rgb(var(--accent-500-rgb) / 0.7);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background-image: linear-gradient(
+      135deg,
+      rgb(var(--accent-400-rgb)) 0%,
+      rgb(var(--accent-500-rgb)) 100%
+    );
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.28),
+      0 12px 30px -8px rgb(var(--accent-500-rgb) / 0.85);
+    transform: translateY(-1px);
+  }
+  .btn-primary:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  /* Quiet action: reads as a surface, not a button, until hovered. */
+  .btn-ghost {
+    @apply btn text-gray-300;
+    background-color: rgb(var(--ui-glass-rgb) / var(--ui-glass-alpha));
+    border: 1px solid rgb(var(--ui-border-rgb) / 0.8);
+  }
+  .btn-ghost:hover:not(:disabled) {
+    color: rgb(var(--ui-text-rgb) / 1);
+    background-color: rgb(var(--ui-glass-rgb) / var(--ui-glass-alpha-strong));
+    border-color: rgb(var(--ui-border-rgb) / 1);
+  }
+
+  .btn-danger {
+    @apply btn text-red-400;
+    background-color: rgb(239 68 68 / 0.12);
+    border: 1px solid rgb(239 68 68 / 0.3);
+  }
+  .btn-danger:hover:not(:disabled) {
+    color: #fff;
+    background-color: rgb(239 68 68 / 0.75);
+    border-color: rgb(239 68 68 / 0.75);
+  }
+
+  /* An icon-only control: square hit area, glyph brightens on hover. */
+  .icon-btn {
+    @apply inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-all duration-200;
+    color: rgb(var(--ui-muted-rgb) / 1);
+  }
+  .icon-btn:hover {
+    color: rgb(var(--ui-text-rgb) / 1);
+    background-color: rgb(var(--ui-glass-rgb) / var(--ui-glass-alpha-strong));
+  }
+
+  /* A segmented control. The thumb sits on a lit pill so the selected option
+     is obvious without needing a border. */
+  .segment {
+    @apply inline-flex items-center rounded-xl p-1;
+    background-color: rgb(var(--ui-bg-rgb) / 0.4);
+    border: 1px solid rgb(var(--ui-border-rgb) / 0.7);
+  }
+  .segment-item {
+    @apply rounded-lg px-3 py-1.5 text-xs font-semibold transition-all duration-200;
+    color: rgb(var(--ui-muted-rgb) / 1);
+  }
+  .segment-item:hover {
+    color: rgb(var(--ui-text-rgb) / 1);
+  }
+  .segment-item[data-active="true"] {
+    color: rgb(var(--ui-text-rgb) / 1);
+    background-color: rgb(var(--ui-glass-rgb) / var(--ui-glass-alpha-strong));
+    box-shadow:
+      inset 0 1px 0 0 rgb(255 255 255 / 0.1),
+      0 2px 8px -2px rgb(0 0 0 / 0.4);
+  }
+
+  /* A small uppercase section label. */
+  .eyebrow {
+    @apply text-[11px] font-bold uppercase tracking-[0.12em];
+    color: rgb(var(--ui-muted-rgb) / 0.9);
+  }
+
+  /* Active-state pill for list rows (channels, nav tabs). Carries an accent
+     glow so "you are here" is unmistakable. */
+  .row-active {
+    color: rgb(var(--ui-text-rgb) / 1);
+    background-color: rgb(var(--accent-500-rgb) / 0.16);
+    box-shadow: inset 0 0 0 1px rgb(var(--accent-400-rgb) / 0.35);
+  }
+
+  /* An avatar with a lit rim, used for the profile/identity slots. */
+  .ring-lit {
+    box-shadow:
+      0 0 0 1px rgb(var(--ui-border-rgb) / 0.9),
+      0 0 22px -6px rgb(var(--accent-400-rgb) / 0.55);
+  }
+
+  /* Status dot: ringed so it reads as a separate object rather than a dot
+     painted behind the avatar edge. The inner ring matches the page plane and
+     the outer one is a faint light, which keeps it legible on a glass panel
+     as well as on the bare background. */
+  .status-dot {
+    @apply absolute rounded-full;
+    box-shadow:
+      0 0 0 2px rgb(var(--ui-bg-rgb) / 0.85),
+      0 0 0 3px rgb(var(--ui-glass-rgb) / 0.25);
+  }
+}
+
+/* ---------------------------------------------------------------------------
+ * Accent utility classes — static fallbacks so every accent shade exists
+ * regardless of which classes Tailwind's content scan picks up.
+ * ------------------------------------------------------------------------- */
 .bg-accent-50 { background-color: rgb(var(--accent-50-rgb) / 1); }
 .bg-accent-100 { background-color: rgb(var(--accent-100-rgb) / 1); }
 .bg-accent-200 { background-color: rgb(var(--accent-200-rgb) / 1); }
@@ -187,9 +532,184 @@
 
 .border-t-transparent { border-top-color: transparent; }
 
-/* Reply banner — slides up with a single soft overshoot, then settles.
- * One iteration only: the element ends at translateY(0) and stays put. */
-@keyframes dangro-reply-in {
+/* ---------------------------------------------------------------------------
+ * Motion. One easing curve for the whole app so nothing feels like it came
+ * from a different product. `--ease-out` is heavily front-loaded: fast out of
+ * the gate, gentle landing. Anything slower than 320ms starts to feel broken
+ * in a chat app.
+ * ------------------------------------------------------------------------- */
+:root {
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-fast: 120ms;
+  --dur: 200ms;
+  --dur-slow: 320ms;
+}
+
+/* Honour the OS setting. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  /*
+   * Collapsing the duration of a *looping* animation to 0.01ms turns it into
+   * a strobe, which is worse than no animation at all. Stop them outright so
+   * each rests on its first frame — every looping animation here is authored
+   * to look correct at rest (the pulse starts at full opacity, the shimmer at
+   * a mid-grey, the ring at its visible sweep).
+   */
+  .animate-ring-spin,
+  .animate-glow-pulse,
+  .skeleton,
+  .animate-pulse,
+  .animate-spin,
+  .animate-bounce,
+  .animate-ping,
+  .anim-pop-in,
+  .anim-fade-in,
+  .anim-reply-in {
+    animation: none !important;
+  }
+}
+
+/* Entry animations. Content that arrives on mount fades up from a few pixels
+   below — enough to read as "it came in", not enough to be noticed mid-read. */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Scales up slightly from its own centre. Used for modals and popovers, which
+   should feel like they grew out of the thing that opened them.
+
+   The middle keyframe is a deliberate overshoot (past 1, then back). A popup
+   that eases straight to scale(1) reads as a blink; one that settles past its
+   target and springs back reads as a physical object arriving. */
+@keyframes pop-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.9) translateY(6px);
+  }
+  55% {
+    opacity: 1;
+    transform: scale(1.02) translateY(0);
+  }
+  75% {
+    transform: scale(0.995) translateY(0);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* A slow accent pulse for "something is happening here" — live voice, typing.
+   Deliberately slow; a fast pulse reads as an error. */
+@keyframes glow-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 rgb(var(--accent-400-rgb) / 0.5);
+  }
+  50% {
+    opacity: 0.75;
+    box-shadow: 0 0 0 6px rgb(var(--accent-400-rgb) / 0);
+  }
+}
+
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Defined here rather than borrowed from Tailwind's `animate-spin`: the splash
+   ring is the first thing rendered on a cold load, and relying on some other
+   component happening to use `animate-spin` to pull the keyframe into the
+   bundle means deleting that component silently kills this one. */
+@keyframes ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-ring-spin {
+  animation: ring-spin 0.9s linear infinite;
+}
+
+.animate-fade-up {
+  animation: fade-up var(--dur-slow) var(--ease-out) both;
+}
+.animate-fade-in {
+  animation: fade-in var(--dur) var(--ease-out) both;
+}
+.animate-pop-in {
+  animation: pop-in var(--dur) var(--ease-out) both;
+}
+.animate-overlay-in {
+  animation: overlay-in var(--dur) var(--ease-out) both;
+}
+.animate-glow-pulse {
+  animation: glow-pulse 2.4s var(--ease-in-out) infinite;
+}
+.animate-toast-in {
+  animation: toast-in var(--dur) var(--ease-out) both;
+}
+
+/* ---------------------------------------------------------------------------
+ * Legacy entry-animation names.
+ *
+ * The pre-redesign screens used `.anim-pop-in` / `.anim-fade-in` /
+ * `.anim-reply-in`. Those are aliased onto the keyframes above rather than
+ * deleted: components that still reference them keep animating, and because
+ * both names now resolve to the same keyframes there is exactly one curve in
+ * the app no matter which class an element happens to carry.
+ * ------------------------------------------------------------------------- */
+@keyframes reply-in {
   0% {
     opacity: 0;
     transform: translateY(14px);
@@ -207,52 +727,25 @@
   }
 }
 
-.anim-reply-in {
-  animation: dangro-reply-in 0.55s cubic-bezier(0.25, 1, 0.4, 1) both;
-}
-
-/* Popups (story viewer, modals) — scale up with one soft overshoot so they
- * never just blink onto the screen. Runs once and settles at scale(1). */
-@keyframes dangro-pop-in {
-  0% {
-    opacity: 0;
-    transform: scale(0.9);
-  }
-  55% {
-    opacity: 1;
-    transform: scale(1.02);
-  }
-  75% {
-    transform: scale(0.995);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
 .anim-pop-in {
-  animation: dangro-pop-in 0.45s cubic-bezier(0.25, 1, 0.4, 1) both;
+  animation: pop-in 0.45s var(--ease-out) both;
 }
-
-/* Backdrop behind a popup — a plain fade so the panel's pop reads clearly. */
-@keyframes dangro-fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
 .anim-fade-in {
-  animation: dangro-fade-in 0.3s ease-out both;
+  animation: fade-in 0.3s ease-out both;
+}
+.anim-reply-in {
+  animation: reply-in 0.55s var(--ease-out) both;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .anim-reply-in,
-  .anim-pop-in,
-  .anim-fade-in {
-    animation: none;
-  }
+/* Skeleton loading. A travelling highlight rather than a blinking block, so a
+   list that is still loading looks like content arriving instead of broken. */
+.skeleton {
+  background-image: linear-gradient(
+    90deg,
+    rgb(var(--ui-glass-rgb) / 0.04) 0%,
+    rgb(var(--ui-glass-rgb) / 0.1) 50%,
+    rgb(var(--ui-glass-rgb) / 0.04) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
 }

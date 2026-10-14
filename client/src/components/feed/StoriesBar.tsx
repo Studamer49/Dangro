@@ -10,10 +10,16 @@ interface StoriesBarProps {
   onAdded: (story: Story | undefined) => void;
 }
 
-/** The gradient ring Instagram and Discord both use for "you have stories". */
+/**
+ * The gradient ring Instagram and Discord both use for "you have stories".
+ *
+ * The hues are read from the themeable accent ramp rather than fixed brand
+ * colours so the ring tracks whichever accent the viewer picked, and so it
+ * stays legible in the light and amoled themes.
+ */
 const RING_UNSEEN =
-  "bg-[conic-gradient(from_210deg,#f9ce34,#ee2a7b,#6228d7_75%)]";
-const RING_SEEN = "bg-gray-700";
+  "bg-[conic-gradient(from_210deg,rgb(var(--accent-300-rgb)/0.95),rgb(var(--accent-400-rgb))_30%,rgb(var(--accent-600-rgb))_60%,rgb(var(--accent-400-rgb))_85%)]";
+const RING_SEEN = "bg-gray-700/70";
 
 /**
  * The stories strip.
@@ -59,19 +65,25 @@ export default function StoriesBar({ groups, viewer, onAdded }: StoriesBarProps)
             className="group flex w-[68px] shrink-0 flex-col items-center gap-1.5"
           >
             <span className="relative">
-              <span className={`block rounded-full p-[2.5px] ${myGroup ? RING_UNSEEN : RING_SEEN}`}>
+              <span
+                className={`block rounded-full p-[2.5px] transition-transform duration-200 ease-out group-hover:scale-105 ${
+                  myGroup ? `${RING_UNSEEN} shadow-glow` : RING_SEEN
+                }`}
+              >
                 <span className="block rounded-full bg-gray-950 p-[2px]">
                   <Avatar user={myGroup?.author ?? viewer} className="h-14 w-14" />
                 </span>
               </span>
               <span
-                className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-accent-600 text-xs font-bold leading-none text-white ring-[3px] ring-gray-950 transition-transform group-hover:scale-110"
+                className="glass absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-white/20 text-xs font-bold leading-none text-white shadow-elev1 transition-transform duration-200 ease-out group-hover:scale-110"
                 aria-hidden
               >
                 +
               </span>
             </span>
-            <span className="w-full truncate text-center text-[11px] text-gray-400">Your story</span>
+            <span className="w-full truncate text-center text-[11px] font-medium text-gray-400 transition-colors duration-200 ease-out group-hover:text-white">
+              Your story
+            </span>
           </button>
 
           {/* Everyone else */}
@@ -80,21 +92,21 @@ export default function StoriesBar({ groups, viewer, onAdded }: StoriesBarProps)
               key={group.author.id}
               type="button"
               onClick={() => setViewing({ authorId: group.author.id, startIndex: 0 })}
-              className="flex w-[68px] shrink-0 flex-col items-center gap-1.5"
+              className="group flex w-[68px] shrink-0 flex-col items-center gap-1.5"
             >
-              <span className={`block rounded-full p-[2.5px] ${RING_UNSEEN}`}>
+              <span className={`block rounded-full p-[2.5px] transition-transform duration-200 ease-out group-hover:scale-105 ${RING_UNSEEN}`}>
                 <span className="block rounded-full bg-gray-950 p-[2px]">
                   <Avatar user={group.author} className="h-14 w-14" />
                 </span>
               </span>
-              <span className="w-full truncate text-center text-[11px] text-gray-400">
+              <span className="w-full truncate text-center text-[11px] font-medium text-gray-400 transition-colors duration-200 ease-out group-hover:text-white">
                 {group.author.username}
               </span>
             </button>
           ))}
 
           {otherGroups.length === 0 && (
-            <p className="flex items-center pl-2 text-xs text-gray-600">
+            <p className="flex items-center pl-2 text-xs text-gray-500">
               Follow people to see their stories.
             </p>
           )}

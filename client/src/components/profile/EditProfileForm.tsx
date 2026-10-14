@@ -89,14 +89,23 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
 
   return (
     <div className="space-y-5">
+      {/*
+        The avatar sits on the same accent gradient it will carry on the
+        profile page, with a plain 1px rim — the lit halo is reserved for the
+        larger identity slot there, where there is room for it.
+      */}
       <div className="flex flex-wrap items-center gap-4">
-        <ProfileAvatar username={trimmedUsername || user.username} avatar={avatar} className="h-16 w-16 text-2xl" />
+        <ProfileAvatar
+          username={trimmedUsername || user.username}
+          avatar={avatar}
+          className="h-16 w-16 text-2xl ring-1 ring-white/15"
+        />
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="rounded-lg bg-gray-800 px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 disabled:opacity-50"
+            className="btn-ghost"
           >
             {uploading ? "Uploading..." : "Upload photo"}
           </button>
@@ -105,7 +114,7 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
               type="button"
               onClick={() => setAvatar(null)}
               disabled={uploading}
-              className="rounded-lg bg-gray-800 px-3 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700 disabled:opacity-50"
+              className="btn-danger"
             >
               Remove
             </button>
@@ -121,7 +130,7 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
       </div>
 
       <div>
-        <label htmlFor="edit-profile-avatar-url" className="mb-2 block text-sm font-medium text-gray-300">
+        <label htmlFor="edit-profile-avatar-url" className="field-label">
           Avatar URL
         </label>
         <input
@@ -130,12 +139,12 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
           value={avatar ?? ""}
           onChange={(e) => setAvatar(e.target.value || null)}
           placeholder="https://example.com/avatar.png"
-          className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+          className="field"
         />
       </div>
 
       <div>
-        <label htmlFor="edit-profile-username" className="mb-2 block text-sm font-medium text-gray-300">
+        <label htmlFor="edit-profile-username" className="field-label">
           Username
         </label>
         <input
@@ -144,13 +153,13 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           onBlur={() => setUsername(trimmedUsername)}
-          className="w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+          className="field"
         />
-        {usernameError && <p className="mt-1 text-xs text-red-400">{usernameError}</p>}
+        {usernameError && <p className="mt-1.5 text-xs text-red-400">{usernameError}</p>}
       </div>
 
       <div>
-        <label htmlFor="edit-profile-bio" className="mb-2 block text-sm font-medium text-gray-300">
+        <label htmlFor="edit-profile-bio" className="field-label">
           Bio
         </label>
         <textarea
@@ -160,18 +169,16 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
           value={bio}
           onChange={(e) => setBio(e.target.value)}
           placeholder="Tell people about yourself"
-          className="w-full resize-none rounded-lg border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+          className="field resize-none"
         />
-        <p className="mt-1 text-right text-xs text-gray-500">{bio.length}/500</p>
+        {/* Tabular figures keep the counter from shifting the rest of the row
+            sideways on every keystroke as the digit count changes width. */}
+        <p className="tabular mt-1.5 text-right text-xs text-gray-500">{bio.length}/500</p>
       </div>
 
       <div className="flex justify-end gap-2">
         {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-lg bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700"
-          >
+          <button type="button" onClick={onCancel} className="btn-ghost">
             Cancel
           </button>
         )}
@@ -179,7 +186,7 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
           type="button"
           onClick={handleSave}
           disabled={saving || uploading || !!usernameError}
-          className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:cursor-not-allowed disabled:opacity-50"
+          className="btn-primary"
         >
           {saving ? "Saving..." : "Save"}
         </button>

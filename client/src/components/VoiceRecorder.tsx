@@ -5,6 +5,19 @@ interface Props {
   disabled?: boolean;
 }
 
+/**
+ * The shape of the level meter, and the delay at which each bar starts its
+ * shimmer. The staggered offsets make the shimmer travel outward from the
+ * centre instead of pulsing the whole row in lockstep.
+ */
+const METER_BARS = [
+  { height: "h-2", delay: "0ms" },
+  { height: "h-3.5", delay: "150ms" },
+  { height: "h-5", delay: "300ms" },
+  { height: "h-3.5", delay: "150ms" },
+  { height: "h-2", delay: "0ms" },
+] as const;
+
 export default function VoiceRecorder({ onRecordingComplete, disabled }: Props) {
   const [isRecording, setIsRecording] = useState(false);
   const [duration, setDuration] = useState(0);
@@ -106,26 +119,48 @@ export default function VoiceRecorder({ onRecordingComplete, disabled }: Props) 
 
   if (isRecording) {
     return (
-      <div className="flex items-center gap-2">
+      // Inset rather than a second `glass-panel`: this strip expands *inside*
+      // the composer, which is itself a glass panel. A panel with its own
+      // border and drop shadow inside another one reads as a panel floating
+      // inside a panel, so it drops the chrome and sits recessed instead.
+      <div className="glass animate-pop-in flex items-center gap-3 rounded-2xl px-3 py-2 shadow-[inset_0_1px_0_0_rgb(var(--ui-glass-rgb)/0.06)]">
         <button
           onClick={cancelRecording}
-          className="rounded-lg p-2 text-red-400 hover:bg-gray-800"
+          className="icon-btn"
           title="Cancel recording"
+          aria-label="Cancel recording"
         >
           <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
-        <div className="flex items-center gap-2 rounded-lg bg-gray-800 px-3 py-2">
-          <div className="h-2 w-2 animate-pulse rounded-full bg-red-500" />
-          <span className="text-xs text-red-400">{formatDuration(duration)}</span>
+
+        {/* Recording indicator + elapsed time. `tabular` keeps the digits from
+            jittering as the seconds tick over. */}
+        <div className="flex items-center gap-2 rounded-lg border border-gray-700/60 bg-gray-950/45 px-2.5 py-1.5 shadow-[inset_0_1px_2px_rgb(0_0_0/0.25)]">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-red-500 shadow-[0_0_8px_0_rgb(239_68_68/0.9)]" />
+          <span className="tabular text-xs font-semibold text-red-300">{formatDuration(duration)}</span>
         </div>
+
+        {/* Level meter: a fixed silhouette with a staggered shimmer, since the
+            recorder reads no analyser data. Decorative only. */}
+        <div className="flex h-5 items-end gap-[3px]" aria-hidden>
+          {METER_BARS.map((bar, i) => (
+            <span
+              key={i}
+              style={{ animationDelay: bar.delay }}
+              className={`w-[3px] animate-pulse rounded-full bg-accent-400 shadow-[0_0_6px_-1px_rgb(var(--accent-400-rgb)/0.8)] ${bar.height}`}
+            />
+          ))}
+        </div>
+
         <button
           onClick={stopRecording}
-          className="rounded-xl bg-red-600 p-2.5 text-white hover:bg-red-500"
+          className="btn-primary h-9 w-9 shrink-0 rounded-full p-0"
           title="Send recording"
+          aria-label="Send recording"
         >
-          <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+          <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
             <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
           </svg>
         </button>
@@ -137,8 +172,9 @@ export default function VoiceRecorder({ onRecordingComplete, disabled }: Props) 
     <button
       onClick={startRecording}
       disabled={disabled}
-      className="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white disabled:opacity-50"
+      className="icon-btn disabled:cursor-not-allowed disabled:opacity-50"
       title="Record voice message"
+      aria-label="Record voice message"
     >
       <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />

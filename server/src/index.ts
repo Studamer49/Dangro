@@ -271,17 +271,17 @@ function shutdown(signal: string): void {
   setTimeout(() => process.exit(1), 10_000).unref();
 }
 
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
-process.on("unhandledRejection", (reason) => {
-  console.error("[error] Unhandled promise rejection:", reason);
-});
-process.on("uncaughtException", (err) => {
-  console.error("[error] Uncaught exception:", err);
-  process.exit(1);
-});
-
 if (!config.isTest) {
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+  process.on("unhandledRejection", (reason) => {
+    console.error("[error] Unhandled promise rejection:", reason);
+  });
+  process.on("uncaughtException", (err) => {
+    console.error("[error] Uncaught exception:", err);
+    process.exit(1);
+  });
+
   void main();
 }
 

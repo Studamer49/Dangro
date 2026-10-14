@@ -267,7 +267,7 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
         <>
           <button
             onClick={onClose}
-            className="rounded-lg bg-gray-800 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
+            className="btn-ghost px-4 py-2 text-sm"
           >
             Cancel
           </button>
@@ -275,7 +275,7 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
             <button
               onClick={shareText}
               disabled={busy || !text.trim()}
-              className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
+              className="btn-primary px-4 py-2 text-sm"
             >
               {busy ? "Sharing…" : "Share"}
             </button>
@@ -284,7 +284,7 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
             <button
               onClick={shareDrawing}
               disabled={busy}
-              className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
+              className="btn-primary px-4 py-2 text-sm"
             >
               {busy ? "Sharing…" : "Share"}
             </button>
@@ -292,7 +292,7 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
           {mode === "photo" && (
             <label
               data-bounce-subtle
-              className="cursor-pointer rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
+              className="btn-primary cursor-pointer px-4 py-2 text-sm"
             >
               {busy ? "Uploading…" : editing ? "Replace" : "Choose a file"}
               <input type="file" accept="image/*,video/*" className="hidden" onChange={(e) => void sharePhoto(e)} />
@@ -301,14 +301,13 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
         </>
       }
     >
-      <div className="mb-4 flex gap-1 rounded-lg bg-gray-800 p-1">
+      <div className="segment mb-5 w-full">
         {(["text", "draw", "photo"] as Mode[]).map((value) => (
           <button
             key={value}
             onClick={() => setMode(value)}
-            className={`flex-1 rounded px-3 py-1.5 text-sm font-medium capitalize transition-colors ${
-              mode === value ? "bg-accent-600 text-white" : "text-gray-400 hover:text-gray-200"
-            }`}
+            data-active={mode === value}
+            className="segment-item flex-1 capitalize"
           >
             {value === "photo" ? "Photo" : value}
           </button>
@@ -318,13 +317,13 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
       {mode === "text" && (
         <div className="space-y-4">
           <div
-            className="flex h-40 items-center justify-center rounded-lg px-4"
+            className="elev-2 flex h-40 items-center justify-center rounded-2xl px-4 ring-1 ring-inset ring-white/15"
             style={{
               background: (STORY_BACKGROUNDS.find((b) => b.id === backgroundId) ?? STORY_BACKGROUNDS[0]).css,
             }}
           >
             <p
-              className="max-h-full overflow-hidden text-center text-white"
+              className="max-h-full overflow-hidden text-center text-white drop-shadow-sm"
               style={{ font: STORY_FONTS.find((f) => f.id === fontId)?.css ?? STORY_FONTS[0].css }}
             >
               {text || "Your text here"}
@@ -337,12 +336,12 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
             rows={3}
             maxLength={280}
             placeholder="Type something..."
-            className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+            className="field resize-none"
           />
-          <p className="-mt-2 text-right text-xs text-gray-500">{text.length}/280</p>
+          <p className="tabular -mt-2 text-right text-xs text-gray-500">{text.length}/280</p>
 
           <div>
-            <label className="mb-2 block text-xs font-semibold uppercase text-gray-500">Background</label>
+            <label className="field-label">Background</label>
             <div className="flex flex-wrap gap-2">
               {STORY_BACKGROUNDS.map((background) => (
                 <button
@@ -350,7 +349,9 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
                   onClick={() => setBackgroundId(background.id)}
                   aria-label={background.id}
                   title={background.id}
-                  className={`h-8 w-8 rounded-full ${backgroundId === background.id ? "ring-2 ring-white" : ""}`}
+                  className={`h-8 w-8 rounded-full border transition-all duration-200 ease-out hover:border-white/40 ${
+                    backgroundId === background.id ? "shadow-glow ring-2 ring-accent-400 ring-offset-2 ring-offset-transparent" : "border-white/20"
+                  }`}
                   style={{ background: background.css }}
                 />
               ))}
@@ -358,14 +359,16 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
           </div>
 
           <div>
-            <label className="mb-2 block text-xs font-semibold uppercase text-gray-500">Font</label>
+            <label className="field-label">Font</label>
             <div className="flex flex-wrap gap-2">
               {STORY_FONTS.map((font) => (
                 <button
                   key={font.id}
                   onClick={() => setFontId(font.id)}
-                  className={`rounded px-2.5 py-1 text-xs transition-colors ${
-                    fontId === font.id ? "bg-accent-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                  className={`glass rounded-xl border px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ease-out ${
+                    fontId === font.id
+                      ? "shadow-glow text-white"
+                      : "text-gray-300 hover:bg-gray-500/10 hover:text-white"
                   }`}
                 >
                   {font.label}
@@ -378,18 +381,23 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
 
       {mode === "draw" && (
         <div className="space-y-3">
-          <canvas
-            ref={attachCanvas}
-            width={DRAW_SIZE}
-            height={DRAW_SIZE}
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={stopDrawing}
-            onPointerLeave={stopDrawing}
-            onPointerCancel={stopDrawing}
-            className="w-full cursor-crosshair touch-none rounded-lg border border-gray-700 bg-white"
-            style={{ aspectRatio: "1 / 1" }}
-          />
+          {/* The canvas is an opaque bitmap (the sketch is filled white on
+              attach), so it lives inside a recessed glass well rather than
+              being painted straight onto the dialog. */}
+          <div className="glass rounded-2xl border p-2 shadow-elev2">
+            <canvas
+              ref={attachCanvas}
+              width={DRAW_SIZE}
+              height={DRAW_SIZE}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={stopDrawing}
+              onPointerLeave={stopDrawing}
+              onPointerCancel={stopDrawing}
+              className="w-full cursor-crosshair touch-none rounded-xl border border-gray-700/60"
+              style={{ aspectRatio: "1 / 1" }}
+            />
+          </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {BRUSH_COLORS.map((color) => (
@@ -400,22 +408,26 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
                   setEraser(false);
                 }}
                 aria-label={`Brush ${color}`}
-                className={`h-6 w-6 rounded-full border border-gray-600 ${
-                  !eraser && brushColor === color ? "ring-2 ring-accent-500" : ""
+                className={`h-7 w-7 rounded-full border transition-all duration-200 ease-out ${
+                  !eraser && brushColor === color
+                    ? "border-accent-400/80 shadow-glow ring-2 ring-accent-400"
+                    : "border-white/20 hover:border-white/40"
                 }`}
                 style={{ backgroundColor: color }}
               />
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {BRUSH_SIZES.map((size) => (
               <button
                 key={size}
                 onClick={() => setBrushSize(size)}
                 aria-label={`Size ${size}`}
-                className={`rounded px-2.5 py-1 text-xs transition-colors ${
-                  brushSize === size ? "bg-accent-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                className={`tabular glass rounded-xl border px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ease-out ${
+                  brushSize === size
+                    ? "shadow-glow text-white"
+                    : "text-gray-300 hover:bg-gray-500/10 hover:text-white"
                 }`}
               >
                 {size}
@@ -423,21 +435,21 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
             ))}
             <button
               onClick={() => setEraser((current) => !current)}
-              className={`ml-auto rounded px-2.5 py-1 text-xs transition-colors ${
-                eraser ? "bg-accent-600 text-white" : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+              className={`glass ml-auto rounded-xl border px-2.5 py-1.5 text-xs font-medium transition-all duration-200 ease-out ${
+                eraser ? "shadow-glow text-white" : "text-gray-300 hover:bg-gray-500/10 hover:text-white"
               }`}
             >
               Eraser
             </button>
             <button
               onClick={undo}
-              className="rounded bg-gray-800 px-2.5 py-1 text-xs text-gray-400 hover:bg-gray-700"
+              className="btn-ghost px-2.5 py-1.5 text-xs"
             >
               Undo
             </button>
             <button
               onClick={clear}
-              className="rounded bg-gray-800 px-2.5 py-1 text-xs text-gray-400 hover:bg-gray-700"
+              className="btn-ghost px-2.5 py-1.5 text-xs"
             >
               Clear
             </button>
@@ -446,7 +458,7 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
       )}
 
       {mode === "photo" && (
-        <p className="py-6 text-center text-sm text-gray-400">
+        <p className="glass rounded-2xl border px-4 py-8 text-center text-sm text-gray-400">
           Choose a photo or video to share.{" "}
           {editing ? "This replaces the current story." : ""}
         </p>

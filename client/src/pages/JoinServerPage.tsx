@@ -98,29 +98,23 @@ export default function JoinServerPage() {
 
   return (
     <div className="flex h-full items-center justify-center px-4 py-10">
-      <div className="w-full max-w-md rounded-2xl bg-gray-900 p-8 shadow-2xl">
+      <div className="glass-panel w-full max-w-md rounded-2xl p-8 animate-pop-in">
         {state.status === "loading" && (
           <div className="py-6 text-center">
-            <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
+            <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-2 border-accent-400 border-t-transparent shadow-glow" />
             <p className="text-sm text-gray-400">Checking the invite…</p>
           </div>
         )}
 
         {state.status === "error" && (
           <div className="text-center">
-            <h1 className="mb-2 text-xl font-bold text-white">Invite unavailable</h1>
-            <p className="mb-6 text-sm text-gray-400">{state.message}</p>
-            <div className="flex justify-center gap-2">
-              <button
-                onClick={() => void preview()}
-                className="rounded-lg bg-gray-800 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
-              >
+            <h1 className="text-xl font-bold tracking-tight text-white">Invite unavailable</h1>
+            <p className="mt-2 text-sm text-gray-400">{state.message}</p>
+            <div className="mt-6 flex justify-center gap-2">
+              <button onClick={() => void preview()} className="btn-ghost">
                 Try again
               </button>
-              <button
-                onClick={() => navigate("/explore")}
-                className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500"
-              >
+              <button onClick={() => navigate("/explore")} className="btn-primary">
                 Browse servers
               </button>
             </div>
@@ -129,60 +123,54 @@ export default function JoinServerPage() {
 
         {invite && (
           <div>
-            <p className="mb-4 text-center text-xs font-semibold uppercase tracking-wide text-gray-500">
-              You have been invited to join
-            </p>
+            <p className="eyebrow text-center">You have been invited to join</p>
 
-            <div className="mb-6 flex flex-col items-center text-center">
+            <div className="mt-6 flex flex-col items-center text-center">
               {invite.server.icon ? (
                 <img
                   src={invite.server.icon}
                   alt={invite.server.name}
-                  className="mb-3 h-20 w-20 rounded-full object-cover"
+                  className="ring-lit mb-4 h-20 w-20 rounded-full object-cover"
                 />
               ) : (
-                <div className="mb-3 flex h-20 w-20 items-center justify-center rounded-full bg-gray-800 text-3xl font-bold text-white">
+                <div className="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-accent-500 to-accent-700 text-3xl font-bold text-white shadow-glow">
                   {initial}
                 </div>
               )}
 
-              <h1 className="text-2xl font-bold text-white">{invite.server.name}</h1>
+              <h1 className="text-2xl font-bold tracking-tight text-white">{invite.server.name}</h1>
 
               {invite.server.description && (
-                <p className="mt-2 max-w-xs text-sm text-gray-400">{invite.server.description}</p>
+                <p className="mt-2 max-w-xs text-sm leading-relaxed text-gray-400">
+                  {invite.server.description}
+                </p>
               )}
 
-              <p className="mt-2 text-xs text-gray-500">
+              <p className="mt-3 text-xs tabular text-gray-500">
                 {invite.server._count?.members ?? 0} member
                 {(invite.server._count?.members ?? 0) === 1 ? "" : "s"}
                 {invite.channel ? ` · you will join #${invite.channel.name}` : ""}
               </p>
 
               {invite.inviter?.username && (
-                <p className="mt-1 text-xs text-gray-500">
-                  Invited by <span className="text-gray-300">@{invite.inviter.username}</span>
+                <p className="mt-1.5 text-xs text-gray-500">
+                  Invited by{" "}
+                  <span className="font-semibold text-gray-300">@{invite.inviter.username}</span>
                 </p>
               )}
 
               {invite.maxUses !== null && (
-                <p className="mt-1 text-xs text-gray-600">
+                <p className="mt-1.5 text-xs tabular text-gray-600">
                   {invite.uses} of {invite.maxUses} uses
                 </p>
               )}
             </div>
 
             <div className="flex gap-2">
-              <button
-                onClick={() => navigate("/explore")}
-                className="flex-1 rounded-lg bg-gray-800 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-700"
-              >
+              <button onClick={() => navigate("/explore")} className="btn-ghost flex-1">
                 Cancel
               </button>
-              <button
-                onClick={join}
-                disabled={joining}
-                className="flex-1 rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
-              >
+              <button onClick={join} disabled={joining} className="btn-primary flex-1">
                 {joining ? "Joining…" : "Join"}
               </button>
             </div>

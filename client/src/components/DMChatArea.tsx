@@ -471,7 +471,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
     if (msg.senderId !== user?.id) return null;
     if (!msg.deliveredAt) return <span className="text-gray-500">✓</span>;
     if (!msg.readAt) return <span className="text-gray-400">✓✓</span>;
-    return <span className="text-blue-400">✓✓</span>;
+    return <span className="text-accent-300">✓✓</span>;
   };
 
   const renderAttachment = (msg: DirectMessage) => {
@@ -489,7 +489,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
             // max-w-full + h-auto keeps a wide image inside the bubble instead
             // of forcing the chat column wider; the rounded corners match the
             // rest of the message styling.
-            className="block max-h-80 max-w-full rounded-lg object-contain"
+            className="block max-h-80 max-w-full rounded-lg border border-white/10 object-contain"
             loading="lazy"
           />
         </div>
@@ -502,7 +502,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
           <video
             src={msg.attachmentUrl}
             controls
-            className="max-h-80 max-w-full rounded-lg"
+            className="max-h-80 max-w-full rounded-lg border border-white/10"
           />
         </div>
       );
@@ -521,7 +521,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
         href={msg.attachmentUrl}
         target="_blank"
         rel="noopener noreferrer"
-        className="mt-2 flex items-center gap-2 rounded-lg bg-gray-700/50 px-3 py-2 text-sm text-accent-400 hover:bg-gray-700"
+        className="mt-2 flex items-center gap-2 self-start rounded-full border border-gray-700 bg-gray-800/60 px-3 py-1.5 text-sm text-accent-300 transition-all duration-200 ease-out hover:border-gray-600 hover:bg-gray-800 hover:text-accent-200"
       >
         <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -533,29 +533,29 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-3 border-b border-gray-800 bg-gray-900 px-4 py-3">
+      <div className="glass sticky top-0 z-20 flex items-center gap-3 border-b px-4 py-3">
         <div className="relative">
           <Avatar user={conversation.otherUser} className="h-9 w-9 text-sm" />
           <div
-            className={`absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-gray-900 ${
+            className={`status-dot bottom-0 right-0 h-2.5 w-2.5 ${
               conversation.otherUser?.status === "online"
                 ? "bg-green-500"
                 : conversation.otherUser?.status === "idle"
-                ? "bg-yellow-500"
+                ? "bg-amber-400"
                 : "bg-gray-500"
             }`}
           />
         </div>
         <div>
-          <p className="text-sm font-medium text-white">{conversation.otherUser?.username}</p>
-          <p className="text-xs text-gray-400">{conversation.otherUser?.status || "offline"}</p>
+          <p className="text-sm font-semibold tracking-tight text-white">{conversation.otherUser?.username}</p>
+          <p className="text-xs capitalize text-gray-400">{conversation.otherUser?.status || "offline"}</p>
         </div>
 <div className="ml-auto flex items-center gap-2">
           {conversation.otherUser && (
             <>
               <button
                 onClick={() => initiateCall(conversation.otherUser!.id, conversation.otherUser!, "voice")}
-                className="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white"
+                className="icon-btn"
                 title="Voice call"
               >
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -564,7 +564,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
               </button>
               <button
                 onClick={() => initiateCall(conversation.otherUser!.id, conversation.otherUser!, "video")}
-                className="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white"
+                className="icon-btn"
                 title="Video call"
               >
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -577,8 +577,8 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
       </div>
 
       {isPendingRequest && (
-        <div className="flex items-center justify-between gap-3 border-b border-gray-800 bg-amber-500/10 px-4 py-2">
-          <p className="text-xs text-amber-300">
+        <div className="flex items-center justify-between gap-3 border-b border-gray-800/70 bg-amber-500/10 px-4 py-2">
+          <p className="text-xs text-amber-200">
             {amRequester
               ? `Waiting for ${conversation.otherUser?.username ?? "them"} to accept your message request.`
               : `Message request from ${conversation.otherUser?.username ?? "this user"}. Replying will accept it.`}
@@ -586,7 +586,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
           {!amRequester && (
             <button
               onClick={() => void acceptRequestInline()}
-              className="shrink-0 rounded-lg bg-green-600/20 px-3 py-1 text-xs font-medium text-green-400 transition-colors hover:bg-green-600/30"
+              className="shrink-0 rounded-full bg-green-500/15 px-3 py-1 text-xs font-semibold text-green-300 ring-1 ring-inset ring-green-400/30 transition-all duration-200 ease-out hover:bg-green-500/25"
             >
               Accept
             </button>
@@ -601,7 +601,12 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
       >
         {messages.length === 0 ? (
           <div className="flex h-full items-center justify-center">
-            <p className="text-gray-500">Send a message to start the conversation</p>
+            <div className="text-center">
+              <p className="text-lg font-semibold text-gray-400">No messages yet</p>
+              <p className="mt-1 text-sm text-gray-600">
+                Send a message to start the conversation.
+              </p>
+            </div>
           </div>
         ) : (
           <div className="space-y-1">
@@ -612,25 +617,30 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
                 <div
                   key={msg.id}
                   id={msg.id.startsWith("temp-") ? undefined : `dm-message-${msg.id}`}
-                  className={`group flex ${isSelf ? "justify-end" : "justify-start"}`}
+                  className={`group flex rounded-xl px-3 py-1.5 transition-colors duration-150 ease-out hover:bg-gray-800/40 ${
+                    isSelf ? "justify-end" : "justify-start"
+                  }`}
                 >
                   <div className="relative max-w-[70%]">
                     <div
                       className={`rounded-2xl px-4 py-2 ${
                         isFlashing ? "ring-2 ring-accent-400" : ""
-                      } ${isSelf ? "bg-accent-600 text-white" : "bg-gray-800 text-gray-200"}`}
+                      } ${isSelf ? "bg-accent-600 text-white shadow-glow" : "glass-card text-gray-200"}`}
                     >
                       {msg.replyTo && (
                         <button
                           onClick={() => scrollToMessage(msg.replyTo!.id)}
-                          className={`mb-1 block rounded border-l-2 ${
+                          className={`mb-1 block rounded-lg border-l-2 transition-colors duration-200 ease-out ${
                             isSelf
-                              ? "border-accent-300 bg-accent-700/30"
-                              : "border-gray-600 bg-gray-700/50"
-                          } px-2 py-1 text-left text-xs opacity-75 hover:opacity-100`}
+                              ? "border-accent-300 bg-accent-500/20 text-accent-100"
+                              : "border-gray-600 bg-gray-900/50 text-gray-300 hover:bg-gray-900"
+                          } px-2.5 py-1.5 text-left text-xs opacity-80 hover:opacity-100`}
                           title={`Reply to ${msg.replyTo.sender?.username ?? ""}`}
                         >
-                          {msg.replyTo.sender?.username}: {msg.replyTo.content}
+                          <span className="font-semibold">
+                            {msg.replyTo.sender?.username}:{" "}
+                          </span>
+                          {msg.replyTo.content}
                         </button>
                       )}
                       {editingId === msg.id ? (
@@ -650,22 +660,22 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
                                 setEditContent("");
                               }
                             }}
-                            className="w-full bg-transparent py-0.5 text-sm text-white focus:outline-none"
+                            className="field py-1.5 text-sm"
                           />
-                          <p className="mt-0.5 text-[10px] text-gray-300/80">
+                          <p className="mt-0.5 text-[10px] text-gray-500">
                             <button
                               onClick={() => {
                                 setEditingId(null);
                                 setEditContent("");
                               }}
-                              className="underline hover:text-white"
+                              className="font-semibold underline-offset-2 hover:text-white hover:underline"
                             >
                               escape
                             </button>{" "}
                             to cancel ·{" "}
                             <button
                               onClick={() => void editMessage(msg.id)}
-                              className="underline hover:text-white"
+                              className="font-semibold underline-offset-2 hover:text-white hover:underline"
                             >
                               enter
                             </button>{" "}
@@ -680,21 +690,21 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
                       )}
                       <div
                         className={`mt-1 flex items-center justify-end gap-1 text-[10px] ${
-                          isSelf ? "text-accent-200" : "text-gray-400"
+                          isSelf ? "text-accent-200" : "text-gray-500"
                         }`}
                       >
                         {msg.edited && <span className="opacity-70">(edited)</span>}
-                        <span>{formatMessageTime(msg.createdAt)}</span>
+                        <span className="tabular">{formatMessageTime(msg.createdAt)}</span>
                         {renderReadReceipt(msg)}
                       </div>
                     </div>
 
                     {editingId !== msg.id && !msg.id.startsWith("temp-") && (
                       <div className="absolute -top-3.5 right-0 z-10 transition-opacity">
-                        <div className="flex items-center rounded-lg border border-gray-700 bg-gray-900 px-1 py-0.5 opacity-0 shadow-lg group-hover:opacity-100 focus-within:opacity-100">
+                        <div className="glass-panel flex items-center rounded-xl px-1 py-0.5 opacity-0 shadow-elev3 group-hover:opacity-100 focus-within:opacity-100">
                           <button
                             onClick={() => setReplyTo(msg)}
-                            className="rounded p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white"
+                            className="icon-btn !h-7 !w-7"
                             title="Reply"
                           >
                             <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -707,7 +717,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
                                 setEditingId(msg.id);
                                 setEditContent(msg.content);
                               }}
-                              className="rounded p-1.5 text-gray-400 hover:bg-gray-800 hover:text-white"
+                              className="icon-btn !h-7 !w-7"
                               title="Edit"
                             >
                               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -718,7 +728,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
                           {isSelf && (
                             <button
                               onClick={() => void deleteMessage(msg.id)}
-                              className="rounded p-1.5 text-gray-400 hover:bg-red-600/20 hover:text-red-400"
+                              className="icon-btn !h-7 !w-7 hover:!text-red-400"
                               title="Delete"
                             >
                               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -739,7 +749,18 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
       </div>
 
       {typingUsers.length > 0 && (
-        <div className="px-4 py-1 text-xs text-gray-400">
+        <div className="flex items-center gap-1.5 px-4 py-1 text-xs text-gray-400">
+          {/* Three-dot typing indicator — a stagger rather than a static row so
+              it reads as "active", not as stray punctuation. */}
+          <span className="flex gap-0.5" aria-hidden>
+            {[0, 1, 2].map((i) => (
+              <span
+                key={i}
+                className="h-1 w-1 animate-pulse rounded-full bg-accent-400"
+                style={{ animationDelay: `${i * 160}ms` }}
+              />
+            ))}
+          </span>
           {conversation.otherUser?.username} is typing...
         </div>
       )}
@@ -747,24 +768,26 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
       {replyTo && (
         <div
           key={replyTo.id}
-          className="anim-reply-in flex items-center gap-2 border-t border-gray-800 bg-gray-900 px-4 py-2"
+          className="anim-reply-in flex items-center gap-2 border-t border-gray-800/70 bg-gray-900/40 px-4 py-2.5"
         >
           <div className="min-w-0 flex-1">
             <p className="text-xs text-gray-400">
-              Replying to <span className="font-medium text-gray-300">{replyTo.sender?.username}</span>
+              Replying to{" "}
+              <span className="font-semibold text-gray-200">{replyTo.sender?.username}</span>
             </p>
             <p className="truncate text-xs text-gray-500">{replyTo.content}</p>
           </div>
           <button
             onClick={() => setReplyTo(null)}
-            className="text-xs text-gray-500 hover:text-white"
+            className="icon-btn !h-6 !w-6 text-xs"
+            aria-label="Cancel reply"
           >
             ✕
           </button>
         </div>
       )}
 
-      <div className="border-t border-gray-800 p-3">
+      <div className="p-4 pt-2">
         {isUploading && (
           <div className="mb-2" role="status" aria-live="polite">
             <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-700">
@@ -774,26 +797,30 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
               />
             </div>
             <p className="mt-1 text-[11px] text-gray-400">
-              Uploading… {uploadPercent}%
+              Uploading… <span className="tabular">{uploadPercent}%</span>
             </p>
           </div>
         )}
-        <div className="flex items-end gap-2">
+        {/* Frosted composer. The controls sit directly on the panel instead of
+            each carrying their own fill, so the whole row reads as one
+            surface you type into. */}
+        <div className="glass-panel flex items-end gap-2 rounded-2xl p-2">
           <div className="relative">
             <button
               onClick={() => setShowAttachMenu(!showAttachMenu)}
               disabled={isUploading}
-              className="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+              className="icon-btn disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label="Attach a file"
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
               </svg>
             </button>
             {showAttachMenu && (
-              <div className="absolute bottom-full left-0 mb-2 w-48 rounded-lg border border-gray-700 bg-gray-800 py-1 shadow-xl">
+              <div className="glass-panel animate-pop-in absolute bottom-full left-0 z-20 mb-2 w-48 rounded-xl py-1">
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-300 transition-colors duration-200 ease-out hover:bg-white/5 hover:text-white"
                 >
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -811,7 +838,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
                     };
                     input.click();
                   }}
-                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700"
+                  className="flex w-full items-center gap-2 px-3 py-2 text-sm text-gray-300 transition-colors duration-200 ease-out hover:bg-white/5 hover:text-white"
                 >
                   <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -843,7 +870,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
             }}
             onKeyDown={handleKeyDown}
             placeholder="Type a message..."
-            className="max-h-32 flex-1 resize-none rounded-xl border border-gray-700 bg-gray-800 px-4 py-2.5 text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+            className="min-h-[2.75rem] max-h-32 flex-1 resize-none bg-transparent px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none"
             rows={1}
           />
 
@@ -852,7 +879,8 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
           <button
             onClick={sendMessage}
             disabled={!newMessage.trim() || isUploading}
-            className="rounded-xl bg-accent-600 p-2.5 text-white transition-colors hover:bg-accent-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-primary !h-11 !w-11 shrink-0 !p-0"
+            aria-label="Send message"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

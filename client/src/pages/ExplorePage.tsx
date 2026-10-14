@@ -10,7 +10,7 @@ const SEARCH_DEBOUNCE_MS = 300;
 function Spinner() {
   return (
     <div className="flex justify-center py-8">
-      <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
+      <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-400 border-t-transparent shadow-glow" />
     </div>
   );
 }
@@ -19,11 +19,7 @@ function ErrorBlock({ message, onRetry }: { message: string; onRetry: () => void
   return (
     <div className="py-6 text-center">
       <p className="text-sm text-red-400">{message}</p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="mt-3 rounded-lg bg-gray-800 px-4 py-2 text-sm text-gray-200 transition-colors hover:bg-gray-700"
-      >
+      <button type="button" onClick={onRetry} className="btn-ghost mt-3">
         Retry
       </button>
     </div>
@@ -142,8 +138,8 @@ export default function ExplorePage() {
   const trimmedQuery = query.trim();
 
   return (
-    <div className="flex h-full flex-col overflow-y-auto bg-gray-950">
-      <div className="sticky top-0 z-10 border-b border-gray-800 bg-gray-950 px-4 py-3">
+    <div className="flex h-full flex-col overflow-y-auto">
+      <div className="glass sticky top-0 z-10 border-b px-4 py-3">
         <div className="relative mx-auto max-w-lg">
           <svg
             className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-500"
@@ -164,14 +160,14 @@ export default function ExplorePage() {
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search people..."
             aria-label="Search people"
-            className="w-full rounded-lg border border-gray-700 bg-gray-800 py-2.5 pl-10 pr-10 text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+            className="field py-2.5 pl-10 pr-10"
           />
           {query.length > 0 && (
             <button
               type="button"
               onClick={() => setQuery("")}
               aria-label="Clear search"
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-gray-500 transition-colors hover:text-white"
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-gray-500 transition-all duration-200 ease-out hover:bg-white/10 hover:text-white"
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -181,13 +177,13 @@ export default function ExplorePage() {
         </div>
       </div>
 
-      <div className="flex-1 space-y-4 p-4">
-        <section className="rounded-xl border border-gray-800 bg-gray-900">
-          <div className="border-b border-gray-800 px-4 py-3">
-            <h2 className="text-sm font-semibold text-white">People</h2>
-            <p className="text-xs text-gray-500">Find people by username or bio</p>
+      <div className="flex-1 space-y-6 p-4 md:p-6">
+        <section className="glass-panel rounded-2xl animate-fade-up">
+          <div className="border-b border-gray-800/60 px-5 py-4">
+            <h2 className="text-sm font-semibold tracking-tight text-white">People</h2>
+            <p className="mt-1 text-xs text-gray-500">Find people by username or bio</p>
           </div>
-          <div className="p-4">
+          <div className="p-5">
             {trimmedQuery.length < MIN_QUERY_LENGTH ? (
               <p className="text-sm text-gray-500">
                 {trimmedQuery.length > 0
@@ -206,10 +202,10 @@ export default function ExplorePage() {
                   <li key={found.id}>
                     <Link
                       to={`/profile/${found.id}`}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-gray-800 bg-gray-950 px-4 py-3 transition-colors hover:border-gray-700 hover:bg-gray-800"
+                      className="glass-card glass-card-hover flex items-center justify-between gap-3 rounded-2xl px-4 py-3"
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-accent-600 text-sm font-bold">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-accent-500 to-accent-700 text-sm font-bold text-white">
                           {found.avatar ? (
                             <img src={found.avatar} alt="" className="h-full w-full object-cover" />
                           ) : (
@@ -217,7 +213,7 @@ export default function ExplorePage() {
                           )}
                         </div>
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-white">
+                          <p className="truncate text-sm font-semibold tracking-tight text-white">
                             {found.username}
                           </p>
                           {found.bio && (
@@ -225,7 +221,7 @@ export default function ExplorePage() {
                           )}
                         </div>
                       </div>
-                      <span className="shrink-0 text-xs font-medium text-accent-400">
+                      <span className="shrink-0 text-xs font-semibold text-accent-300">
                         View profile
                       </span>
                     </Link>
@@ -236,12 +232,12 @@ export default function ExplorePage() {
           </div>
         </section>
 
-        <section className="rounded-xl border border-gray-800 bg-gray-900">
-          <div className="border-b border-gray-800 px-4 py-3">
-            <h2 className="text-sm font-semibold text-white">Servers</h2>
-            <p className="text-xs text-gray-500">Communities you can join right now</p>
+        <section className="glass-panel rounded-2xl animate-fade-up">
+          <div className="border-b border-gray-800/60 px-5 py-4">
+            <h2 className="text-sm font-semibold tracking-tight text-white">Servers</h2>
+            <p className="mt-1 text-xs text-gray-500">Communities you can join right now</p>
           </div>
-          <div className="p-4">
+          <div className="p-5">
             {serversLoading ? (
               <Spinner />
             ) : serversError ? (
@@ -257,10 +253,10 @@ export default function ExplorePage() {
                   return (
                     <li
                       key={server.id}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-gray-800 bg-gray-950 px-4 py-3"
+                      className="glass-card glass-card-hover flex items-center justify-between gap-3 rounded-2xl px-4 py-3"
                     >
                       <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gray-800 text-sm font-bold text-gray-200">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-accent-500 to-accent-700 text-sm font-bold text-white shadow-glow">
                           {server.icon ? (
                             <img src={server.icon} alt="" className="h-full w-full object-cover" />
                           ) : (
@@ -268,8 +264,10 @@ export default function ExplorePage() {
                           )}
                         </div>
                         <div className="min-w-0">
-                          <p className="truncate text-sm font-medium text-white">{server.name}</p>
-                          <p className="text-xs text-gray-500">
+                          <p className="truncate text-sm font-semibold tracking-tight text-white">
+                            {server.name}
+                          </p>
+                          <p className="tabular text-xs text-gray-500">
                             {memberCount} {memberCount === 1 ? "member" : "members"}
                           </p>
                         </div>
@@ -278,7 +276,7 @@ export default function ExplorePage() {
                         type="button"
                         onClick={() => void joinServer(server)}
                         disabled={joined || joining}
-                        className="shrink-0 rounded-lg bg-accent-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-accent-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="btn-primary shrink-0 !px-3.5 !py-1.5 !text-xs"
                       >
                         {joining ? "Joining..." : joined ? "Joined" : "Join"}
                       </button>
@@ -290,24 +288,24 @@ export default function ExplorePage() {
           </div>
         </section>
 
-        <section>
-          <h2 className="mb-2 px-1 text-sm font-semibold text-white">Posts</h2>
+        <section className="animate-fade-up">
+          <h2 className="mb-3 px-1 text-sm font-semibold tracking-tight text-white">Posts</h2>
           {postsLoading ? (
             <Spinner />
           ) : postsError ? (
             <ErrorBlock message={postsError} onRetry={() => void loadPosts()} />
           ) : posts.length === 0 ? (
-            <div className="py-12 text-center">
-              <div className="mb-4 text-6xl">🔍</div>
-              <p className="text-lg text-gray-400">Explore posts</p>
-              <p className="text-sm text-gray-500">Discover content from the community</p>
+            <div className="glass-card rounded-2xl py-14 text-center">
+              <div className="mb-4 text-5xl">🔍</div>
+              <p className="text-lg font-semibold tracking-tight text-gray-300">Explore posts</p>
+              <p className="mt-1 text-sm text-gray-500">Discover content from the community</p>
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-1">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
               {posts.map((post) => (
                 <div
                   key={post.id}
-                  className="group relative aspect-square cursor-pointer overflow-hidden bg-gray-800"
+                  className="group relative aspect-square cursor-pointer overflow-hidden rounded-xl bg-gray-800/50 ring-1 ring-gray-700/40 transition-all duration-200 ease-out hover:shadow-elev2 hover:ring-accent-400/40"
                 >
                   {post.media?.[0] ? (
                     post.media[0].type === "image" ? (
@@ -316,18 +314,18 @@ export default function ExplorePage() {
                       <video src={post.media[0].url} className="h-full w-full object-cover" />
                     )
                   ) : (
-                    <div className="flex h-full items-center justify-center bg-gray-800 p-2">
+                    <div className="flex h-full items-center justify-center bg-gray-900/40 p-3">
                       <p className="text-center text-xs text-gray-400">{post.caption}</p>
                     </div>
                   )}
-                  <div className="absolute inset-0 flex items-center justify-center gap-4 bg-black/50 opacity-0 transition-opacity group-hover:opacity-100">
-                    <span className="flex items-center gap-1 text-sm font-bold text-white">
+                  <div className="absolute inset-0 flex items-center justify-center gap-5 bg-gray-950/70 opacity-0 backdrop-blur-sm transition-opacity duration-200 ease-out group-hover:opacity-100">
+                    <span className="tabular flex items-center gap-1.5 text-sm font-bold text-white">
                       <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z" />
                       </svg>
                       {post._count?.likes || 0}
                     </span>
-                    <span className="flex items-center gap-1 text-sm font-bold text-white">
+                    <span className="tabular flex items-center gap-1.5 text-sm font-bold text-white">
                       <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M21.99 4c0-1.1-.89-2-1.99-2H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h14l4 4-.01-18z" />
                       </svg>

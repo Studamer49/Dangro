@@ -202,7 +202,13 @@ export default function FriendsPage() {
 
   return (
     <div className="flex h-full">
-      <div className="w-60 shrink-0 border-r border-gray-800 bg-gray-900 p-4">
+      {/*
+        The nav column is a genuine side pane, so it earns real material: the
+        core `glass` level plus a hairline right edge to separate it from the
+        scrolling list. No solid fill — the ambient field has to keep reading
+        through the gap between the two panes.
+      */}
+      <div className="glass w-60 shrink-0 border-r border-gray-800 p-4">
         <nav className="space-y-1">
           <NavTab
             label="Friends"
@@ -226,35 +232,32 @@ export default function FriendsPage() {
         </nav>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6">
+      <div className="min-w-0 flex-1 overflow-y-auto p-6">
         {loading ? (
           <EmptyState message="Loading…" />
         ) : (
           <>
             {activeTab === "friends" && (
-              <div>
-                <div className="mb-4 flex items-center justify-between gap-3">
-                  <h2 className="text-xl font-bold text-white">Friends</h2>
-                  <div className="flex rounded-lg bg-gray-900 p-1">
+              <div className="animate-fade-up">
+                <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-xl font-bold tracking-tight text-white">Friends</h2>
+                  {/* Segmented rather than two buttons: the Online/All choice is
+                      a view switch, not an action, and the lit thumb makes the
+                      current scope legible without a second accent surface. */}
+                  <div className="segment">
                     <button
                       onClick={() => setScope("online")}
-                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                        scope === "online"
-                          ? "bg-accent-600 text-white"
-                          : "text-gray-400 hover:text-white"
-                      }`}
+                      data-active={scope === "online"}
+                      className="segment-item"
                     >
-                      Online ({onlineFriends.length})
+                      Online <span className="tabular ml-1 opacity-70">{onlineFriends.length}</span>
                     </button>
                     <button
                       onClick={() => setScope("all")}
-                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                        scope === "all"
-                          ? "bg-accent-600 text-white"
-                          : "text-gray-400 hover:text-white"
-                      }`}
+                      data-active={scope === "all"}
+                      className="segment-item"
                     >
-                      All ({friends.length})
+                      All <span className="tabular ml-1 opacity-70">{friends.length}</span>
                     </button>
                   </div>
                 </div>
@@ -277,7 +280,7 @@ export default function FriendsPage() {
                             <button
                               onClick={() => void removeFriend(f)}
                               disabled={busyId === user.id}
-                              className="rounded-lg bg-red-600/20 px-3 py-1.5 text-xs text-red-400 transition-colors hover:bg-red-600/30 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="btn-danger !px-3 !py-1.5 !text-xs"
                             >
                               Remove
                             </button>
@@ -291,8 +294,10 @@ export default function FriendsPage() {
             )}
 
             {activeTab === "pending" && (
-              <div>
-                <h2 className="mb-4 text-xl font-bold text-white">Friend Requests</h2>
+              <div className="animate-fade-up">
+                <h2 className="mb-5 text-xl font-bold tracking-tight text-white">
+                  Friend Requests
+                </h2>
                 {incoming.length === 0 ? (
                   <EmptyState message="No pending friend requests." />
                 ) : (
@@ -311,17 +316,21 @@ export default function FriendsPage() {
                           meta="Sent you a friend request"
                           actions={
                             <>
+                              {/* Green is semantic here, not decorative:
+                                  accepting is the one affirmative outcome on
+                                  this row, so it gets the only lit-positive
+                                  treatment rather than another ghost button. */}
                               <button
                                 onClick={() => void acceptRequest(r)}
                                 disabled={busyId === r.id}
-                                className="rounded-lg bg-green-600/20 px-3 py-1.5 text-xs text-green-400 transition-colors hover:bg-green-600/30 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-500/30 bg-emerald-500/15 px-3 py-1.5 text-xs font-semibold text-emerald-300 transition-all duration-200 hover:border-emerald-400/50 hover:bg-emerald-500/25 disabled:cursor-not-allowed disabled:opacity-50"
                               >
                                 Accept
                               </button>
                               <button
                                 onClick={() => void rejectRequest(r)}
                                 disabled={busyId === r.id}
-                                className="rounded-lg bg-red-600/20 px-3 py-1.5 text-xs text-red-400 transition-colors hover:bg-red-600/30 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="btn-danger !px-3 !py-1.5 !text-xs"
                               >
                                 Reject
                               </button>
@@ -336,8 +345,8 @@ export default function FriendsPage() {
             )}
 
             {activeTab === "sent" && (
-              <div>
-                <h2 className="mb-4 text-xl font-bold text-white">Sent Requests</h2>
+              <div className="animate-fade-up">
+                <h2 className="mb-5 text-xl font-bold tracking-tight text-white">Sent Requests</h2>
                 {sent.length === 0 ? (
                   <EmptyState message="No outgoing friend requests. Find people in Add Friend." />
                 ) : (
@@ -355,7 +364,7 @@ export default function FriendsPage() {
                             <button
                               onClick={() => void cancelRequest(r)}
                               disabled={busyId === r.id}
-                              className="rounded-lg bg-gray-800 px-3 py-1.5 text-xs text-gray-300 transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                              className="btn-ghost !px-3 !py-1.5 !text-xs"
                             >
                               Cancel
                             </button>
@@ -369,14 +378,14 @@ export default function FriendsPage() {
             )}
 
             {activeTab === "add" && (
-              <div>
-                <h2 className="mb-4 text-xl font-bold text-white">Add Friend</h2>
+              <div className="animate-fade-up">
+                <h2 className="mb-5 text-xl font-bold tracking-tight text-white">Add Friend</h2>
                 <input
                   type="text"
                   value={searchQuery}
                   onChange={(e) => void searchUsers(e.target.value)}
                   placeholder="Search by username..."
-                  className="mb-4 w-full rounded-lg border border-gray-700 bg-gray-800 px-4 py-3 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+                  className="field mb-5"
                 />
 
                 {searchResults.length > 0 ? (
@@ -392,18 +401,21 @@ export default function FriendsPage() {
                           status={user.status}
                           actions={
                             alreadyFriends ? (
-                              <span className="rounded-lg bg-gray-800 px-3 py-1.5 text-xs text-gray-400">
+                              /* Not a control — a fact about the relationship.
+                                 It reads as a quiet recessed chip rather than a
+                                 disabled button so the eye skips it. */
+                              <span className="rounded-lg border border-gray-700/60 bg-gray-800/50 px-3 py-1.5 text-xs font-medium text-gray-400">
                                 Friends
                               </span>
                             ) : pending ? (
-                              <span className="rounded-lg bg-gray-800 px-3 py-1.5 text-xs text-gray-400">
+                              <span className="rounded-lg border border-gray-700/60 bg-gray-800/50 px-3 py-1.5 text-xs font-medium text-gray-400">
                                 Pending
                               </span>
                             ) : (
                               <button
                                 onClick={() => void sendRequest(user)}
                                 disabled={busyId === user.id}
-                                className="rounded-lg bg-accent-600/20 px-3 py-1.5 text-xs text-accent-400 transition-colors hover:bg-accent-600/30 disabled:cursor-not-allowed disabled:opacity-50"
+                                className="btn-primary !px-3 !py-1.5 !text-xs"
                               >
                                 Add Friend
                               </button>

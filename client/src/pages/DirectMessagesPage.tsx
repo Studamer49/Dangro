@@ -54,17 +54,21 @@ export default function DirectMessagesPage() {
         activeConversation={activeConversation}
         onSelectConversation={selectConversation}
       />
-      <div className="flex-1">
+      <div className="relative flex-1">
         {activeConversation ? (
           <DMChatArea
             conversation={activeConversation}
             onConversationUpdated={setActiveConversation}
           />
         ) : (
-          <div className="flex h-full items-center justify-center">
-            <div className="text-center">
-              <div className="mb-4 text-6xl">💬</div>
-              <p className="text-lg text-gray-400">Select a conversation or start a new one</p>
+          <div className="flex h-full items-center justify-center px-6">
+            <div className="glass-card max-w-sm rounded-2xl px-10 py-12 text-center animate-fade-up">
+              <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-accent-500/25 to-accent-700/10 text-3xl shadow-glow">
+                💬
+              </div>
+              <p className="text-lg font-semibold tracking-tight text-gray-300">
+                Select a conversation or start a new one
+              </p>
             </div>
           </div>
         )}

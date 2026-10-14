@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 
 interface ModalProps {
   title: string;
+  subtitle?: string;
   onClose: () => void;
   children: React.ReactNode;
   footer?: React.ReactNode;
@@ -14,9 +15,14 @@ interface ModalProps {
  * Every dialog in the app repeats this markup, and each copy had to remember
  * its own Escape handling. Centralised so dismissal — and the focus handling
  * that goes with it — behaves the same everywhere.
+ *
+ * Visually this is the heaviest glass surface in the app: fully opaque behind
+ * the blur so whatever opened it never shows through the text, plus the widest
+ * shadow, because a dialog is the one thing that must read as "above".
  */
 export default function Modal({
   title,
+  subtitle,
   onClose,
   children,
   footer,
@@ -50,7 +56,7 @@ export default function Modal({
 
   return (
     <div
-      className="anim-fade-in fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/70 p-4 backdrop-blur-sm animate-overlay-in"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -61,15 +67,14 @@ export default function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`anim-pop-in w-full ${maxWidth} rounded-xl bg-gray-900 p-6 shadow-2xl outline-none`}
+        className={`glass-panel animate-pop-in w-full ${maxWidth} rounded-2xl bg-gray-900/95 p-6 outline-none`}
       >
-        <div className="mb-4 flex items-start justify-between gap-4">
-          <h3 className="text-lg font-bold text-white">{title}</h3>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded p-1 text-gray-500 transition-colors hover:bg-gray-800 hover:text-white"
-          >
+        <div className="mb-5 flex items-start justify-between gap-4">
+          <div className="min-w-0">
+            <h3 className="text-lg font-bold tracking-tight text-white">{title}</h3>
+            {subtitle && <p className="mt-1 text-sm text-gray-400">{subtitle}</p>}
+          </div>
+          <button onClick={onClose} aria-label="Close" className="icon-btn -mr-1 -mt-1">
             <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
               <path d="M18.3 5.71a1 1 0 00-1.41 0L12 10.59 7.11 5.7A1 1 0 105.7 7.11L10.59 12 5.7 16.89a1 1 0 101.41 1.41L12 13.41l4.89 4.89a1 1 0 001.41-1.41L13.41 12l4.89-4.89a1 1 0 000-1.4z" />
             </svg>

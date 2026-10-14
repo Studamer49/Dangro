@@ -116,44 +116,51 @@ export default function InviteModal({ serverId, permanentCode, channels, onClose
       onClose={onClose}
       maxWidth="max-w-lg"
       footer={
-        <button
-          onClick={onClose}
-          className="rounded-lg bg-gray-800 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
-        >
+        <button onClick={onClose} className="btn-ghost">
           Done
         </button>
       }
     >
       <div className="mb-5">
-        <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">
-          Permanent invite link
-        </label>
+        <label className="field-label">Permanent invite link</label>
         <div className="flex items-center gap-2">
-          <code className="flex-1 truncate rounded-lg bg-gray-800 px-3 py-2 text-sm text-green-300">
+          <code className="tabular min-w-0 flex-1 select-all truncate rounded-xl border border-gray-700/70 bg-gray-950/50 px-3.5 py-2.5 font-mono text-sm tracking-tight text-emerald-300 shadow-[inset_0_1px_2px_rgb(0_0_0/0.25)]">
             {inviteUrl(permanentCode)}
           </code>
           <button
             onClick={() => copyLink(permanentCode)}
-            className="rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-300 hover:bg-gray-700"
+            title="Copy permanent invite link"
+            aria-label="Copy permanent invite link"
+            className="icon-btn border border-gray-700/60 bg-gray-800/40"
           >
-            Copy
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9h6m-6 4h4"
+              />
+            </svg>
           </button>
         </div>
-        <p className="mt-1 text-xs text-gray-500">
+        <p className="mt-2 text-xs leading-relaxed text-gray-500">
           Always valid. Use a managed invite below when you want it to expire.
         </p>
       </div>
 
-      <div className="mb-5 rounded-lg border border-gray-800 p-3">
-        <h4 className="mb-3 text-sm font-semibold text-white">Create a managed invite</h4>
+      <div className="glass-card mb-5 rounded-xl p-4">
+        <h4 className="mb-3 text-sm font-bold tracking-tight text-white">Create a managed invite</h4>
 
         <div className="mb-3 grid grid-cols-2 gap-3">
           <div>
-            <label className="mb-1 block text-xs text-gray-500">Expires after</label>
+            <label className="field-label" htmlFor="invite-max-age">
+              Expires after
+            </label>
             <select
+              id="invite-max-age"
               value={maxAge}
               onChange={(e) => setMaxAge(e.target.value as MaxAge)}
-              className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-2 text-sm text-white focus:border-accent-500 focus:outline-none"
+              className="field"
             >
               {(Object.keys(MAX_AGE_LABEL) as MaxAge[]).map((value) => (
                 <option key={value} value={value}>
@@ -163,24 +170,30 @@ export default function InviteModal({ serverId, permanentCode, channels, onClose
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-xs text-gray-500">Max uses (optional)</label>
+            <label className="field-label" htmlFor="invite-max-uses">
+              Max uses (optional)
+            </label>
             <input
+              id="invite-max-uses"
               type="number"
               min={1}
               max={1000}
               value={maxUses}
               onChange={(e) => setMaxUses(e.target.value)}
               placeholder="Unlimited"
-              className="w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-2 text-sm text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+              className="field tabular"
             />
           </div>
         </div>
 
-        <label className="mb-1 block text-xs text-gray-500">Send people to</label>
+        <label className="field-label" htmlFor="invite-channel">
+          Send people to
+        </label>
         <select
+          id="invite-channel"
           value={channelId}
           onChange={(e) => setChannelId(e.target.value)}
-          className="mb-3 w-full rounded-lg border border-gray-700 bg-gray-800 px-2 py-2 text-sm text-white focus:border-accent-500 focus:outline-none"
+          className="field mb-3"
         >
           <option value="">First channel</option>
           {channels.map((channel) => (
@@ -190,24 +203,26 @@ export default function InviteModal({ serverId, permanentCode, channels, onClose
           ))}
         </select>
 
-        <button
-          onClick={createInvite}
-          disabled={busy}
-          className="w-full rounded-lg bg-accent-600 px-3 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
-        >
+        <button onClick={createInvite} disabled={busy} className="btn-primary w-full">
           {busy ? "Creating..." : "Create invite & copy link"}
         </button>
       </div>
 
       <div>
-        <h4 className="mb-2 text-sm font-semibold text-white">
-          Active invites {invites.length > 0 && <span className="text-gray-500">({invites.length})</span>}
+        <h4 className="eyebrow mb-2">
+          Active invites
+          {invites.length > 0 && (
+            <span className="tabular ml-1.5 text-gray-500">({invites.length})</span>
+          )}
         </h4>
 
         {loading ? (
-          <p className="text-sm text-gray-500">Loading…</p>
+          <div className="space-y-2" aria-hidden>
+            <div className="skeleton h-14 rounded-xl" />
+            <div className="skeleton h-14 rounded-xl" />
+          </div>
         ) : invites.length === 0 ? (
-          <p className="text-sm text-gray-500">
+          <p className="glass-card rounded-xl px-4 py-3 text-sm text-gray-500">
             No managed invites. The permanent link above always works.
           </p>
         ) : (
@@ -217,11 +232,15 @@ export default function InviteModal({ serverId, permanentCode, channels, onClose
               return (
                 <li
                   key={invite.id}
-                  className="flex items-center gap-2 rounded-lg border border-gray-800 px-3 py-2"
+                  className={`glass-card glass-card-hover flex items-center gap-2 rounded-xl px-3 py-2.5 ${
+                    dead ? "opacity-55" : ""
+                  }`}
                 >
                   <div className="min-w-0 flex-1">
                     <code
-                      className={`block truncate text-sm ${dead ? "text-gray-600 line-through" : "text-green-300"}`}
+                      className={`tabular block select-all truncate font-mono text-sm tracking-tight ${
+                        dead ? "text-gray-600 line-through" : "text-emerald-300"
+                      }`}
                     >
                       {invite.code}
                     </code>
@@ -241,14 +260,25 @@ export default function InviteModal({ serverId, permanentCode, channels, onClose
                   <button
                     onClick={() => copyLink(invite.code)}
                     disabled={dead}
-                    className="rounded bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700 disabled:opacity-40"
+                    title="Copy invite link"
+                    aria-label={`Copy invite link for code ${invite.code}`}
+                    className="icon-btn disabled:opacity-40"
                   >
-                    Copy
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9h6m-6 4h4"
+                      />
+                    </svg>
                   </button>
                   <button
                     onClick={() => revoke(invite.code)}
                     disabled={busy}
-                    className="rounded bg-red-600/20 px-2 py-1 text-xs text-red-400 hover:bg-red-600/30 disabled:opacity-40"
+                    title="Revoke invite"
+                    aria-label={`Revoke invite with code ${invite.code}`}
+                    className="shrink-0 rounded-lg border border-red-500/30 bg-red-600/10 px-2.5 py-1 text-xs font-semibold text-red-400 transition-all duration-200 hover:bg-red-600/30 hover:text-red-300 disabled:opacity-40"
                   >
                     Revoke
                   </button>

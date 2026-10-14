@@ -28,8 +28,8 @@ const TABS: Array<{ id: Tab; label: string }> = [
 function RoleChip({ name, color }: { name: string; color: string | null }) {
   return (
     <span
-      className="rounded px-1.5 py-0.5 text-[10px] font-medium text-white/90"
-      style={{ backgroundColor: color ?? "#4b5563" }}
+      className="rounded-md bg-gray-600 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white/90 shadow-sm"
+      style={{ backgroundColor: color ?? undefined }}
     >
       {name}
     </span>
@@ -175,16 +175,13 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
 
   return (
     <Modal title={`${server.name} — Settings`} onClose={onClose} maxWidth="max-w-2xl">
-      <div className="mb-5 flex gap-1 border-b border-gray-800">
+      <div className="segment mb-5 w-full">
         {TABS.filter((t) => t.id !== "danger" || isOwner).map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
-            className={`px-3 py-2 text-sm font-medium transition-colors ${
-              tab === t.id
-                ? "border-b-2 border-accent-500 text-white"
-                : "text-gray-400 hover:text-gray-200"
-            }`}
+            data-active={tab === t.id}
+            className={`segment-item flex-1${t.id === "danger" ? " !text-red-400" : ""}`}
           >
             {t.label}
           </button>
@@ -192,73 +189,70 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
       </div>
 
       {tab === "overview" && (
-        <div className="space-y-4">
+        <div className="animate-fade-up space-y-4">
           {isOwner ? (
             <>
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">
+                <label className="field-label" htmlFor="server-name">
                   Server name
                 </label>
                 <input
+                  id="server-name"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   maxLength={100}
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white focus:border-accent-500 focus:outline-none"
+                  className="field"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-semibold uppercase text-gray-500">
+                <label className="field-label" htmlFor="server-description">
                   Description
                 </label>
                 <textarea
+                  id="server-description"
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
                   maxLength={500}
                   rows={3}
                   placeholder="What is this server about?"
-                  className="w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-white placeholder-gray-500 focus:border-accent-500 focus:outline-none"
+                  className="field resize-none"
                 />
               </div>
               <button
                 onClick={saveProfile}
                 disabled={busy || !name.trim()}
-                className="rounded-lg bg-accent-600 px-4 py-2 text-sm font-medium text-white hover:bg-accent-500 disabled:opacity-50"
+                className="btn-primary"
               >
                 {busy ? "Saving…" : "Save changes"}
               </button>
             </>
           ) : (
-            <p className="text-sm text-gray-400">
-              Only the server owner can change the name and description.
-            </p>
+            <div className="glass-card rounded-xl px-4 py-3.5">
+              <p className="text-sm text-gray-400">
+                Only the server owner can change the name and description.
+              </p>
+            </div>
           )}
 
           {(myRole === "owner" || myRole === "admin") && (
-            <div className="rounded-lg border border-gray-800 p-3">
-              <h4 className="text-sm font-semibold text-white">Invites</h4>
-              <p className="mb-3 mt-1 text-xs text-gray-500">
+            <div className="glass-card rounded-xl p-4">
+              <h4 className="text-sm font-bold tracking-tight text-white">Invites</h4>
+              <p className="mb-3 mt-1 text-xs leading-relaxed text-gray-400">
                 Create expiring or use-limited invite links and revoke the ones you have shared.
               </p>
-              <button
-                onClick={onOpenInvites}
-                className="rounded-lg bg-gray-800 px-3 py-2 text-sm text-gray-200 hover:bg-gray-700"
-              >
+              <button onClick={onOpenInvites} className="btn-ghost">
                 Manage invites
               </button>
             </div>
           )}
 
           {!isOwner && (
-            <div className="rounded-lg border border-gray-800 p-3">
-              <h4 className="text-sm font-semibold text-white">Leave server</h4>
-              <p className="mb-3 mt-1 text-xs text-gray-500">
+            <div className="glass-card rounded-xl border-red-500/25 p-4">
+              <h4 className="text-sm font-bold tracking-tight text-white">Leave server</h4>
+              <p className="mb-3 mt-1 text-xs leading-relaxed text-gray-400">
                 You will need a new invite to come back.
               </p>
-              <button
-                onClick={leaveServer}
-                disabled={busy}
-                className="rounded-lg bg-red-600/20 px-3 py-2 text-sm font-medium text-red-400 hover:bg-red-600/30 disabled:opacity-50"
-              >
+              <button onClick={leaveServer} disabled={busy} className="btn-danger">
                 {busy ? "Leaving…" : "Leave server"}
               </button>
             </div>
@@ -267,20 +261,20 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
       )}
 
       {tab === "members" && (
-        <div>
-          <div className="mb-3 flex items-center justify-between">
-            <p className="text-sm text-gray-400">
+        <div className="animate-fade-up">
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <p className="eyebrow tabular">
               {members.length} member{members.length === 1 ? "" : "s"}
             </p>
             <button
               onClick={() => void loadMembers()}
-              className="rounded bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+              className="rounded-lg border border-gray-700/60 bg-gray-800/40 px-2.5 py-1 text-xs font-semibold text-gray-300 transition-all duration-200 hover:bg-gray-800 hover:text-white"
             >
               Refresh
             </button>
           </div>
 
-          <ul className="max-h-80 space-y-1 overflow-y-auto">
+          <ul className="max-h-80 space-y-1.5 overflow-y-auto pr-1">
             {members.map((member) => {
               const isTargetOwner = member.isOwner || member.userId === server.ownerId;
               const targetPosition = isTargetOwner
@@ -293,16 +287,16 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
               return (
                 <li
                   key={member.id}
-                  className="flex items-center gap-3 rounded-lg px-2 py-2 hover:bg-gray-800"
+                  className="glass-card glass-card-hover flex items-center gap-3 rounded-xl px-3 py-2.5"
                 >
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-white">
+                    <p className="truncate text-sm font-medium text-white">
                       {member.nickname || member.user?.username || "Unknown"}
                       {member.userId === currentUser?.id && (
-                        <span className="ml-2 text-xs text-gray-500">(you)</span>
+                        <span className="ml-2 text-xs font-normal text-gray-500">(you)</span>
                       )}
                     </p>
-                    <div className="mt-0.5 flex flex-wrap gap-1">
+                    <div className="mt-1 flex flex-wrap gap-1">
                       {isTargetOwner ? (
                         <RoleChip name="Owner" color="#f23f43" />
                       ) : (
@@ -325,10 +319,11 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
                             <button
                               key={role.id}
                               onClick={() => toggleMemberRole(member, role.id, !on)}
-                              className={`rounded px-2 py-1 text-xs transition-colors ${
+                              aria-pressed={on}
+                              className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition-all duration-200 ${
                                 on
-                                  ? "bg-accent-600 text-white"
-                                  : "bg-gray-800 text-gray-400 hover:bg-gray-700"
+                                  ? "row-active"
+                                  : "border border-gray-700/60 bg-gray-800/40 text-gray-400 hover:bg-gray-800 hover:text-gray-200"
                               }`}
                             >
                               {role.name}
@@ -345,7 +340,7 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
                   {isOwner && !isTargetOwner && (
                     <button
                       onClick={() => transfer(member)}
-                      className="rounded bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+                      className="shrink-0 rounded-lg border border-gray-700/60 bg-gray-800/40 px-2.5 py-1 text-xs font-semibold text-gray-300 transition-all duration-200 hover:bg-gray-800 hover:text-white"
                       title="Transfer ownership to this member"
                     >
                       Transfer
@@ -355,7 +350,7 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
                   {canAct && (
                     <button
                       onClick={() => kick(member)}
-                      className="rounded bg-red-600/20 px-2 py-1 text-xs text-red-400 hover:bg-red-600/30"
+                      className="shrink-0 rounded-lg border border-red-500/30 bg-red-600/10 px-2.5 py-1 text-xs font-semibold text-red-400 transition-all duration-200 hover:bg-red-600/30 hover:text-red-300"
                     >
                       Kick
                     </button>
@@ -379,23 +374,39 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
       )}
 
       {tab === "danger" && isOwner && (
-        <div className="space-y-3">
-          <div className="rounded-lg border border-red-600/40 bg-red-600/10 p-3">
-            <h4 className="text-sm font-semibold text-red-300">Delete this server</h4>
-            <p className="mb-3 mt-1 text-xs text-gray-400">
+        <div className="animate-fade-up space-y-3">
+          <div className="rounded-xl border border-red-500/30 bg-red-600/[0.07] p-4 shadow-[0_0_40px_-18px_rgb(239_68_68/0.6)]">
+            <h4 className="flex items-center gap-2 text-sm font-bold tracking-tight text-red-300">
+              <svg
+                className="h-4 w-4 shrink-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 9v2m0 4h.01M5.07 19h13.86c1.54 0 2.5-1.67 1.73-3L13.73 4c-.77-1.33-2.69-1.33-3.46 0L3.34 16c-.77 1.33.19 3 1.73 3z"
+                />
+              </svg>
+              Delete this server
+            </h4>
+            <p className="mb-3 mt-1.5 text-xs leading-relaxed text-gray-400">
               Removes every channel, message and member. This cannot be undone. Type{" "}
-              <span className="font-mono text-white">{server.name}</span> to confirm.
+              <span className="font-semibold text-white">{server.name}</span> to confirm.
             </p>
             <input
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
               placeholder={server.name}
-              className="mb-3 w-full rounded-lg border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-white placeholder-gray-600 focus:border-red-500 focus:outline-none"
+              className="field mb-3 focus:border-red-400 focus:shadow-[inset_0_1px_2px_rgb(0_0_0/0.25),0_0_0_4px_rgb(239_68_68/0.18)]"
             />
             <button
               onClick={deleteServer}
               disabled={busy || confirmText !== server.name}
-              className="w-full rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              className="w-full rounded-xl bg-red-600 px-3 py-2.5 text-sm font-semibold text-white transition-all duration-200 shadow-[0_8px_22px_-8px_rgb(239_68_68/0.7)] hover:bg-red-500 hover:shadow-[0_12px_30px_-8px_rgb(239_68_68/0.85)] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
             >
               {busy ? "Deleting…" : "Delete server"}
             </button>

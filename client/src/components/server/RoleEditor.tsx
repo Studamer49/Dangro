@@ -140,10 +140,7 @@ export default function RoleEditor({
       onClose={onClose}
       maxWidth="max-w-3xl"
       footer={
-        <button
-          onClick={onClose}
-          className="rounded-lg bg-gray-800 px-4 py-2 text-sm text-gray-300 hover:bg-gray-700"
-        >
+        <button onClick={onClose} className="btn-ghost">
           Done
         </button>
       }
@@ -151,27 +148,28 @@ export default function RoleEditor({
       <div className="flex gap-4">
         {/* Role list */}
         <div className="w-48 shrink-0">
-          <ul className="mb-2 max-h-80 space-y-0.5 overflow-y-auto">
+          <ul className="mb-2 max-h-80 space-y-1 overflow-y-auto pr-1">
             {ordered.map((role) => {
               const locked = !canEdit(role);
               return (
                 <li key={role.id}>
                   <button
                     onClick={() => setSelectedId(role.id)}
-                    className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm ${
+                    aria-pressed={selected?.id === role.id}
+                    className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-all duration-200 ${
                       selected?.id === role.id
-                        ? "bg-gray-700 text-white"
-                        : "text-gray-300 hover:bg-gray-800"
+                        ? "row-active"
+                        : "hover:bg-gray-800/50 hover:text-white"
                     }`}
                   >
                     {role.color && (
                       <span
-                        className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        className="h-2.5 w-2.5 shrink-0 rounded-full shadow-[0_0_8px_-2px_currentColor]"
                         style={{ backgroundColor: role.color }}
                       />
                     )}
-                    <span className="truncate">{role.name}</span>
-                    {locked && <span className="ml-auto text-xs text-gray-600">locked</span>}
+                    <span className="truncate font-medium">{role.name}</span>
+                    {locked && <span className="ml-auto shrink-0 text-[10px] uppercase text-gray-600">locked</span>}
                   </button>
                 </li>
               );
@@ -181,12 +179,12 @@ export default function RoleEditor({
           {!creating ? (
             <button
               onClick={() => setCreating(true)}
-              className="w-full rounded border border-dashed border-gray-700 px-2 py-1.5 text-xs text-gray-400 hover:border-gray-500 hover:text-gray-200"
+              className="w-full rounded-lg border border-dashed border-gray-700/70 px-2 py-2 text-xs font-semibold text-gray-400 transition-all duration-200 hover:border-accent-400/60 hover:bg-gray-800/40 hover:text-white"
             >
               + Create role
             </button>
           ) : (
-            <div className="rounded-lg border border-gray-700 p-2">
+            <div className="glass-card animate-pop-in rounded-xl p-3">
               <input
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
@@ -194,32 +192,35 @@ export default function RoleEditor({
                 placeholder="Role name"
                 maxLength={32}
                 autoFocus
-                className="mb-2 w-full rounded border border-gray-700 bg-gray-800 px-2 py-1 text-xs text-white focus:border-accent-500 focus:outline-none"
+                className="field mb-2.5 px-3 py-2 text-xs"
               />
-              <div className="mb-2 flex flex-wrap gap-1">
+              <div className="mb-2.5 flex flex-wrap gap-1.5">
                 {PRESET_COLORS.map((color) => (
                   <button
                     key={color}
                     onClick={() => setNewColor(color)}
                     aria-label={color}
-                    className={`h-5 w-5 rounded-full ${
-                      newColor === color ? "ring-2 ring-white" : ""
+                    aria-pressed={newColor === color}
+                    className={`h-5 w-5 rounded-full transition-all duration-200 ${
+                      newColor === color
+                        ? "scale-110 ring-2 ring-white ring-offset-2 ring-offset-transparent"
+                        : "hover:scale-110"
                     }`}
                     style={{ backgroundColor: color }}
                   />
                 ))}
               </div>
-              <div className="flex gap-1">
+              <div className="flex gap-1.5">
                 <button
                   onClick={create}
                   disabled={busy || !newName.trim()}
-                  className="flex-1 rounded bg-accent-600 px-2 py-1 text-xs font-medium text-white disabled:opacity-50"
+                  className="btn-primary flex-1 px-2 py-1.5 text-xs"
                 >
                   Create
                 </button>
                 <button
                   onClick={() => setCreating(false)}
-                  className="rounded bg-gray-800 px-2 py-1 text-xs text-gray-300"
+                  className="btn-ghost px-2 py-1.5 text-xs"
                 >
                   Cancel
                 </button>
@@ -231,34 +232,38 @@ export default function RoleEditor({
         {/* Permission grid */}
         <div className="min-w-0 flex-1">
           {!selected ? (
-            <p className="text-sm text-gray-500">Select a role to see its permissions.</p>
+            <div className="glass-card rounded-xl px-4 py-6 text-center">
+              <p className="text-sm text-gray-500">Select a role to see its permissions.</p>
+            </div>
           ) : (
             <>
               <div className="mb-3 flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
+                <div className="flex min-w-0 items-center gap-2">
                   {selected.color && (
                     <span
-                      className="h-3 w-3 rounded-full"
+                      className="h-3 w-3 shrink-0 rounded-full shadow-[0_0_10px_-2px_currentColor]"
                       style={{ backgroundColor: selected.color }}
                     />
                   )}
-                  <h4 className="text-sm font-semibold text-white">{selected.name}</h4>
-                  <span className="text-xs text-gray-500">
+                  <h4 className="truncate text-sm font-bold tracking-tight text-white">
+                    {selected.name}
+                  </h4>
+                  <span className="tabular shrink-0 text-xs text-gray-500">
                     {selected.memberCount ?? 0} member{(selected.memberCount ?? 0) === 1 ? "" : "s"}
                   </span>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex shrink-0 gap-2">
                   {canEdit(selected) && !selected.isEveryone && (
                     <>
                       <button
                         onClick={rename}
-                        className="rounded bg-gray-800 px-2 py-1 text-xs text-gray-300 hover:bg-gray-700"
+                        className="rounded-lg border border-gray-700/60 bg-gray-800/40 px-2.5 py-1 text-xs font-semibold text-gray-300 transition-all duration-200 hover:bg-gray-800 hover:text-white"
                       >
                         Rename
                       </button>
                       <button
                         onClick={() => remove(selected)}
-                        className="rounded bg-red-600/20 px-2 py-1 text-xs text-red-400 hover:bg-red-600/30"
+                        className="rounded-lg border border-red-500/30 bg-red-600/10 px-2.5 py-1 text-xs font-semibold text-red-400 transition-all duration-200 hover:bg-red-600/30 hover:text-red-300"
                       >
                         Delete
                       </button>
@@ -268,12 +273,12 @@ export default function RoleEditor({
               </div>
 
               {selected.isEveryone && (
-                <p className="mb-3 rounded bg-gray-800/60 px-3 py-2 text-xs text-gray-400">
+                <p className="glass mb-3 rounded-lg px-3 py-2.5 text-xs leading-relaxed text-gray-400">
                   @everyone is the baseline every member has. It cannot be renamed, moved, or deleted.
                 </p>
               )}
               {!canEdit(selected) && (
-                <p className="mb-3 rounded bg-gray-800/60 px-3 py-2 text-xs text-gray-400">
+                <p className="glass mb-3 rounded-lg px-3 py-2.5 text-xs leading-relaxed text-gray-400">
                   This role sits above your highest role, so you cannot change it.
                 </p>
               )}
@@ -281,10 +286,8 @@ export default function RoleEditor({
               <div className="max-h-72 space-y-4 overflow-y-auto pr-1">
                 {catalogue.map((group) => (
                   <div key={group.name}>
-                    <h5 className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-gray-500">
-                      {group.name}
-                    </h5>
-                    <ul className="space-y-0.5">
+                    <h5 className="eyebrow mb-2 px-2.5">{group.name}</h5>
+                    <ul className="space-y-1">
                       {Object.entries(group.permissions).map(([key, meta]) => {
                         const on = selected.permissions.includes(key);
                         const editable = canEdit(selected) && !selected.isEveryone;
@@ -294,12 +297,19 @@ export default function RoleEditor({
                               onClick={() => togglePermission(key)}
                               disabled={!editable || busy}
                               title={meta.description}
-                              className="flex w-full items-center gap-2 rounded px-2 py-1 text-left text-sm text-gray-300 hover:bg-gray-800 disabled:cursor-not-allowed disabled:opacity-60"
+                              aria-pressed={on}
+                              className={`glass-card flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-60 ${
+                                on
+                                  ? "row-active"
+                                  : "hover:border-accent-400/30 hover:bg-gray-800/40"
+                              }`}
                             >
                               <span
                                 aria-hidden
-                                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
-                                  on ? "border-accent-500 bg-accent-500" : "border-gray-600"
+                                className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-md border transition-all duration-200 ${
+                                  on
+                                    ? "border-accent-400 bg-accent-500 shadow-[0_0_10px_-2px_rgb(var(--accent-400-rgb)/0.8)]"
+                                    : "border-gray-600 bg-gray-900/50"
                                 }`}
                               >
                                 {on && (
@@ -308,7 +318,9 @@ export default function RoleEditor({
                                   </svg>
                                 )}
                               </span>
-                              <span className="truncate">{meta.label}</span>
+                              <span className={`truncate ${on ? "font-medium text-white" : "text-gray-300"}`}>
+                                {meta.label}
+                              </span>
                             </button>
                           </li>
                         );

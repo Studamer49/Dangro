@@ -144,8 +144,8 @@ export default function FeedPage() {
   );
 
   return (
-    <div className="flex h-full flex-col items-center overflow-y-auto bg-gray-950">
-      <div className="w-full max-w-lg border-b border-gray-800 px-4 py-4">
+    <div className="flex h-full flex-col items-center overflow-y-auto pb-10">
+      <div className="glass-panel sticky top-0 z-20 w-full max-w-lg border-x-0 border-t-0 px-4 py-4">
         <StoriesBar groups={stories} viewer={user} onAdded={handleStoryAdded} />
       </div>
 
@@ -153,25 +153,55 @@ export default function FeedPage() {
         <CreatePostComposer onCreated={handleCreated} />
 
         {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent-500 border-t-transparent" />
+          <div className="space-y-4">
+            {[0, 1, 2].map((row) => (
+              <div key={row} className="glass-card rounded-2xl p-4">
+                <div className="flex items-center gap-3">
+                  <div className="skeleton h-9 w-9 shrink-0 rounded-full" />
+                  <div className="flex-1 space-y-1.5">
+                    <div className="skeleton h-3 w-28 rounded-full" />
+                    <div className="skeleton h-2.5 w-16 rounded-full" />
+                  </div>
+                </div>
+                <div className="mt-4 space-y-2">
+                  <div className="skeleton h-2.5 w-full rounded-full" />
+                  <div className="skeleton h-2.5 w-4/5 rounded-full" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : error ? (
-          <div className="rounded-xl border border-gray-800 bg-gray-900 p-8 text-center">
-            <p className="text-sm text-red-400">Could not load the feed: {error}</p>
-            <button
-              type="button"
-              onClick={() => void fetchFeed()}
-              className="mt-3 rounded-lg bg-gray-800 px-4 py-2 text-sm text-gray-200 transition-colors hover:bg-gray-700"
-            >
+          <div className="glass-card rounded-2xl p-8 text-center animate-fade-up">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-red-500/15 text-red-400">
+              <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.8}
+                  d="M12 9v4m0 4h.01M10.3 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.7 3.86a2 2 0 00-3.4 0z"
+                />
+              </svg>
+            </div>
+            <p className="font-semibold tracking-tight text-white">Could not load the feed</p>
+            <p className="mt-1.5 text-sm text-red-400">{error}</p>
+            <button type="button" onClick={() => void fetchFeed()} className="btn-ghost mt-5">
               Retry
             </button>
           </div>
         ) : posts.length === 0 ? (
-          <div className="py-12 text-center">
-            <div className="mb-4 text-6xl">📸</div>
-            <p className="text-lg text-gray-400">No posts yet</p>
-            <p className="text-sm text-gray-500">Be the first to share something</p>
+          <div className="glass-card rounded-2xl px-6 py-12 text-center animate-fade-up">
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-500/15 text-accent-400">
+              <svg className="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.7}
+                  d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
+                />
+              </svg>
+            </div>
+            <p className="font-semibold tracking-tight text-white">No posts yet</p>
+            <p className="mt-1.5 text-sm text-gray-500">Be the first to share something</p>
           </div>
         ) : (
           posts.map((post) => (

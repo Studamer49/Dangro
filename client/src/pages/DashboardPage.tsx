@@ -35,31 +35,40 @@ export default function DashboardPage() {
   }, []);
 
   return (
-    <div className="flex h-screen bg-gray-950 text-white">
+    <div className="flex h-screen text-white">
       <ServerSidebar />
       {showChannelSidebar && <ChannelSidebar />}
       <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-gray-800 bg-gray-900 px-4 py-3">
+        {/*
+          Sticky glass bar. The blur is what keeps the chat legible as it
+          scrolls underneath — without it the header would need an opaque
+          fill and the ambient field would stop at the top of the viewport.
+        */}
+        <header className="glass sticky top-0 z-30 flex items-center justify-between border-b px-4 py-3">
           <div className="flex items-center gap-3">
-            <Avatar user={user} className="h-8 w-8 text-sm" />
-            <span className="hidden font-medium sm:inline">{user?.username}</span>
+            <Avatar user={user} className="h-8 w-8 text-sm" lit />
+            <div className="flex flex-col leading-tight">
+              <span className="font-semibold tracking-tight">{user?.username}</span>
+              <span className="text-[11px] font-medium uppercase tracking-wider text-gray-500">
+                Online
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
+
+          <div className="flex items-center gap-1">
             <NotificationsBell />
             <button
               onClick={() => navigate("/settings")}
-              className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-800 hover:text-white"
+              className="icon-btn"
               title="Settings"
+              aria-label="Settings"
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
             </button>
-            <button
-              onClick={handleLogout}
-              className="rounded-lg bg-gray-800 px-3 py-1.5 text-sm text-gray-300 transition-colors hover:bg-gray-700"
-            >
+            <button onClick={handleLogout} className="btn-ghost ml-1 px-3 py-1.5 text-xs">
               Logout
             </button>
           </div>
