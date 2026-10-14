@@ -1,7 +1,58 @@
 import { useEffect, useRef, useCallback, useState } from "react";
+import type { Socket } from "socket.io-client";
 import { getSocket } from "@/lib/socket";
 import { ICE_SERVERS } from "@/lib/iceServers";
 import { useCallStore } from "@/stores/callStore";
+
+type OfferHandler = (offer: RTCSessionDescriptionInit, userId: string) => void;
+
+/**
+ * An offer can arrive before the callee is listening for one.
+ *
+ * `acceptCall` emits `call_accept` synchronously, and the caller begins
+ * creating and sending its offer the moment that lands — which is well before
+ * React has flushed the callee's `useEffect` and attached its `webrtc_offer`
+ * listener. On a fast or local socket the offer simply arrives into the void:
+ * it is never delivered, no answer is ever sent, `remoteStream` stays null,
+ * and both sides sit there seeing only their own camera with no sound.
+ *
+ * So the listener is attached once, at module scope, and holds the offer until
+ * a hook instance is ready to act on it. Exactly one listener is bound per
+ * socket, and it forwards or stashes — never both — so an offer is handled once.
+ */
+let activeOfferHandler: OfferHandler | null = null;
+/**
+ * How long a stashed offer stays usable.
+ *
+ * It exists to cover the gap between "the caller sent an offer" and "the callee
+ * finished mounting", which is milliseconds. Anything older belongs to a call
+ * that has already ended, and replaying it into the next one would open a peer
+ * connection to a stranger's stale session description.
+ */
+const OFFER_SHELF_LIFE_MS = 30_000;
+let stashedOffer: { offer: RTCSessionDescriptionInit; userId: string; at: number } | null = null;
+let stashBoundTo: Socket | null = null;
+
+function bindOfferStash(socket: Socket): void {
+  if (stashBoundTo === socket) return;
+  stashBoundTo = socket;
+  socket.on("webrtc_offer", (data: { offer: RTCSessionDescriptionInit; userId: string }) => {
+    if (activeOfferHandler) {
+      activeOfferHandler(data.offer, data.userId);
+      return;
+    }
+    stashedOffer = { offer: data.offer, userId: data.userId, at: Date.now() };
+  });
+}
+
+/** Hands the stashed offer to whoever just became ready, then clears it. */
+function drainStashedOffer(handler: OfferHandler): void {
+  const stashed = stashedOffer;
+  if (!stashed) return;
+  stashedOffer = null;
+  if (Date.now() - stashed.at > OFFER_SHELF_LIFE_MS) return;
+  handler(stashed.offer, stashed.userId);
+}
 
 export function useWebRTC() {
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
@@ -15,6 +66,22 @@ export function useWebRTC() {
    * never re-sent, so they were lost for good.
    */
   const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
+  /**
+   * Whether the current peer connection has a remote description yet.
+   *
+   * `addIceCandidate` throws until one is set, and the candidate is then gone:
+   * ICE candidates are emitted once and never re-sent. A candidate that arrived
+   * during the window between "peer connection created" and "remote description
+   * set" was therefore dropped for good, which can leave the connection unable
+   * to find a working pair. Candidates are queued until this is true.
+   */
+  const remoteDescriptionReadyRef = useRef(false);
+  /**
+   * The remote MediaStream we assemble ourselves.
+   *
+   * Only used when the engine hands over a track with no associated stream.
+   */
+  const assembledRemoteRef = useRef<MediaStream | null>(null);
   const {
     isInCall,
     isCaller,
@@ -22,6 +89,7 @@ export function useWebRTC() {
     targetUserId,
     setLocalStream,
     setRemoteStream,
+    setConnectionStatus,
     endCall,
   } = useCallStore();
 
@@ -30,6 +98,8 @@ export function useWebRTC() {
     // its event handlers and (if it had tracks) its senders alive, with nothing
     // holding a reference to close them.
     peerConnectionRef.current?.close();
+    remoteDescriptionReadyRef.current = false;
+    assembledRemoteRef.current = null;
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
@@ -44,12 +114,53 @@ export function useWebRTC() {
     };
 
     pc.ontrack = (event) => {
-      if (event.streams && event.streams[0]) {
-        setRemoteStream(event.streams[0]);
+      // `event.streams[0]` is the happy path, but it is not guaranteed. A track
+      // delivered with no stream (an engine that does not populate it, or a
+      // transceiver added without one) used to be dropped here, so media was
+      // flowing and `remoteStream` stayed null forever — which presents as
+      // "I can see myself but not them, and nobody can hear anything".
+      const [stream] = event.streams ?? [];
+      if (stream) {
+        assembledRemoteRef.current = null;
+        setRemoteStream(stream);
+        setConnectionStatus(null);
+        return;
       }
+
+      let assembled = assembledRemoteRef.current;
+      if (!assembled) {
+        assembled = new MediaStream();
+        assembledRemoteRef.current = assembled;
+      }
+      if (!assembled.getTracks().some((track) => track.id === event.track.id)) {
+        assembled.addTrack(event.track);
+      }
+      setRemoteStream(assembled);
+      setConnectionStatus(null);
     };
 
+    /**
+     * Reports what the connection is actually doing.
+     *
+     * `iceConnectionState` is the one that matters for "can we see them": it
+     * reaches "failed" when no candidate pair works, which is what a blocked
+     * STUN/TURN server or a symmetric NAT looks like from inside the browser.
+     */
+    const describe = () => {
+      const { iceConnectionState, connectionState } = pc;
+      if (connectionState === "connected") {
+        setConnectionStatus(null);
+      } else if (iceConnectionState === "failed") {
+        setConnectionStatus(
+          "Could not reach the other person. This is usually the network blocking the connection — a TURN relay may be needed."
+        );
+      } else if (iceConnectionState === "checking") {
+        setConnectionStatus("Finding a direct connection…");
+      }
+    };
+    pc.oniceconnectionstatechange = describe;
     pc.onconnectionstatechange = () => {
+      describe();
       if (pc.connectionState === "failed") {
         endCall();
       } else if (pc.connectionState === "disconnected") {
@@ -66,7 +177,7 @@ export function useWebRTC() {
 
     peerConnectionRef.current = pc;
     return pc;
-  }, [targetUserId, setRemoteStream, endCall]);
+  }, [targetUserId, setRemoteStream, setConnectionStatus, endCall]);
 
   const startLocalStream = useCallback(async (video: boolean) => {
     const existing = useCallStore.getState().localStream;
@@ -151,6 +262,7 @@ export function useWebRTC() {
     const pc = createPeerConnection();
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    remoteDescriptionReadyRef.current = true;
     // Only now can the queued candidates be applied.
     await drainPendingCandidates(pc);
     const answer = await pc.createAnswer();
@@ -163,18 +275,23 @@ export function useWebRTC() {
     const pc = peerConnectionRef.current;
     if (pc) {
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      remoteDescriptionReadyRef.current = true;
       await drainPendingCandidates(pc);
     }
   }, [drainPendingCandidates]);
 
   /**
-   * Adds a candidate, queueing it when the connection does not exist yet.
-   * Queueing is only correct once a remote description is set, so the queue is
-   * drained by `drainPendingCandidates` after that happens.
+   * Adds a candidate, queueing it until the remote description is set.
+   *
+   * Queueing on "no peer connection yet" was not enough: the connection exists
+   * from the moment the offer is created, but `addIceCandidate` throws until
+   * the remote description lands, and the throw discarded the candidate for
+   * good. Candidates are now queued whenever the connection is not yet ready to
+   * accept them, and drained by `drainPendingCandidates`.
    */
   const handleIceCandidate = useCallback(async (candidate: RTCIceCandidateInit) => {
     const pc = peerConnectionRef.current;
-    if (!pc) {
+    if (!pc || !remoteDescriptionReadyRef.current) {
       pendingCandidatesRef.current.push(candidate);
       return;
     }
@@ -190,6 +307,8 @@ export function useWebRTC() {
 
   const cleanup = useCallback(() => {
     pendingCandidatesRef.current = [];
+    remoteDescriptionReadyRef.current = false;
+    assembledRemoteRef.current = null;
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
@@ -200,7 +319,8 @@ export function useWebRTC() {
     }
     setLocalStream(null);
     setRemoteStream(null);
-  }, [setLocalStream, setRemoteStream]);
+    setConnectionStatus(null);
+  }, [setLocalStream, setRemoteStream, setConnectionStatus]);
 
   const [callError, setCallError] = useState<string | null>(null);
 
@@ -233,8 +353,8 @@ export function useWebRTC() {
       createOffer().catch(failCall);
     };
 
-    const handleOfferEvent = (data: { offer: RTCSessionDescriptionInit; userId: string }) => {
-      handleOffer(data.offer, data.userId).catch(failCall);
+    const handleOfferEvent: OfferHandler = (offer, callerId) => {
+      handleOffer(offer, callerId).catch(failCall);
     };
 
     const handleAnswerEvent = (data: { answer: RTCSessionDescriptionInit }) => {
@@ -257,8 +377,15 @@ export function useWebRTC() {
       useCallStore.getState().resetCall();
     };
 
+    // `webrtc_offer` is bound once at module scope rather than here, so an
+    // offer that beats this effect is stashed instead of lost. Everything else
+    // still registers per call, because those can only arrive while one is up.
+    bindOfferStash(socket);
+    activeOfferHandler = handleOfferEvent;
+    // An offer that landed while nobody was listening is ready now.
+    drainStashedOffer(handleOfferEvent);
+
     socket.on("call_accept", handleCallAccept);
-    socket.on("webrtc_offer", handleOfferEvent);
     socket.on("webrtc_answer", handleAnswerEvent);
     socket.on("ice_candidate", handleIceEvent);
     socket.on("call_end", handleCallEnd);
@@ -266,11 +393,14 @@ export function useWebRTC() {
 
     return () => {
       socket.off("call_accept", handleCallAccept);
-      socket.off("webrtc_offer", handleOfferEvent);
       socket.off("webrtc_answer", handleAnswerEvent);
       socket.off("ice_candidate", handleIceEvent);
       socket.off("call_end", handleCallEnd);
       socket.off("call_reject", handleCallReject);
+      // Detach the handler but keep the stash: it is the whole reason the
+      // module-scope listener exists, and the stashed offer may belong to the
+      // next call rather than this one.
+      if (activeOfferHandler === handleOfferEvent) activeOfferHandler = null;
       cleanup();
     };
   }, [isInCall, isCaller, callType, createOffer, handleOffer, handleAnswer, handleIceCandidate, cleanup, startLocalStream, failCall]);

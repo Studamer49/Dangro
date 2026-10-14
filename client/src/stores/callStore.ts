@@ -21,6 +21,15 @@ interface CallState {
   remoteStream: MediaStream | null;
   isMuted: boolean;
   isVideoOff: boolean;
+  /**
+   * Why the call is not working, in words the UI can show.
+   *
+   * A call that fails to connect used to present as a black rectangle with the
+   * viewer's own face in the corner — indistinguishable from "still ringing".
+   * There is no way to debug WebRTC from a screenshot, so the peer connection's
+   * own state is surfaced here and rendered.
+   */
+  connectionStatus: string | null;
 
   initiateCall: (targetUserId: string, targetUser: User, callType: "video" | "voice") => void;
   acceptCall: () => void;
@@ -29,6 +38,7 @@ interface CallState {
   resetCall: () => void;
   setLocalStream: (stream: MediaStream | null) => void;
   setRemoteStream: (stream: MediaStream | null) => void;
+  setConnectionStatus: (status: string | null) => void;
   toggleMute: () => void;
   toggleVideo: () => void;
   setIncomingCall: (call: IncomingCall | null) => void;
@@ -46,6 +56,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   remoteStream: null,
   isMuted: false,
   isVideoOff: false,
+  connectionStatus: null,
 
   initiateCall: (targetUserId, targetUser, callType) => {
     const roomId = `call_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -119,11 +130,13 @@ export const useCallStore = create<CallState>((set, get) => ({
       remoteStream: null,
       isMuted: false,
       isVideoOff: false,
+      connectionStatus: null,
     });
   },
 
   setLocalStream: (stream) => set({ localStream: stream }),
   setRemoteStream: (stream) => set({ remoteStream: stream }),
+  setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
 
   toggleMute: () => {
     const { localStream, isMuted } = get();

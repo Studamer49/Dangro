@@ -17,6 +17,7 @@ export default function VideoCallModal() {
     isVideoOff,
     toggleMute,
     toggleVideo,
+    connectionStatus,
     endCall,
   } = useCallStore();
 
@@ -80,6 +81,11 @@ export default function VideoCallModal() {
 
   const isVideoCall = callType === "video";
   const isConnected = !!remoteStream;
+  // A video call where the other side denied their camera produces a stream
+  // with an audio track and no video track. Rendering that in a <video> is a
+  // black rectangle, so show the avatar instead — the separate audio element
+  // still carries the sound either way.
+  const remoteHasVideo = !!remoteStream?.getVideoTracks().length;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-950/80 p-4 backdrop-blur-sm animate-overlay-in">
@@ -93,7 +99,7 @@ export default function VideoCallModal() {
       */}
       <div className="glass-panel shadow-elev3 flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-3xl">
         <div className="relative flex-1 overflow-hidden bg-gray-950/70">
-          {isConnected && isVideoCall ? (
+          {isConnected && isVideoCall && remoteHasVideo ? (
             <video
               ref={remoteVideoRef}
               autoPlay
@@ -123,9 +129,11 @@ export default function VideoCallModal() {
                     ? isCaller
                       ? "Ringing..."
                       : "Connecting..."
-                    : isVideoCall
+                    : !isVideoCall
+                    ? "Voice call"
+                    : remoteHasVideo
                     ? "Connected"
-                    : "Voice call"}
+                    : "Camera off"}
                 </p>
               </div>
             </div>
@@ -141,6 +149,18 @@ export default function VideoCallModal() {
                 className="h-full w-full object-cover"
                 style={{ transform: "scaleX(-1)" }}
               />
+            </div>
+          )}
+
+          {/*
+            The connection's own state, in words. Without this a call that never
+            connects is just a black rectangle next to your own face — there is
+            no way to tell "still ringing" from "the network refused this" other
+            than by reading the browser console.
+          */}
+          {connectionStatus && !isConnected && (
+            <div className="absolute bottom-4 left-1/2 z-10 max-w-md -translate-x-1/2 rounded-xl border border-amber-400/25 bg-gray-950/85 px-4 py-2.5 text-center text-xs font-medium text-amber-200 backdrop-blur animate-fade-up">
+              {connectionStatus}
             </div>
           )}
 
