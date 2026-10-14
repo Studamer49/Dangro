@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { getSocket } from "@/lib/socket";
 import api from "@/lib/api";
+import { scrollBehavior } from "@/lib/motion";
 import Avatar from "@/components/Avatar";
 import type { Message, Reaction } from "@/types";
 
@@ -153,7 +154,7 @@ export default function ChatArea() {
     // Autoscrolling on every `messages` change meant the 15 s poll dragged the
     // view back down mid-scrollback.
     if (shouldAutoScrollRef.current) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      messagesEndRef.current?.scrollIntoView({ behavior: scrollBehavior() });
     }
   }, [messages]);
 
@@ -234,7 +235,7 @@ export default function ChatArea() {
   };
 
   const scrollToMessage = (id: string) => {
-    document.getElementById(`message-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    document.getElementById(`message-${id}`)?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
     setFlashId(id);
     // Tracked so switching channels or unmounting cannot leave a timer
     // pointing at state that has moved on.

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { useSettingsStore } from "@/stores/settingsStore";
 
 /**
  * Tiny bounce animations for taps/clicks.
@@ -78,8 +79,15 @@ function prefersReducedMotion(): boolean {
  * listener can bounce buttons that never opted into the hook themselves.
  */
 export function playBounce(el: Element | null, variant: BounceVariant = "subtle"): void {
-  // Older browsers without Element.animate simply skip the flourish.
-  if (!el || typeof (el as HTMLElement).animate !== "function" || prefersReducedMotion()) return;
+  // Older browsers without Element.animate simply skip the flourish. The
+  // Settings "Animations" toggle and the OS preference both silence it too.
+  if (
+    !el ||
+    typeof (el as HTMLElement).animate !== "function" ||
+    !useSettingsStore.getState().animationsEnabled ||
+    prefersReducedMotion()
+  )
+    return;
 
   // Cancel any in-flight run so a rapid second click replays cleanly from 0.
   running.get(el)?.cancel();

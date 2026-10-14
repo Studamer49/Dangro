@@ -651,6 +651,31 @@
   }
 }
 
+/* The in-app "Animations" setting (on by default), toggled from Settings.
+   Mirrors the OS reduced-motion rules above so both behave identically — and
+   covers CSS transitions as well as keyframe animations. */
+html.no-animations *,
+html.no-animations *::before,
+html.no-animations *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}
+
+html.no-animations .animate-ring-spin,
+html.no-animations .animate-glow-pulse,
+html.no-animations .skeleton,
+html.no-animations .animate-pulse,
+html.no-animations .animate-spin,
+html.no-animations .animate-bounce,
+html.no-animations .animate-ping,
+html.no-animations .anim-pop-in,
+html.no-animations .anim-fade-in,
+html.no-animations .anim-reply-in {
+  animation: none !important;
+}
+
 /* Entry animations. Content that arrives on mount fades up from a few pixels
    below — enough to read as "it came in", not enough to be noticed mid-read. */
 @keyframes fade-up {

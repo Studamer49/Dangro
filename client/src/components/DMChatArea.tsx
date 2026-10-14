@@ -4,6 +4,7 @@ import { useCallStore } from "@/stores/callStore";
 import { getSocket } from "@/lib/socket";
 import api from "@/lib/api";
 import { uploadErrorMessage, uploadMedia } from "@/lib/upload";
+import { scrollBehavior } from "@/lib/motion";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import Avatar from "@/components/Avatar";
 import { useToast } from "@/stores/toastStore";
@@ -212,7 +213,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
 
   useEffect(() => {
     if (shouldAutoScroll) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      messagesEndRef.current?.scrollIntoView({ behavior: scrollBehavior() });
     }
   }, [messages, shouldAutoScroll]);
 
@@ -408,7 +409,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   };
 
   const scrollToMessage = (id: string) => {
-    document.getElementById(`dm-message-${id}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    document.getElementById(`dm-message-${id}`)?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
     setFlashId(id);
     // Tracked and cleared on unmount: an untracked timer outlives the component
     // and can clear a flashId belonging to a conversation opened in the

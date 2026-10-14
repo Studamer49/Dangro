@@ -144,14 +144,19 @@ export default function FeedPage() {
   );
 
   return (
-    <div className="flex h-full flex-col items-center">
-      {/* A real header, not a sticky one: it lives outside the scrolling area
-          so the stories strip stays put while the feed scrolls under it. */}
-      <div className="glass-panel w-full max-w-lg shrink-0 border-x-0 border-t-0 px-4 py-4">
-        <StoriesBar groups={stories} viewer={user} onAdded={handleStoryAdded} />
+    <div className="flex h-full flex-col">
+      {/* Pinned header: sits above the scroll area so the stories strip never
+          slides away while the feed scrolls underneath it. */}
+      <div className="glass-panel z-10 w-full shrink-0 border-x-0 border-t-0 px-4 py-4">
+        <div className="mx-auto w-full max-w-lg">
+          <StoriesBar groups={stories} viewer={user} onAdded={handleStoryAdded} />
+        </div>
       </div>
 
-      <div className="w-full max-w-lg flex-1 space-y-4 overflow-y-auto p-4 pb-10">
+      {/* The scroll area spans the whole width so the wheel works anywhere on
+          the page, not only over the centered column. */}
+      <div className="w-full flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-lg space-y-4 p-4 pb-10">
         <CreatePostComposer onCreated={handleCreated} />
 
         {loading ? (
@@ -220,6 +225,7 @@ export default function FeedPage() {
             />
           ))
         )}
+        </div>
       </div>
     </div>
   );

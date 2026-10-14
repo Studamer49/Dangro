@@ -75,6 +75,7 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
   const radius = useSettingsStore((s) => s.radius);
   const customColors = useSettingsStore((s) => s.customColors);
   const glassEffect = useSettingsStore((s) => s.glassEffect);
+  const animationsEnabled = useSettingsStore((s) => s.animationsEnabled);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -86,6 +87,12 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
   useEffect(() => {
     document.documentElement.classList.toggle("no-glass", !glassEffect);
   }, [glassEffect]);
+
+  // `no-animations` collapses every CSS animation/transition (index.css) and
+  // silences the JS press-bounce in useBounce.
+  useEffect(() => {
+    document.documentElement.classList.toggle("no-animations", !animationsEnabled);
+  }, [animationsEnabled]);
 
   useEffect(() => {
     const root = document.documentElement;
