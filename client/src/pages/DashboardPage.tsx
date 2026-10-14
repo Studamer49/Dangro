@@ -35,7 +35,7 @@ export default function DashboardPage() {
   }, []);
 
   return (
-    <div className="flex h-screen text-white">
+    <div className="flex h-full text-white">
       <ServerSidebar />
       {showChannelSidebar && <ChannelSidebar />}
       <div className="flex flex-1 flex-col">

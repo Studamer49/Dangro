@@ -104,6 +104,8 @@ export const MODELS: Record<string, ModelDef> = {
       relation("sentCalls", "call", "many", { backKey: "callerId" }),
       relation("receivedCalls", "call", "many", { backKey: "receiverId" }),
       relation("sentInvites", "invite", "many", { backKey: "inviterId" }),
+      relation("bans", "ban", "many", { backKey: "userId" }),
+      relation("issuedBans", "ban", "many", { backKey: "moderatorId" }),
     ],
   },
 
@@ -177,6 +179,7 @@ export const MODELS: Record<string, ModelDef> = {
       relation("categories", "category", "many", { backKey: "serverId" }),
       relation("invites", "invite", "many", { backKey: "serverId" }),
       relation("roles", "role", "many", { backKey: "serverId" }),
+      relation("bans", "ban", "many", { backKey: "serverId" }),
     ],
   },
 
@@ -549,6 +552,25 @@ export const MODELS: Record<string, ModelDef> = {
     relations: [
       relation("caller", "user", "one", { ownKey: "callerId" }),
       relation("receiver", "user", "one", { ownKey: "receiverId" }),
+    ],
+  },
+
+  ban: {
+    name: "ban",
+    collection: "bans",
+    fields: {
+      serverId: { type: "string" },
+      userId: { type: "string" },
+      moderatorId: { type: "string", optional: true },
+      reason: { type: "string", optional: true },
+      createdAt: { type: "date", default: () => new Date() },
+    },
+    uniques: { serverId_userId: ["serverId", "userId"] },
+    defaultOrder: { createdAt: "desc" },
+    relations: [
+      relation("server", "server", "one", { ownKey: "serverId" }),
+      relation("user", "user", "one", { ownKey: "userId" }),
+      relation("moderator", "user", "one", { ownKey: "moderatorId", onDelete: "SetNull" }),
     ],
   },
 };

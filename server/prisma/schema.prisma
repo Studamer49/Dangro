@@ -37,6 +37,11 @@ model User {
   sentNotifications Notification[] @relation("NotificationFromUser")
   attachments    Attachment[]
 
+  /// Bans that name this user as the banned party.
+  bans           Ban[]          @relation("BanUser")
+  /// Bans this user handed out as a moderator.
+  issuedBans     Ban[]          @relation("BanModerator")
+
   conversations1  Conversation[] @relation("ConversationUser1")
   conversations2  Conversation[] @relation("ConversationUser2")
   sentDMs         DirectMessage[] @relation("DirectMessageSender")
@@ -109,6 +114,7 @@ model Server {
   categories Category[]
   invites   Invite[]
   roles     Role[]
+  bans      Ban[]
 
   @@map("servers")
 }
@@ -425,4 +431,24 @@ model Call {
   receiver User @relation("CallReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
 
   @@map("calls")
+}
+
+/// A server ban: a user barred from rejoining until the ban is lifted. Kept
+/// separate from membership so the record survives the member row being
+/// removed when the ban lands.
+model Ban {
+  id          String   @id @default(uuid())
+  serverId    String
+  userId      String
+  /// The moderator who issued the ban; null if that account is later deleted.
+  moderatorId String?
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  server    Server @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  user      User   @relation("BanUser", fields: [userId], references: [id], onDelete: Cascade)
+  moderator User?  @relation("BanModerator", fields: [moderatorId], references: [id], onDelete: SetNull)
+
+  @@unique([serverId, userId])
+  @@map("bans")
 }

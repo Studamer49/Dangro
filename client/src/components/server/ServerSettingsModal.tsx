@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import Modal from "@/components/Modal";
 import RoleEditor from "@/components/server/RoleEditor";
 import api, { apiErrorMessage } from "@/lib/api";
+import { uploadErrorMessage, uploadMedia } from "@/lib/upload";
 import { useToast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import { useConfirm } from "@/hooks/useConfirm";
-import type { Member, Role, Server, ServerRole } from "@/types";
+import type { Ban, Member, Role, Server, ServerRole } from "@/types";
 
 interface Props {
   server: Server;
@@ -44,10 +45,14 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
   const currentUser = useAuthStore((s) => s.user);
   const [tab, setTab] = useState<Tab>("overview");
   const [name, setName] = useState(server.name);
+  const [icon, setIcon] = useState(server.icon);
   const [description, setDescription] = useState(server.description ?? "");
   const [members, setMembers] = useState<Member[]>([]);
+  const [bans, setBans] = useState<Ban[]>([]);
   const [busy, setBusy] = useState(false);
+  const [uploadingIcon, setUploadingIcon] = useState(false);
   const [confirmText, setConfirmText] = useState("");
+  const iconInputRef = useRef<HTMLInputElement>(null);
 
   const isOwner = myRole === "owner";
 
@@ -62,6 +67,10 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
 
   const canManageRoles = isOwner || roles.some(
     (role) => role.position <= myPosition && role.permissions.includes("MANAGE_ROLES")
+  );
+
+  const canBanMembers = isOwner || roles.some(
+    (role) => role.position <= myPosition && role.permissions.includes("BAN_MEMBERS")
   );
 
   const loadMembers = useCallback(async () => {
@@ -82,6 +91,16 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
     }
   }, [server.id, toast]);
 
+  const loadBans = useCallback(async () => {
+    if (!canBanMembers) return;
+    try {
+      const { data } = await api.get(`/servers/${server.id}/bans`);
+      setBans(data.bans ?? []);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not load bans"));
+    }
+  }, [server.id, canBanMembers, toast]);
+
   // The member list is needed on the Roles tab too: it is what establishes the
   // viewer's own position in the hierarchy.
   useEffect(() => {
@@ -92,16 +111,66 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
     if (tab === "roles" || tab === "members") void loadRoles();
   }, [tab, loadRoles]);
 
+  useEffect(() => {
+    if (tab === "members") void loadBans();
+  }, [tab, loadBans]);
+
   const saveProfile = async () => {
     setBusy(true);
     try {
-      const { data } = await api.patch(`/servers/${server.id}`, { name, description });
+      const { data } = await api.patch(`/servers/${server.id}`, { name, description, icon });
       onSaved(data.server);
       toast.success("Server updated");
     } catch (err) {
       toast.error(apiErrorMessage(err, "Could not save changes"));
     } finally {
       setBusy(false);
+    }
+  };
+
+  /** Upload immediately, then persist with the next "Save changes". */
+  const onIconPicked = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setUploadingIcon(true);
+    try {
+      const uploaded = await uploadMedia(file);
+      setIcon(uploaded.url);
+    } catch (err) {
+      toast.error(uploadErrorMessage(err, "Could not upload the server icon"));
+    } finally {
+      setUploadingIcon(false);
+    }
+  };
+
+  const banMember = async (member: Member) => {
+    const ok = await confirm({
+      title: `Ban ${member.user?.username ?? "this member"}?`,
+      message: "They will be removed and blocked from rejoining until you unban them.",
+      confirmLabel: "Ban member",
+      tone: "danger",
+    });
+    if (!ok) return;
+    try {
+      const { data } = await api.post(`/servers/${server.id}/bans`, { userId: member.userId });
+      setMembers((prev) => prev.filter((m) => m.id !== member.id));
+      if (data.ban) {
+        setBans((prev) => [data.ban as Ban, ...prev.filter((b) => b.userId !== member.userId)]);
+      }
+      toast.success(`Banned ${member.user?.username ?? "member"}`);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not ban member"));
+    }
+  };
+
+  const unban = async (ban: Ban) => {
+    try {
+      await api.delete(`/servers/${server.id}/bans/${ban.userId}`);
+      setBans((prev) => prev.filter((b) => b.userId !== ban.userId));
+      toast.success(`Unbanned ${ban.user?.username ?? "user"}`);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not lift the ban"));
     }
   };
 
@@ -200,6 +269,44 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
         <div className="animate-fade-up space-y-4">
           {isOwner ? (
             <>
+              <div className="flex items-center gap-4">
+                {icon ? (
+                  <img src={icon} alt={server.name} className="h-16 w-16 rounded-2xl object-cover" />
+                ) : (
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-800 text-2xl font-bold text-white">
+                    {server.name?.[0]?.toUpperCase() ?? "?"}
+                  </div>
+                )}
+                <div className="flex flex-col gap-2">
+                  <span className="field-label mb-0">Server icon</span>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => iconInputRef.current?.click()}
+                      disabled={uploadingIcon}
+                      className="btn-ghost px-3 py-1.5 text-xs"
+                    >
+                      {uploadingIcon ? "Uploading…" : "Upload image"}
+                    </button>
+                    {icon && (
+                      <button
+                        type="button"
+                        onClick={() => setIcon(null)}
+                        className="btn-ghost px-3 py-1.5 text-xs"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                  <input
+                    ref={iconInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={onIconPicked}
+                  />
+                </div>
+              </div>
               <div>
                 <label className="field-label" htmlFor="server-name">
                   Server name
@@ -290,6 +397,7 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
                 : member.position ?? 0;
               // Same rule as the server: only act on someone strictly below you.
               const canAct = canManageRoles && myPosition > targetPosition;
+              const canBan = canBanMembers && myPosition > targetPosition;
               const held = new Set(member.roleIds ?? []);
 
               return (
@@ -363,10 +471,54 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
                       Kick
                     </button>
                   )}
+
+                  {canBan && (
+                    <button
+                      onClick={() => banMember(member)}
+                      className="shrink-0 rounded-lg border border-red-500/30 bg-red-600/10 px-2.5 py-1 text-xs font-semibold text-red-400 transition-all duration-200 hover:bg-red-600/30 hover:text-red-300"
+                    >
+                      Ban
+                    </button>
+                  )}
                 </li>
               );
             })}
           </ul>
+
+          {canBanMembers && (
+            <div className="mt-5">
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <p className="eyebrow tabular">Banned · {bans.length}</p>
+              </div>
+              {bans.length === 0 ? (
+                <p className="text-xs text-gray-500">No one is banned from this server.</p>
+              ) : (
+                <ul className="max-h-52 space-y-1.5 overflow-y-auto pr-1">
+                  {bans.map((ban) => (
+                    <li
+                      key={ban.id}
+                      className="glass-card flex items-center gap-3 rounded-xl px-3 py-2.5"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium text-white">
+                          {ban.user?.username ?? ban.userId}
+                        </p>
+                        {ban.reason && (
+                          <p className="truncate text-xs text-gray-500">{ban.reason}</p>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => unban(ban)}
+                        className="shrink-0 rounded-lg border border-gray-700/60 bg-gray-800/40 px-2.5 py-1 text-xs font-semibold text-gray-300 transition-all duration-200 hover:bg-gray-800 hover:text-white"
+                      >
+                        Unban
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
         </div>
       )}
 

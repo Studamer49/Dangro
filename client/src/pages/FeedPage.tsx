@@ -144,18 +144,19 @@ export default function FeedPage() {
   );
 
   return (
-    <div className="h-full overflow-y-auto">
-      {/* Sticky, and in the same scroll container as the feed column, so the
-          stories strip pins to the top instead of scrolling away with it. */}
-      <div className="glass-panel sticky top-0 z-10 w-full border-x-0 border-t-0 px-4 py-4">
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Pinned header: a sibling of the scroll area, not a child of it, so the
+          stories strip is structurally incapable of scrolling away. */}
+      <div className="glass-panel z-10 w-full shrink-0 border-x-0 border-t-0 px-4 py-4">
         <div className="mx-auto w-full max-w-lg">
           <StoriesBar groups={stories} viewer={user} onAdded={handleStoryAdded} />
         </div>
       </div>
 
-      {/* Centred feed column, inside the full-width scroll container so the
-          wheel works anywhere on the page. */}
-      <div className="mx-auto w-full max-w-lg space-y-4 p-4 pb-10">
+      {/* The scroll area spans the whole width so the wheel works anywhere on
+          the page; the feed column is centred inside it. */}
+      <div className="min-h-0 w-full flex-1 overflow-y-auto">
+        <div className="mx-auto w-full max-w-lg space-y-4 p-4 pb-10">
         <CreatePostComposer onCreated={handleCreated} />
 
         {loading ? (
@@ -224,6 +225,7 @@ export default function FeedPage() {
             />
           ))
         )}
+        </div>
       </div>
     </div>
   );

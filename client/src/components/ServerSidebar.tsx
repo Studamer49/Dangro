@@ -1,9 +1,19 @@
-import { useCallback, useEffect, useState, type ButtonHTMLAttributes } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+  type ButtonHTMLAttributes,
+  type MouseEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { useToast } from "@/stores/toastStore";
+import { useServerPrefsStore } from "@/stores/serverPrefsStore";
 import { useBounce, type BounceVariant } from "@/hooks/useBounce";
+import { useConfirm } from "@/hooks/useConfirm";
+import ServerSettingsModal from "@/components/server/ServerSettingsModal";
+import InviteModal from "@/components/server/InviteModal";
 import api, { apiErrorMessage } from "@/lib/api";
 import type { Server } from "@/types";
 
@@ -67,6 +77,15 @@ export default function ServerSidebar() {
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
+  const confirm = useConfirm();
+  const isMuted = useServerPrefsStore((s) => s.isMuted);
+  const toggleMute = useServerPrefsStore((s) => s.toggleMute);
+  const markRead = useServerPrefsStore((s) => s.markRead);
+
+  // Which server the right-click menu belongs to, and where it was opened.
+  const [menu, setMenu] = useState<{ server: Server; x: number; y: number } | null>(null);
+  const [settingsServer, setSettingsServer] = useState<Server | null>(null);
+  const [inviteServer, setInviteServer] = useState<Server | null>(null);
 
   const fetchServers = useCallback(async () => {
     try {
@@ -130,6 +149,103 @@ export default function ServerSidebar() {
     if (firstChannel) navigate(`/channels/${firstChannel.id}`);
   };
 
+  /** Close the context menu on Escape, scroll or resize so it never floats. */
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") close();
+    };
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [menu]);
+
+  const openMenu = (event: MouseEvent, server: Server) => {
+    event.preventDefault();
+    // Keep the panel fully on screen instead of letting it clip off an edge.
+    const width = 208;
+    const height = 248;
+    setMenu({
+      server,
+      x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
+      y: Math.max(8, Math.min(event.clientY, window.innerHeight - height - 8)),
+    });
+  };
+
+  const removeServer = (serverId: string) =>
+    setServers((prev) => prev.filter((s) => s.id !== serverId));
+
+  /** Whether acting on this server should also navigate the viewer out of it. */
+  const isViewingServer = (server: Server) =>
+    (server.channels ?? []).some((channel) => location.pathname === `/channels/${channel.id}`);
+
+  const leaveServer = async (server: Server) => {
+    setMenu(null);
+    const ok = await confirm({
+      title: `Leave ${server.name}?`,
+      message: "You will need a new invite to rejoin this server.",
+      confirmLabel: "Leave server",
+      tone: "danger",
+    });
+    if (!ok) return;
+    try {
+      await api.post(`/servers/${server.id}/leave`);
+      removeServer(server.id);
+      toast.success(`Left ${server.name}`);
+      if (isViewingServer(server)) navigate("/explore");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not leave server"));
+    }
+  };
+
+  const deleteServer = async (server: Server) => {
+    setMenu(null);
+    const ok = await confirm({
+      title: `Delete ${server.name}?`,
+      message: "This permanently deletes the server, its channels and its messages.",
+      confirmLabel: "Delete server",
+      tone: "danger",
+    });
+    if (!ok) return;
+    try {
+      await api.delete(`/servers/${server.id}`);
+      removeServer(server.id);
+      toast.success(`Deleted ${server.name}`);
+      if (isViewingServer(server)) navigate("/explore");
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not delete server"));
+    }
+  };
+
+  const openServerSettings = (server: Server) => {
+    setMenu(null);
+    setSettingsServer(server);
+  };
+
+  const onServerSaved = (updated: Server) => {
+    setServers((prev) => prev.map((s) => (s.id === updated.id ? { ...s, ...updated } : s)));
+    setSettingsServer((prev) => (prev ? { ...prev, ...updated } : prev));
+  };
+
+  const handleMarkRead = (server: Server) => {
+    markRead(server.id);
+    setMenu(null);
+    toast.success(`Marked ${server.name} as read`);
+  };
+
+  const handleToggleMute = (server: Server) => {
+    const wasMuted = isMuted(server.id);
+    toggleMute(server.id);
+    setMenu(null);
+    toast.success(wasMuted ? `Unmuted ${server.name}` : `Muted ${server.name}`);
+  };
+
   return (
     <div className="glass relative layer-popup flex w-[72px] flex-col items-center gap-2 border-r py-3">
       <BouncyButton
@@ -186,6 +302,7 @@ export default function ServerSidebar() {
         <BouncyButton
           key={server.id}
           onClick={() => openChannel(server)}
+          onContextMenu={(event) => openMenu(event, server)}
           className="glass-card glass-card-hover group relative flex h-12 w-12 items-center justify-center rounded-2xl text-white transition-all duration-200 ease-out hover:rounded-xl hover:bg-accent-500/20"
           tooltip={server.name}
         >
@@ -193,6 +310,13 @@ export default function ServerSidebar() {
             <img src={server.icon} alt={server.name} className="h-full w-full rounded-xl object-cover" />
           ) : (
             <span className="text-lg font-bold">{server.name?.[0]?.toUpperCase() ?? "?"}</span>
+          )}
+          {isMuted(server.id) && (
+            <span className="pointer-events-none absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-gray-900 text-gray-400 ring-1 ring-gray-700">
+              <svg className="h-2.5 w-2.5" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M16.5 12A4.5 4.5 0 0014 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0021 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 003.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
+            </svg>
+            </span>
           )}
         </BouncyButton>
       ))}
@@ -294,6 +418,111 @@ export default function ServerSidebar() {
           </div>,
           document.body,
         )}
+
+      {menu &&
+        createPortal(
+          <div
+            className="layer-popup fixed inset-0"
+            onMouseDown={() => setMenu(null)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setMenu(null);
+            }}
+          >
+            <div
+              className="glass-panel anim-pop-in fixed w-52 rounded-xl border border-gray-700/60 p-1.5 shadow-elev2"
+              style={{ left: menu.x, top: menu.y }}
+              onMouseDown={(event) => event.stopPropagation()}
+            >
+              <p className="truncate px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                {menu.server.name}
+              </p>
+
+              <button
+                type="button"
+                onClick={() => handleMarkRead(menu.server)}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
+              >
+                <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Mark as read
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleToggleMute(menu.server)}
+                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
+              >
+                <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M16.5 12A4.5 4.5 0 0014 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0021 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 003.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
+                </svg>
+                {isMuted(menu.server.id) ? "Unmute server" : "Mute server"}
+              </button>
+
+              <div className="my-1 h-px bg-gray-700/50" />
+
+              {menu.server.ownerId === user?.id ? (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => openServerSettings(menu.server)}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
+                  >
+                    <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.49 1a7.3 7.3 0 00-1.69-.98l-.38-2.65A.49.49 0 0014 2h-4a.49.49 0 00-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1a.49.49 0 00-.61.22l-2 3.46a.49.49 0 00.12.64l2.11 1.65c-.04.32-.08.66-.08.98s.03.66.07.98l-2.11 1.65a.5.5 0 00-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.04.24.25.42.49.42h4c.24 0 .45-.18.49-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46a.5.5 0 00-.12-.64l-2.11-1.65zM12 15.5A3.5 3.5 0 1115.5 12 3.5 3.5 0 0112 15.5z" />
+                    </svg>
+                    Server settings
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void deleteServer(menu.server)}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
+                  >
+                    <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M6 7h12l-1 13a1 1 0 01-1 1H8a1 1 0 01-1-1L6 7zm3-3h6l1 2h4v2H4V6h4l1-2z" />
+                    </svg>
+                    Delete server
+                  </button>
+                </>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void leaveServer(menu.server)}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
+                >
+                  <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4-4 4M21 12H9M13 4H6a2 2 0 00-2 2v12a2 2 0 002 2h7" />
+                  </svg>
+                  Leave server
+                </button>
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {settingsServer && (
+        <ServerSettingsModal
+          server={settingsServer}
+          myRole={settingsServer.ownerId === user?.id ? "owner" : "member"}
+          onClose={() => setSettingsServer(null)}
+          onOpenInvites={() => {
+            setInviteServer(settingsServer);
+            setSettingsServer(null);
+          }}
+          onSaved={onServerSaved}
+        />
+      )}
+
+      {inviteServer && (
+        <InviteModal
+          serverId={inviteServer.id}
+          permanentCode={inviteServer.inviteCode}
+          channels={inviteServer.channels ?? []}
+          onClose={() => setInviteServer(null)}
+        />
+      )}
     </div>
   );
 }

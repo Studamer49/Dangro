@@ -32,6 +32,19 @@ export interface Server {
   _count?: { members: number };
 }
 
+/** A server ban: a user barred from rejoining until the ban is lifted. */
+export interface Ban {
+  id: string;
+  serverId: string;
+  userId: string;
+  /** The moderator who issued the ban; null if that account is later deleted. */
+  moderatorId: string | null;
+  reason: string | null;
+  createdAt: string;
+  user?: Pick<User, "id" | "username" | "avatar">;
+  moderator?: Pick<User, "id" | "username"> | null;
+}
+
 export interface Member {
   id: string;
   userId: string;

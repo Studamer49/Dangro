@@ -221,6 +221,12 @@ router.post(
     const { expired, exhausted } = inviteState(invite);
     if (expired || exhausted) throw AppError.of("NOT_FOUND", "Invite not found or expired");
 
+    const banned = await prisma.ban.findUnique({
+      where: { serverId_userId: { serverId: invite.serverId, userId } },
+      select: { id: true },
+    });
+    if (banned) throw AppError.of("FORBIDDEN", "You are banned from this server");
+
     const existingMember = await prisma.member.findUnique({
       where: { userId_serverId: { userId, serverId: invite.serverId } },
     });

@@ -190,6 +190,103 @@ router.delete(
   })
 );
 
+/** Optional free-text reason attached to a ban. */
+const banReason = z.string().trim().max(300).nullish();
+
+/** The ban list behind "Server Settings → Members → Banned". */
+router.get(
+  "/servers/:id/bans",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const id = paramId(req.params.id, "server id");
+
+    await requirePermission(id, userId, "BAN_MEMBERS");
+
+    const bans = await prisma.ban.findMany({
+      where: { serverId: id },
+      include: {
+        user: { select: { id: true, username: true, avatar: true } },
+        moderator: { select: { id: true, username: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    ok(res, { bans });
+  })
+);
+
+/**
+ * Ban a user. Landing the ban also removes their member row, so a banned user
+ * cannot keep reading the server; the ban itself is what blocks them rejoining.
+ */
+router.post(
+  "/servers/:id/bans",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const id = paramId(req.params.id, "server id");
+    const { userId: targetId, reason } = parseOrThrow(
+      z.object({ userId: z.string().uuid(), reason: banReason }),
+      req.body
+    );
+
+    const actor = await requirePermission(id, userId, "BAN_MEMBERS");
+
+    if (targetId === userId) throw AppError.of("BAD_REQUEST", "You cannot ban yourself");
+
+    const server = await prisma.server.findUnique({ where: { id }, select: { ownerId: true } });
+    if (!server) throw AppError.of("NOT_FOUND", "Server not found");
+    if (server.ownerId === targetId) {
+      throw AppError.of("FORBIDDEN", "The server owner cannot be banned");
+    }
+
+    // If the target is still a member, the same hierarchy rule as a kick applies.
+    const member = await prisma.member.findUnique({
+      where: { userId_serverId: { userId: targetId, serverId: id } },
+      select: { id: true },
+    });
+    if (member) {
+      const serverRoles = await loadServerRoles(id);
+      assertOutranks(actor, await loadTarget(id, member.id, serverRoles, server.ownerId));
+    }
+
+    const ban = await prisma.ban.upsert({
+      where: { serverId_userId: { serverId: id, userId: targetId } },
+      create: { serverId: id, userId: targetId, moderatorId: userId, reason: reason ?? null },
+      update: { moderatorId: userId, reason: reason ?? null },
+      include: { user: { select: { id: true, username: true, avatar: true } } },
+    });
+
+    if (member) await prisma.member.delete({ where: { id: member.id } });
+
+    ok(res, { ban }, 201);
+  })
+);
+
+/** Lift a ban. The user must be re-invited to return. */
+router.delete(
+  "/servers/:id/bans/:userId",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const id = paramId(req.params.id, "server id");
+    const targetId = paramId(req.params.userId, "user id");
+
+    await requirePermission(id, userId, "BAN_MEMBERS");
+
+    const existing = await prisma.ban.findUnique({
+      where: { serverId_userId: { serverId: id, userId: targetId } },
+      select: { id: true },
+    });
+    if (!existing) throw AppError.of("NOT_FOUND", "Ban not found");
+
+    await prisma.ban.delete({ where: { id: existing.id } });
+
+    ok(res, { message: "Ban lifted" });
+  })
+);
+
 /** Move ownership. The outgoing owner keeps the Admin role. */
 router.post(
   "/servers/:id/transfer",
