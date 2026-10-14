@@ -108,6 +108,8 @@ const joinHandler = asyncHandler(async (req: AuthRequest, res) => {
     });
     if (!existing) {
       await prisma.member.create({ data: { userId, serverId: invite.serverId } });
+      // See routes/invites.ts: the Mongo engine has no atomic `$inc`, so this
+      // stays a read-modify-write rather than a Prisma `increment`.
       await prisma.invite.update({ where: { id: invite.id }, data: { uses: invite.uses + 1 } });
     }
     await respondWithServer(res, invite.serverId, !existing, invite.channelId);

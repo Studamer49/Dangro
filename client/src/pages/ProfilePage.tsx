@@ -31,44 +31,58 @@ export default function ProfilePage() {
     toastRef.current = toast;
   }, [toast]);
 
-  const fetchProfile = useCallback(async () => {
+  /**
+   * Guards against a slow response for one profile landing after the user has
+   * already navigated to another. Without it, visiting A then B quickly can
+   * leave A's name, posts and follower counts on screen under B's route.
+   */
+  const seqRef = useRef(0);
+
+  const fetchProfile = useCallback(async (seq: number) => {
     try {
       const { data } = await api.get(`/users/${userId}`);
+      if (seq !== seqRef.current) return;
       setProfileUser(data.user as User);
     } catch (err) {
+      if (seq !== seqRef.current) return;
       toastRef.current.error(apiErrorMessage(err));
       setProfileUser(null);
     } finally {
-      setLoading(false);
+      if (seq === seqRef.current) setLoading(false);
     }
   }, [userId]);
 
-  const fetchPosts = useCallback(async () => {
+  const fetchPosts = useCallback(async (seq: number) => {
     try {
       const { data } = await api.get(`/posts/user/${userId}`);
+      if (seq !== seqRef.current) return;
       setPosts(data.posts as Post[]);
     } catch (err) {
+      if (seq !== seqRef.current) return;
       toastRef.current.error(apiErrorMessage(err));
     }
   }, [userId]);
 
-  const fetchFollowStatus = useCallback(async () => {
+  const fetchFollowStatus = useCallback(async (seq: number) => {
     try {
       const { data } = await api.get(`/follows/${userId}`);
+      if (seq !== seqRef.current) return;
       setIsFollowing(data.isFollowing);
       setFollowerCount(data.followerCount);
       setFollowingCount(data.followingCount);
     } catch (err) {
+      if (seq !== seqRef.current) return;
       toastRef.current.error(apiErrorMessage(err));
     }
   }, [userId]);
 
   useEffect(() => {
     if (!userId) return;
+    const seq = (seqRef.current += 1);
     setLoading(true);
-    fetchProfile();
-    fetchPosts();
-    fetchFollowStatus();
+    fetchProfile(seq);
+    fetchPosts(seq);
+    fetchFollowStatus(seq);
   }, [userId, fetchProfile, fetchPosts, fetchFollowStatus]);
 
   const toggleFollow = async () => {
@@ -201,7 +215,7 @@ export default function ProfilePage() {
           user={currentUser}
           onClose={() => setShowEditModal(false)}
           onSaved={() => {
-            fetchProfile();
+            void fetchProfile(seqRef.current);
           }}
         />
       )}

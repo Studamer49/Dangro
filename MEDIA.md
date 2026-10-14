@@ -24,6 +24,8 @@ below only chooses where non-image media is kept.
   `f_auto` so the animation survives.
 - **Deletion by public ID.** Deleting a DM message destroys the asset, after the
   existing authorisation checks and only when no other message references it.
+  Replacing a profile picture or a story, and deleting a story or a post, also
+  destroy the asset the row used to point at.
 
 ### Configure it
 
@@ -37,13 +39,47 @@ CLOUDINARY_API_SECRET="your-api-secret"
 
 Get them from the Cloudinary dashboard → Settings → Account → API Keys.
 
-All three are required. If any is missing an image upload fails with **503**
-and names the missing variable — it is never quietly written somewhere else.
-All three are server-only: never prefix them with `VITE_`, which would inline
-the secret into the browser bundle.
+**Or**, as a single variable — the form the dashboard's "copy" button gives you
+and the one Cloudinary's own documentation leads with:
+
+```
+CLOUDINARY_URL="cloudinary://your-api-key:your-api-secret@your-cloud-name"
+```
+
+The server reads this when the three separate variables are not set, and a
+malformed value is a boot failure rather than a silent "not configured". Do not
+set both: the three separate variables win if you do.
+
+All three (or the URL) are required. If any is missing an image upload fails
+with **503 `SERVICE_UNAVAILABLE`** and names the missing variable — it is never
+quietly written somewhere else.
+
+All are server-only: never prefix them with `VITE_`, which would inline the
+secret into the browser bundle.
+
+### Check that it works
+
+The server verifies this at startup and tells you the answer:
+
+```
+[startup] Image uploads: Cloudinary OK (cloud "my-cloud"), folder "dangro/images", credentials from CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET
+```
+
+The three failure lines it can print instead:
+
+```
+[startup] Image uploads are DISABLED — Cloudinary is not configured (missing CLOUDINARY_API_SECRET). Set them in server/.env or in the service environment.
+[startup] Image uploads are CONFIGURED BUT NOT WORKING — Cloudinary rejected the credentials (cloud "my-cloud": Cloudinary ping failed: Invalid credentials). ...
+```
+
+The second one is the important one: the variables exist, so nothing complains
+until a real upload fails, and a wrong cloud name or secret is otherwise
+invisible from the outside. `GET /api/health` reports the same thing as
+`"imageStorage": "cloudinary" | "unconfigured"` — the API still answers `200`,
+because image storage being broken should not take the whole site down.
 
 Optional: `CLOUDINARY_IMAGE_MAX_BYTES` (default 8 MB), `CLOUDINARY_FOLDER`
-(default `dangro`), `CLOUDINARY_TIMEOUT_MS` (default 30000).
+(default `dangro/images`), `CLOUDINARY_TIMEOUT_MS` (default 30000).
 
 > **Existing images are not migrated.** Files uploaded before this change live
 > in the old backend and keep resolving from it. Re-upload anything you want to

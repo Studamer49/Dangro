@@ -1,12 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { ChangeEvent, PointerEvent as ReactPointerEvent } from "react";
 import Modal from "@/components/Modal";
-import api, { apiErrorMessage } from "@/lib/api";
+import api from "@/lib/api";
+import { uploadErrorMessage, uploadMedia } from "@/lib/upload";
 import { useToast } from "@/stores/toastStore";
 import {
   STORY_BACKGROUNDS,
   STORY_FONTS,
-  canvasToBlob,
   renderSketchStory,
   renderTextStory,
 } from "@/lib/storyCanvas";
@@ -62,9 +62,21 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }, []);
 
-  useEffect(() => {
-    paintBackground();
-  }, [paintBackground]);
+  /**
+   * A callback ref rather than an effect: the canvas is only mounted while the
+   * Draw tab is open, so switching Text -> Draw -> Text -> Draw hands React a
+   * brand new, fully transparent element. Filling it on attach is what stops a
+   * re-entered Draw tab from looking blank and from sharing an empty story (the
+   * blank check reads an unfilled canvas as "something was drawn").
+   */
+  const attachCanvas = useCallback((node: HTMLCanvasElement | null) => {
+    drawRef.current = node;
+    if (!node) return;
+    const ctx = node.getContext("2d");
+    if (!ctx) return;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, node.width, node.height);
+  }, []);
 
   /** Snapshots the canvas so undo can restore it. */
   const snapshot = useCallback(() => {
@@ -147,15 +159,11 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
   const publish = async (blob: Blob, filename: string) => {
     setBusy(true);
     try {
-      const form = new FormData();
-      form.append("file", blob, filename);
-      const { data } = await api.post("/uploads", form, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const uploaded = await uploadMedia(blob, filename);
 
       if (editing) {
         const { data: edited } = await api.patch(`/stories/${editing.id}`, {
-          mediaUrl: data.url,
+          mediaUrl: uploaded.url,
           mediaType: "image",
         });
         toast.success("Story updated");
@@ -163,11 +171,14 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
         return;
       }
 
-      const { data: created } = await api.post("/stories", { mediaUrl: data.url, mediaType: "image" });
+      const { data: created } = await api.post("/stories", {
+        mediaUrl: uploaded.url,
+        mediaType: "image",
+      });
       toast.success("Story added");
       onCreated(created.story as Story);
     } catch (err) {
-      toast.error(apiErrorMessage(err, "Could not share your story"));
+      toast.error(uploadErrorMessage(err, "Could not share your story"));
     } finally {
       setBusy(false);
     }
@@ -183,19 +194,15 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
     }
     setBusy(true);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      const { data } = await api.post("/uploads", form, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      const mediaType = data.type === "video" ? "video" : "image";
-      if (data.type !== "image" && data.type !== "video") {
+      const uploaded = await uploadMedia(file);
+      if (uploaded.type !== "image" && uploaded.type !== "video") {
         throw new Error("That file type cannot be used as a story");
       }
+      const mediaType = uploaded.type;
 
       if (editing) {
         const { data: edited } = await api.patch(`/stories/${editing.id}`, {
-          mediaUrl: data.url,
+          mediaUrl: uploaded.url,
           mediaType,
         });
         toast.success("Story updated");
@@ -203,11 +210,14 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
         return;
       }
 
-      const { data: created } = await api.post("/stories", { mediaUrl: data.url, mediaType });
+      const { data: created } = await api.post("/stories", {
+        mediaUrl: uploaded.url,
+        mediaType,
+      });
       toast.success("Story added");
       onCreated(created.story as Story);
     } catch (err) {
-      toast.error(apiErrorMessage(err, "Could not share your story"));
+      toast.error(uploadErrorMessage(err, "Could not share your story"));
     } finally {
       setBusy(false);
     }
@@ -247,8 +257,6 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
     const blob = await renderSketchStory(canvas);
     await publish(blob, "story-sketch.png");
   };
-
-  void canvasToBlob;
 
   return (
     <Modal
@@ -368,7 +376,7 @@ export default function StoryComposer({ editing, onClose, onCreated }: Props) {
       {mode === "draw" && (
         <div className="space-y-3">
           <canvas
-            ref={drawRef}
+            ref={attachCanvas}
             width={DRAW_SIZE}
             height={DRAW_SIZE}
             onPointerDown={onPointerDown}

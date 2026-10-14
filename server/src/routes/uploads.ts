@@ -210,12 +210,15 @@ router.post(
     // configured. Falling back to the disk/GridFS store here would report a
     // successful upload for bytes that did not go where the operator set the
     // app up to store them.
+    //
+    // SERVICE_UNAVAILABLE rather than INTERNAL_ERROR: the API is healthy, a
+    // service it depends on is not, and the client is told which by the code.
     if (isImage && !isCloudinaryConfigured()) {
       await cleanup();
-      throw new AppError(
-        "Image uploads are unavailable: Cloudinary is not configured.",
-        503,
-        "INTERNAL_ERROR"
+      throw AppError.of(
+        "SERVICE_UNAVAILABLE",
+        `Image uploads are unavailable: Cloudinary is not configured (missing ${config.cloudinary.missingVars.join(", ")}).`,
+        { missing: [...config.cloudinary.missingVars] }
       );
     }
 
@@ -239,12 +242,8 @@ router.post(
       // backstop for one that failed before it could.
       await cleanup();
       if (err instanceof MediaIngestError) {
-        // 502: the API is fine, the upstream media service is not.
-        throw new AppError(
-          `Media could not be stored: ${err.message}`,
-          502,
-          "INTERNAL_ERROR"
-        );
+        // 502: the API is fine, Cloudinary (or the media host) is not.
+        throw AppError.of("UPSTREAM_ERROR", `Media could not be stored: ${err.message}`);
       }
       throw err;
     }

@@ -5,6 +5,7 @@ import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { paramId } from "../lib/access.js";
 import { nullableMediaUrl } from "../lib/urls.js";
+import { destroyImageForUrl } from "../lib/cloudinary.js";
 
 const router = Router();
 
@@ -117,6 +118,17 @@ router.patch(
     if (input.avatar !== undefined) data.avatar = input.avatar ?? null;
     if (input.status !== undefined) data.status = input.status;
 
+    // Read the outgoing avatar before the write, because nothing but this
+    // route knows which asset the row used to point at. Without it a replaced
+    // profile picture stays in the Cloudinary media library forever.
+    const replacedAvatar =
+      input.avatar !== undefined && input.avatar !== null
+        ? ((await prisma.user.findUnique({
+            where: { id: userId },
+            select: { avatar: true },
+          }))?.avatar ?? null)
+        : null;
+
     const user = await prisma.user.update({
       where: { id: userId },
       data,
@@ -132,6 +144,12 @@ router.patch(
         updatedAt: true,
       },
     });
+
+    // After the save, and only if it really changed. Never throws: the
+    // profile update has already succeeded.
+    if (replacedAvatar && replacedAvatar !== user.avatar) {
+      await destroyImageForUrl(replacedAvatar, `the avatar of ${userId}`);
+    }
 
     ok(res, { user });
   })

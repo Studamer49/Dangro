@@ -5,6 +5,7 @@ import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { paramId } from "../lib/access.js";
 import { mediaUrl } from "../lib/urls.js";
+import { destroyImageForUrl } from "../lib/cloudinary.js";
 
 const router = Router();
 
@@ -165,11 +166,22 @@ router.delete(
     const userId = requireUser(req);
     const id = paramId(req.params.id, "post id");
 
-    const post = await prisma.post.findUnique({ where: { id }, select: { authorId: true } });
+    // `media` is read here, not after the delete, because the cascade removes
+    // the rows with the post and the delivery URLs would be gone with them.
+    const post = await prisma.post.findUnique({
+      where: { id },
+      select: { authorId: true, media: { select: { url: true } } },
+    });
     if (!post) throw AppError.of("NOT_FOUND", "Post not found");
     if (post.authorId !== userId) throw AppError.of("FORBIDDEN", "You can only delete your own posts");
 
     await prisma.post.delete({ where: { id } });
+
+    // Each image is addressed by its own public ID, so these are unrelated
+    // assets even when a post reuses one. Best effort, after the delete.
+    for (const item of post.media ?? []) {
+      await destroyImageForUrl(item.url, `post ${id}`);
+    }
 
     ok(res, { message: "Post deleted" });
   })

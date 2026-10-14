@@ -24,18 +24,29 @@ export default function Modal({
 }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
+  // Escape has to call the *current* onClose, but the listener and the initial
+  // focus below must each be set up exactly once. Keeping both effects keyed on
+  // [onClose] re-ran them whenever the caller passed an inline arrow (which has
+  // a new identity on every parent render), and the re-focus pulled the caret
+  // off the input the user was typing into after a single keystroke.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") onCloseRef.current();
     };
     document.addEventListener("keydown", onKeyDown);
-
-    // Move focus into the dialog so Tab stays inside it and Escape is caught
-    // without the user having to click the overlay first.
-    panelRef.current?.focus();
-
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, []);
+
+  // Move focus into the dialog so Tab stays inside it and Escape is caught
+  // without the user having to click the overlay first. Once, on open only.
+  useEffect(() => {
+    panelRef.current?.focus();
+  }, []);
 
   return (
     <div

@@ -5,6 +5,7 @@ import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { paramId } from "../lib/access.js";
 import { mediaUrl } from "../lib/urls.js";
+import { destroyImageForUrl } from "../lib/cloudinary.js";
 
 const router = Router();
 
@@ -96,7 +97,7 @@ router.patch(
 
     const story = await prisma.story.findUnique({
       where: { id },
-      select: { authorId: true, expiresAt: true },
+      select: { authorId: true, expiresAt: true, mediaUrl: true },
     });
     if (!story || story.authorId !== userId) throw AppError.of("NOT_FOUND", "Story not found");
 
@@ -112,6 +113,13 @@ router.patch(
       include: { author: { select: { id: true, username: true, avatar: true } } },
     });
 
+    // The image the story used to show is now unreachable, so remove it from
+    // the media library rather than leaving it there for ever. Best effort:
+    // the edit itself has already succeeded.
+    if (story.mediaUrl && story.mediaUrl !== mediaUrl) {
+      await destroyImageForUrl(story.mediaUrl, `story ${id}`);
+    }
+
     ok(res, { story: updated });
   })
 );
@@ -123,10 +131,13 @@ router.delete(
     const userId = requireUser(req);
     const id = paramId(req.params.id, "story id");
 
-    const story = await prisma.story.findUnique({ where: { id }, select: { authorId: true } });
+    const story = await prisma.story.findUnique({ where: { id }, select: { authorId: true, mediaUrl: true } });
     if (!story || story.authorId !== userId) throw AppError.of("NOT_FOUND", "Story not found");
 
     await prisma.story.delete({ where: { id } });
+
+    // Nobody can reach this image any more.
+    await destroyImageForUrl(story.mediaUrl, `story ${id}`);
 
     ok(res, { message: "Story deleted" });
   })

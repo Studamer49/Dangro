@@ -38,7 +38,13 @@ export default function JoinServerPage() {
   const toast = useToast();
   const [state, setState] = useState<State>({ status: "loading" });
   const [joining, setJoining] = useState(false);
-  const started = useRef(false);
+  /**
+   * Which code has already been previewed. This has to remember the code, not
+   * just "have we run": a plain boolean stays true after the first mount, so
+   * navigating from one invite link to another left the previous server's
+   * preview on screen and the Join button joined the wrong server.
+   */
+  const previewedCode = useRef<string | null>(null);
 
   // useToast() is memoised on the store's push, but reading it through a ref
   // keeps the effect below immune to that identity changing.
@@ -61,8 +67,8 @@ export default function JoinServerPage() {
   }, [inviteCode]);
 
   useEffect(() => {
-    if (!inviteCode || started.current) return;
-    started.current = true;
+    if (!inviteCode || previewedCode.current === inviteCode) return;
+    previewedCode.current = inviteCode;
     void preview();
   }, [inviteCode, preview]);
 

@@ -11,12 +11,16 @@ export default function VoiceRecorder({ onRecordingComplete, disabled }: Props) 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval>>(undefined);
+  /** False once the component has unmounted, checked after every await. */
+  const aliveRef = useRef(true);
 
   // Navigating away mid-recording used to leave the microphone open and the
   // duration timer running: the browser's recording indicator stayed on and
   // setInterval kept firing against a component that no longer exists.
   useEffect(() => {
+    aliveRef.current = true;
     return () => {
+      aliveRef.current = false;
       if (timerRef.current) clearInterval(timerRef.current);
       const recorder = mediaRecorderRef.current;
       if (recorder && recorder.state !== "inactive") {
@@ -34,6 +38,14 @@ export default function VoiceRecorder({ onRecordingComplete, disabled }: Props) 
   const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // The permission prompt can outlive the component: unmounting while it is
+      // open leaves this ref null, so the cleanup above had no recorder to stop.
+      // Drop the freshly-granted mic instead of starting a recorder (and a
+      // setInterval) that nothing will ever tear down.
+      if (!aliveRef.current) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       const mediaRecorder = new MediaRecorder(stream, { mimeType: "audio/webm" });
       mediaRecorderRef.current = mediaRecorder;
       chunksRef.current = [];

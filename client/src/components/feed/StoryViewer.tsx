@@ -14,7 +14,7 @@ interface Props {
 }
 
 const DURATION_MS = 5000;
-/** Stories longer than this are not advanced automatically. */
+/** How long a video's progress bar fills before it simply holds. */
 const MAX_AUTO_MS = 12_000;
 
 function relativeTime(iso: string): string {
@@ -54,25 +54,34 @@ export default function StoryViewer({
 
   const duration = isVideo ? MAX_AUTO_MS : DURATION_MS;
 
+  // A mirror of `index` for the handlers below. Advancing has to know whether
+  // this is the last story *outside* the state updater: `setIndex` may run its
+  // updater more than once per commit, so closing the viewer from inside it
+  // would call `onClose` twice and, when the update is processed during render,
+  // ask the parent to set state mid-render.
+  const indexRef = useRef(index);
+  useEffect(() => {
+    indexRef.current = index;
+  }, [index]);
+
   const goNext = useCallback(() => {
-    setIndex((current) => {
-      if (current + 1 < stories.length) {
-        elapsedRef.current = 0;
-        return current + 1;
-      }
-      onClose();
-      return current;
-    });
+    const next = indexRef.current + 1;
+    if (next < stories.length) {
+      elapsedRef.current = 0;
+      indexRef.current = next;
+      setIndex(next);
+      return;
+    }
+    onClose();
   }, [stories.length, onClose]);
 
   const goPrevious = useCallback(() => {
-    setIndex((current) => {
-      if (current > 0) {
-        elapsedRef.current = 0;
-        return current - 1;
-      }
-      return current;
-    });
+    const previous = indexRef.current - 1;
+    if (previous > 0) {
+      elapsedRef.current = 0;
+      indexRef.current = previous;
+      setIndex(previous);
+    }
   }, []);
 
   useEffect(() => {
@@ -89,8 +98,12 @@ export default function StoryViewer({
       const elapsed = elapsedRef.current + (now - startedAtRef.current);
       const ratio = Math.min(1, elapsed / duration);
       setProgress(ratio);
+
       if (ratio >= 1) {
-        goNext();
+        // An image runs out of time and moves on by itself. A video is advanced
+        // by its own `ended` event (or a tap), so a clip longer than
+        // MAX_AUTO_MS is never cut off mid-playback; the bar just holds.
+        if (!isVideo) goNext();
         return;
       }
       frame = requestAnimationFrame(tick);
@@ -98,7 +111,7 @@ export default function StoryViewer({
 
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [index, duration, paused, goNext]);
+  }, [index, duration, paused, isVideo, goNext]);
 
   // Paused must not lose the time already served, or the bar jumps forward
   // on resume.

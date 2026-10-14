@@ -250,6 +250,21 @@ describe("POST /api/uploads — Cloudinary failures", () => {
 
     expect(res.status).toBe(502);
     expect(res.body?.success).toBe(false);
+    // UPSTREAM_ERROR, not INTERNAL_ERROR: the API is healthy, Cloudinary is
+    // not, and the client is told which by the code.
+    expect(res.body?.error?.code).toBe("UPSTREAM_ERROR");
+  });
+
+  it("does not log a stack trace for an upstream refusal", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    uploadMock.mockRejectedValue({ error: { message: "Invalid credentials" } });
+
+    await post(filePart(PNG, "a.png", "image/png"));
+
+    // The terminal handler only dumps a trace for INTERNAL_ERROR. A rejected
+    // image upload is routine, not a server fault.
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
   });
 
   it("never reports success when the upload did not complete", async () => {
@@ -302,6 +317,52 @@ describe("POST /api/uploads — no silent fallback when unconfigured", () => {
     expect(JSON.stringify(res.body)).toContain("Cloudinary");
     // The image must not have quietly landed on the disk store instead.
     expect(uploadMock).not.toHaveBeenCalled();
+  });
+
+  it("names the missing variable and uses SERVICE_UNAVAILABLE", async () => {
+    vi.resetModules();
+    delete process.env.CLOUDINARY_CLOUD_NAME;
+    delete process.env.CLOUDINARY_API_KEY;
+    delete process.env.CLOUDINARY_API_SECRET;
+
+    const mod = await import("../index.js");
+    const unconfigured = mod.app;
+    const cfg = (await import("../config.js")).config;
+
+    const res = await attach(
+      request(unconfigured)
+        .post("/api/uploads")
+        .set("Authorization", `Bearer ${jwt.sign({ userId: ME }, cfg.jwtSecret)}`),
+      filePart(PNG, "a.png", "image/png")
+    );
+
+    expect(res.body?.error?.code).toBe("SERVICE_UNAVAILABLE");
+    // An operator who cannot tell which variable is missing cannot fix it.
+    expect(res.body?.error?.message).toContain("CLOUDINARY_API_SECRET");
+  });
+
+  it("reports the disabled image store on the health endpoint", async () => {
+    vi.resetModules();
+    delete process.env.CLOUDINARY_CLOUD_NAME;
+    delete process.env.CLOUDINARY_API_KEY;
+    delete process.env.CLOUDINARY_API_SECRET;
+
+    const unconfigured = (await import("../index.js")).app;
+
+    const res = await request(unconfigured).get("/api/health");
+
+    // The API itself is healthy: turning the whole site red would take every
+    // other feature down with the one that is broken.
+    expect(res.status).toBe(200);
+    expect(res.body?.data?.imageStorage).toBe("unconfigured");
+  });
+});
+
+describe("health endpoint", () => {
+  it("reports that images go to Cloudinary when it is configured", async () => {
+    const res = await request(app).get("/api/health");
+
+    expect(res.body?.data?.imageStorage).toBe("cloudinary");
   });
 });
 

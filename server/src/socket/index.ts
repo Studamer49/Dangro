@@ -400,16 +400,20 @@ export function setupSocketHandlers(io: SocketServer): void {
     socket.on("disconnect", () => {
       // The socket has already been removed from its rooms by now, so the
       // room size is the count of OTHER live connections for this user
-      // (e.g. a second tab). Only go offline when the last one closes.
+      // (e.g. a second tab).
       const remaining = io.sockets.adapter.rooms.get(`user:${userId}`)?.size ?? 0;
 
-      // Nobody is left to talk to on this user's calls, so stop relaying
-      // signalling for them.
+      // Still connected elsewhere. Relaying must keep working for this user,
+      // so leave their call state alone — otherwise closing a second tab
+      // silently tears down a call the peer is still sitting in.
+      if (remaining > 0) return;
+
+      // This was their last connection, so nobody is left to talk to on their
+      // calls: stop relaying signalling for them.
       for (const [roomId, call] of activeCalls) {
         if (call.callerId === userId || call.calleeId === userId) activeCalls.delete(roomId);
       }
 
-      if (remaining > 0) return;
       prisma.user
         .update({ where: { id: userId }, data: { status: "offline", lastSeen: new Date() } })
         .catch((err) => console.error(`[socket] failed to mark ${userId} offline:`, err));

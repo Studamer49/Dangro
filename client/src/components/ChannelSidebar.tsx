@@ -58,14 +58,31 @@ export default function ChannelSidebar() {
     toastRef.current = toast;
   }, [toast]);
 
+  const fetchSeqRef = useRef(0);
+  const loadedServerIdRef = useRef<string | null>(null);
+
   const fetchServerForChannel = useCallback(async (cId: string) => {
+    // Navigating between channels fires these without cancelling, so two
+    // requests overlap and the slower one wins unless it is checked: the
+    // sidebar then lists the previous server's channels under the new route.
+    const seq = (fetchSeqRef.current += 1);
     try {
       const { data } = await api.get(`/channels/${cId}/server`);
+      if (seq !== fetchSeqRef.current) return;
+      const nextId = data.server?.id ?? null;
+      if (loadedServerIdRef.current && nextId && loadedServerIdRef.current !== nextId) {
+        // A voice session belongs to the channel it was joined in, so the bar
+        // must not survive the jump into a different server.
+        setJoinedVoiceId(null);
+      }
+      loadedServerIdRef.current = nextId;
       setServer(data.server);
       setChannels(data.server.channels || []);
       setCategories(data.server.categories || []);
     } catch (err: unknown) {
+      if (seq !== fetchSeqRef.current) return;
       toastRef.current.error(apiErrorMessage(err, "Could not load this server"));
+      loadedServerIdRef.current = null;
       setServer(null);
       setChannels([]);
       // Only an access problem means "you cannot be here". Treating a 500 or a

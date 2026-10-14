@@ -8,6 +8,7 @@ import {
   PERMISSION_GROUPS,
   OWNER_POSITION,
   assertOutranks,
+  loadActor,
   loadServerRoles,
   loadTarget,
   permissionKeySchema,
@@ -104,10 +105,15 @@ router.get(
   "/servers/:id/roles",
   authenticate,
   asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
     const serverId = String(req.params.id ?? "");
 
     // Reading the role list is allowed to any member; the settings UI uses it
     // to label people, and hiding it would make the member list unreadable.
+    // Without this check the endpoint handed the full permission matrix of
+    // *any* server to any authenticated caller who could guess its id.
+    await loadActor(serverId, userId);
+
     const roles = await loadServerRoles(serverId);
 
     const counts = await prisma.memberRole.findMany({
@@ -182,8 +188,11 @@ router.patch(
         }
       } else {
         // An admin may not promote a role above their own highest role.
-        if (role.position > actor.position) {
-          throw AppError.of("FORBIDDEN", "You cannot edit a role above your own highest role");
+        // Strictly below: an admin must not be able to rewrite the very role
+        // that grants them their powers just by including `position` in the
+        // same request. This has to match the `>=` used by the branch below.
+        if (role.position >= actor.position) {
+          throw AppError.of("FORBIDDEN", "You cannot edit a role at or above your own highest role");
         }
         if (input.position >= actor.position) {
           throw AppError.of("FORBIDDEN", "You cannot move a role to your own level or above");
@@ -259,8 +268,13 @@ router.post(
     // strictly below their own level, so a reorder cannot lift a role past
     // them or put one on their own tier.
     const ceiling = actor.isOwner ? OWNER_POSITION - 1 : actor.position - 1;
-    const operations = input.roleIds.map((roleId, index) => {
-      const position = Math.min(ceiling, input.roleIds.length - index);
+    // @everyone is structural and stays pinned where it is. `PATCH` refuses to
+    // move it, so a drag must not move it either — otherwise a reorder
+    // rewrites the ladder the position field is supposed to preserve.
+    const everyoneId = roles.find((role) => role.isEveryone)?.id;
+    const movable = input.roleIds.filter((roleId) => roleId !== everyoneId);
+    const operations = movable.map((roleId, index) => {
+      const position = Math.max(0, Math.min(ceiling, movable.length - index));
       return prisma.role.update({ where: { id: roleId }, data: { position } }) as never;
     });
     await prisma.$transaction(operations);

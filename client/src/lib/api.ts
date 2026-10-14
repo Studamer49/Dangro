@@ -109,7 +109,7 @@ export function invalidateSession(): void {
 function refreshAccessToken(): Promise<string> {
   if (!inFlightRefresh) {
     const epoch = sessionEpoch;
-    inFlightRefresh = axios
+    const pending = axios
       .post<ApiSuccessEnvelope<{ accessToken: string }>>(
         `${API_BASE}/auth/refresh`,
         {},
@@ -128,10 +128,14 @@ function refreshAccessToken(): Promise<string> {
         return accessToken;
       })
       .finally(() => {
-        // Cleared either way: a later 401 must be able to retry rather than
-        // replay a rejected promise forever.
-        inFlightRefresh = null;
+        // Released either way, so a later 401 can retry rather than replay a
+        // rejected promise forever — but only if this is still the slot's
+        // occupant. `invalidateSession` empties it on logout and a new refresh
+        // can take it while this one settles; clearing unconditionally would
+        // drop that newer refresh and let a second one start.
+        if (inFlightRefresh === pending) inFlightRefresh = null;
       });
+    inFlightRefresh = pending;
   }
 
   return inFlightRefresh;

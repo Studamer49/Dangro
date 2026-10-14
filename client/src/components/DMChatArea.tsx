@@ -2,7 +2,8 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { useCallStore } from "@/stores/callStore";
 import { getSocket } from "@/lib/socket";
-import api, { apiErrorMessage } from "@/lib/api";
+import api from "@/lib/api";
+import { uploadErrorMessage, uploadMedia } from "@/lib/upload";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import Avatar from "@/components/Avatar";
 import { useToast } from "@/stores/toastStore";
@@ -319,14 +320,8 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
     ]);
 
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const { data: uploadData } = await api.post("/uploads", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-        // Surfaced by axios as e.upload.progress, and used for the bar below.
-        onUploadProgress: (e) => {
-          if (e.total) setUploadPercent(Math.round((e.loaded / e.total) * 100));
-        },
+      const uploaded = await uploadMedia(file, file.name, {
+        onProgress: setUploadPercent,
       });
 
       setMessages((prev) =>
@@ -334,9 +329,9 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
           m.id === tempId
             ? {
                 ...m,
-                attachmentUrl: uploadData.url,
-                attachmentType: uploadData.type,
-                attachmentPublicId: uploadData.publicId ?? null,
+                attachmentUrl: uploaded.url,
+                attachmentType: uploaded.type,
+                attachmentPublicId: uploaded.publicId ?? null,
               }
             : m
         )
@@ -344,15 +339,15 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
 
       await api.post(`/dms/${conversation.id}`, {
         content: file.name,
-        attachmentUrl: uploadData.url,
-        attachmentType: uploadData.type,
-        attachmentPublicId: uploadData.publicId ?? undefined,
+        attachmentUrl: uploaded.url,
+        attachmentType: uploaded.type,
+        attachmentPublicId: uploaded.publicId ?? undefined,
       });
     } catch (err) {
       // The optimistic bubble is removed; without this the user is left with a
       // permanent phantom message.
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      toast.error(apiErrorMessage(err, "Upload failed"));
+      toast.error(uploadErrorMessage(err, "Upload failed"));
     } finally {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
       setUploadPercent(0);
@@ -385,25 +380,28 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
     ]);
 
     try {
-      const formData = new FormData();
-      formData.append("file", new Blob([blob], { type: "audio/webm" }), "voice-message.webm");
-      const { data: uploadData } = await api.post("/uploads", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      // Voice notes never reach Cloudinary — it would re-encode or reject
+      // them — so they use the configured MEDIA_PROVIDER backend and come
+      // back as a /uploads path with no public ID to clean up later.
+      const uploaded = await uploadMedia(
+        new Blob([blob], { type: "audio/webm" }),
+        "voice-message.webm"
+      );
 
       setMessages((prev) =>
-        prev.map((m) =>
-          m.id === tempId ? { ...m, attachmentUrl: uploadData.url } : m
-        )
+        prev.map((m) => (m.id === tempId ? { ...m, attachmentUrl: uploaded.url } : m))
       );
 
       await api.post(`/dms/${conversation.id}`, {
         content: "Voice message",
-        attachmentUrl: uploadData.url,
+        attachmentUrl: uploaded.url,
         attachmentType: "audio",
       });
-    } catch {
+    } catch (err) {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      // Silent before: a dropped voice note looked like the recorder had just
+      // not worked, with nothing on screen saying so.
+      toast.error(uploadErrorMessage(err, "Could not send your voice message"));
     } finally {
       setIsUploading(false);
     }

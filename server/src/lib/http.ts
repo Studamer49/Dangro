@@ -10,8 +10,23 @@ export type ErrorCode =
   | "CONFLICT"
   | "PAYLOAD_TOO_LARGE"
   | "RATE_LIMITED"
+  | "SERVICE_UNAVAILABLE"
+  | "UPSTREAM_ERROR"
   | "INTERNAL_ERROR";
 
+/**
+ * `SERVICE_UNAVAILABLE` and `UPSTREAM_ERROR` exist so a failure with a known
+ * cause is never reported as `INTERNAL_ERROR`.
+ *
+ * Both used to be 503/500 `INTERNAL_ERROR` on the upload route, which cost two
+ * things: the error handler logged a full stack trace for every single image
+ * upload that failed, and the client could not tell "the server is broken"
+ * apart from "image storage is not configured", so it showed the same generic
+ * message for both.
+ *
+ *   503 SERVICE_UNAVAILABLE  this app is fine, a dependency it needs is not
+ *   502 UPSTREAM_ERROR       this app is fine, a third party refused the call
+ */
 const STATUS_BY_CODE: Record<ErrorCode, number> = {
   BAD_REQUEST: 400,
   VALIDATION_ERROR: 400,
@@ -21,6 +36,8 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   CONFLICT: 409,
   PAYLOAD_TOO_LARGE: 413,
   RATE_LIMITED: 429,
+  SERVICE_UNAVAILABLE: 503,
+  UPSTREAM_ERROR: 502,
   INTERNAL_ERROR: 500,
 };
 
@@ -119,10 +136,11 @@ function prismaKnownError(err: unknown): PrismaKnownError | null {
  * the same double-click that returns 409 on PostgreSQL returns 500 on
  * MongoDB — a 500 for what is a conflict the caller can act on.
  */
-function isDuplicateKeyError(err: unknown): boolean {
+export function isDuplicateKeyError(err: unknown): boolean {
   if (typeof err !== "object" || err === null) return false;
   const maybe = err as { name?: unknown; code?: unknown; message?: unknown };
   if (maybe.code === 11000) return true;
+  if (maybe.code === "P2002") return true;
   return typeof maybe.message === "string" && maybe.message.includes("E11000");
 }
 

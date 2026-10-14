@@ -228,3 +228,128 @@ export async function destroyImage(publicId: string): Promise<void> {
 export function resetCloudinaryForTests(): void {
   sdkPromise = null;
 }
+
+/**
+ * Derives the public ID from a delivery URL this app produced.
+ *
+ * Replaced and deleted rows only ever store the URL — the schema has no
+ * public-id column for avatars, post media or stories — so this is what makes
+ * it possible to remove the asset a row used to point at instead of leaving it
+ * in the media library forever.
+ *
+ * Strictly a server-side tool. It returns a value only for a URL that
+ * matches this deployment's own delivery host and cloud name, and it is never
+ * fed a public ID from a request body, so it cannot be steered at an asset in
+ * someone else's account.
+ *
+ * Shape it accepts:
+ *   https://res.cloudinary.com/<cloud>/image/upload/<transformation>/<public_id>.<ext>
+ *
+ * with the transformation and the optional `v<version>` segment absent.
+ */
+export function publicIdFromUrl(url: string | null | undefined): string | null {
+  const cloudName = config.cloudinary.cloudName;
+  if (!cloudName) return null; // unconfigured: nothing to compare against
+
+  let parsed: URL;
+  try {
+    parsed = new URL((url ?? "").trim());
+  } catch {
+    return null;
+  }
+
+  if (parsed.protocol !== "https:") return null;
+  if (parsed.host !== new URL(config.cloudinary.deliveryHost).host) return null;
+
+  const segments = parsed.pathname.split("/").filter(Boolean);
+  // <cloud>/<resource_type>/upload/<rest...>
+  if (segments.length < 4) return null;
+  if (segments[0] !== cloudName) return null;
+  if (segments[1] !== "image" || segments[2] !== "upload") return null;
+
+  const rest = segments.slice(3);
+
+  // Transformation segments look like `c_limit,w_1920,f_auto,q_auto`; the
+  // version segment looks like `v1234567890`. Neither is part of the public ID.
+  while (rest.length > 1 && /^[a-z]+_[^/]+$/i.test(rest[0]!)) rest.shift();
+  if (rest.length > 1 && /^v\d+$/.test(rest[0]!)) rest.shift();
+
+  const publicId = rest.join("/").replace(/\.[^./]+$/, "");
+  // Mirrors the shape the DM route accepts for an attachment public ID.
+  if (!publicId || publicId.length > 255) return null;
+  if (!/^[A-Za-z0-9_\-/]+$/.test(publicId)) return null;
+
+  return publicId;
+}
+
+/**
+ * Removes the asset behind a stored delivery URL, best effort.
+ *
+ * For "this row used to point at X and now points at Y" situations. Never
+ * throws: by the time this runs the database write has already succeeded, so
+ * failing the request would report a successful save as an error. An asset
+ * that cannot be removed is logged and left in the library.
+ */
+export async function destroyImageForUrl(url: string | null | undefined, context: string): Promise<void> {
+  try {
+    if (!isCloudinaryConfigured()) return;
+
+    const publicId = publicIdFromUrl(url);
+    if (!publicId) return; // not one of ours: a /uploads path, or an external link
+
+    await destroyImage(publicId);
+  } catch (err) {
+    console.error(
+      `[media] Could not remove the Cloudinary asset replaced by ${context}:`,
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+}
+
+export interface CloudinaryCheck {
+  configured: boolean;
+  reachable: boolean;
+  /** Safe to log: names the cloud and the failure, never a credential. */
+  detail: string;
+}
+
+/**
+ * Asks Cloudinary whether it will accept these credentials.
+ *
+ * The failure this exists for: a wrong cloud name or secret does not surface
+ * until the first user tries to upload a photo, which can be weeks after the
+ * deployment. `GET /v1_1/<cloud>/ping` is the cheapest authenticated call
+ * Cloudinary offers, so a single boot-time check turns "images silently never
+ * worked" into a line in the log.
+ */
+export async function checkCloudinaryConnection(): Promise<CloudinaryCheck> {
+  if (!isCloudinaryConfigured()) {
+    return {
+      configured: false,
+      reachable: false,
+      detail: `not configured (missing ${config.cloudinary.missingVars.join(", ")})`,
+    };
+  }
+
+  try {
+    const cld = await requireCloudinary();
+    const result = (await cld.api.ping()) as { status?: string } | undefined;
+    if (result?.status && result.status !== "ok") {
+      return {
+        configured: true,
+        reachable: false,
+        detail: `cloud "${config.cloudinary.cloudName}" answered "${String(result.status).slice(0, 80)}"`,
+      };
+    }
+    return { configured: true, reachable: true, detail: `cloud "${config.cloudinary.cloudName}"` };
+  } catch (err) {
+    // err.message is Cloudinary's own text ("Invalid credentials", DNS
+    // failure, ...). toCloudinaryError trims it and never includes the secret.
+    const failure = toCloudinaryError("ping", err);
+    return {
+      configured: true,
+      reachable: false,
+      detail: `cloud "${config.cloudinary.cloudName}": ${failure.message.slice(0, 200)}`,
+    };
+  }
+}

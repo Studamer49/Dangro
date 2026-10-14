@@ -2,7 +2,7 @@ import { Router, type Request } from "express";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
-import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
+import { AppError, asyncHandler, isDuplicateKeyError, ok, parseOrThrow } from "../lib/http.js";
 import { requirePermission } from "../lib/permissions.js";
 
 /**
@@ -230,11 +230,16 @@ router.post(
         await prisma.member.create({ data: { userId, serverId: invite.serverId } });
       } catch (err) {
         // Two clicks on the same invite race; the second join is a no-op, not
-        // an error.
-        const duplicate = (err as { code?: number })?.code === 11000;
-        if (!duplicate) throw err;
+        // an error. The duplicate surfaces as P2002 on PostgreSQL and as code
+        // 11000 on MongoDB, so both have to be recognised here — matching only
+        // the MongoDB one turned the race into a 409 on the default provider.
+        if (!isDuplicateKeyError(err)) throw err;
       }
 
+      // Read-modify-write: the Mongo engine (src/db/mongoClient.ts) implements
+      // no atomic `$inc`, so a Prisma `increment` would write the literal
+      // object into the document there. Left as-is — the lost-update window is
+      // two joins racing, not a correctness risk worth changing both engines.
       await prisma.invite.update({
         where: { id: invite.id },
         data: { uses: invite.uses + 1 },

@@ -84,13 +84,28 @@ router.patch(
     const channelId = paramId(req.params.channelId, "channel id");
     const input = parseOrThrow(updateChannelSchema, req.body);
 
-    const channel = await prisma.channel.findUnique({ where: { id: channelId }, select: { serverId: true } });
+    const channel = await prisma.channel.findUnique({
+      where: { id: channelId },
+      select: { serverId: true, type: true },
+    });
     if (!channel) throw AppError.of("NOT_FOUND", "Channel not found");
 
     await requirePermission(channel.serverId, userId, "MANAGE_CHANNELS");
 
     if (input.categoryId !== undefined) {
       await assertCategoryInServer(input.categoryId, channel.serverId);
+    }
+
+    // The same invariant DELETE enforces: retyping the only text channel to
+    // "voice" would leave the server with none, which is exactly the state
+    // the delete guard exists to prevent.
+    if (input.type !== undefined && input.type !== channel.type && channel.type === "text") {
+      const remaining = await prisma.channel.count({
+        where: { serverId: channel.serverId, type: "text", id: { not: channelId } },
+      });
+      if (remaining === 0) {
+        throw AppError.of("CONFLICT", "A server needs at least one text channel");
+      }
     }
 
     const updated = await prisma.channel.update({

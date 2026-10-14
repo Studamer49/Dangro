@@ -12,6 +12,16 @@ const ICE_SERVERS: RTCConfiguration = {
 
 export function useWebRTC() {
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  /**
+   * Candidates that arrived before there was a connection to add them to.
+   *
+   * The callee sits inside the getUserMedia prompt before creating its peer
+   * connection, and the caller starts gathering the moment it sends its offer.
+   * Every candidate that lands in that window used to hit a null
+   * `peerConnectionRef` and be dropped — and candidates are emitted once and
+   * never re-sent, so they were lost for good.
+   */
+  const pendingCandidatesRef = useRef<RTCIceCandidateInit[]>([]);
   const {
     isInCall,
     isCaller,
@@ -23,6 +33,11 @@ export function useWebRTC() {
   } = useCallStore();
 
   const createPeerConnection = useCallback(() => {
+    // Replacing the connection without closing the old one left its ICE agent,
+    // its event handlers and (if it had tracks) its senders alive, with nothing
+    // holding a reference to close them.
+    peerConnectionRef.current?.close();
+
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
     pc.onicecandidate = (event) => {
@@ -94,8 +109,30 @@ export function useWebRTC() {
     }
   }, [setLocalStream]);
 
+  /**
+   * True while the user is still in a call. Re-checked after every await: the
+   * effect cleanup can run (and close whatever peer connection existed at the
+   * time) while a permission prompt or a signalling round trip is pending, and
+   * the handlers below would otherwise build a connection nothing will ever
+   * close and emit signals for a call that is already over.
+   */
+  const stillInCall = () => useCallStore.getState().isInCall;
+
+  /** Applies everything queued while there was no peer connection. */
+  const drainPendingCandidates = useCallback(async (pc: RTCPeerConnection) => {
+    const queued = pendingCandidatesRef.current.splice(0);
+    for (const candidate of queued) {
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch {
+        // Stale or unusable candidate; the next ones may still connect.
+      }
+    }
+  }, []);
+
   const createOffer = useCallback(async () => {
     const stream = await startLocalStream(callType === "video");
+    if (!stillInCall()) return;
     const pc = createPeerConnection();
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
     const offer = await pc.createOffer();
@@ -108,28 +145,49 @@ export function useWebRTC() {
 
   const handleOffer = useCallback(async (offer: RTCSessionDescriptionInit, callerId: string) => {
     const stream = await startLocalStream(callType === "video");
+    if (!stillInCall()) return;
     const pc = createPeerConnection();
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
+    // Only now can the queued candidates be applied.
+    await drainPendingCandidates(pc);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     const socket = getSocket();
     socket.emit("webrtc_answer", { targetUserId: callerId, signal: answer });
-  }, [callType, startLocalStream, createPeerConnection]);
+  }, [callType, startLocalStream, createPeerConnection, drainPendingCandidates]);
 
   const handleAnswer = useCallback(async (answer: RTCSessionDescriptionInit) => {
-    if (peerConnectionRef.current) {
-      await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(answer));
+    const pc = peerConnectionRef.current;
+    if (pc) {
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      await drainPendingCandidates(pc);
     }
-  }, []);
+  }, [drainPendingCandidates]);
 
+  /**
+   * Adds a candidate, queueing it when the connection does not exist yet.
+   * Queueing is only correct once a remote description is set, so the queue is
+   * drained by `drainPendingCandidates` after that happens.
+   */
   const handleIceCandidate = useCallback(async (candidate: RTCIceCandidateInit) => {
-    if (peerConnectionRef.current) {
-      await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(candidate));
+    const pc = peerConnectionRef.current;
+    if (!pc) {
+      pendingCandidatesRef.current.push(candidate);
+      return;
+    }
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (err) {
+      // A candidate that cannot be applied is not fatal: the rest of the
+      // gathering set may still connect, and an unhandled rejection here would
+      // surface as an unhandled promise rejection instead.
+      console.warn("[webrtc] could not add ICE candidate", err);
     }
   }, []);
 
   const cleanup = useCallback(() => {
+    pendingCandidatesRef.current = [];
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;

@@ -11,6 +11,7 @@ import { config, isAllowedOrigin } from "./config.js";
 import { prisma } from "./prisma.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { buildCspDirectives } from "./lib/csp.js";
+import { checkCloudinaryConnection } from "./lib/cloudinary.js";
 import { setupSocketHandlers } from "./socket/index.js";
 import { setIO } from "./socket/io.js";
 import { ensureIndexes, backfillServerLayout, backfillServerRoles } from "./db/mongoIndexes.js";
@@ -114,6 +115,13 @@ app.get("/api/health", (_req, res) => {
       status: "ok",
       uptime: process.uptime(),
       database: config.usesMongo ? "mongo" : "postgres",
+      /**
+       * Whether images can actually be stored. The API answers 200 either
+       * way — an operator with broken image storage has a live site, and the
+       * health check turning red would take the whole site down instead of
+       * pointing at the one broken part.
+       */
+      imageStorage: config.cloudinary.configured ? "cloudinary" : "unconfigured",
     },
   });
 });
@@ -212,6 +220,35 @@ async function main(): Promise<void> {
       // permission check and lock their own admins out.
       await backfillServerRoles(mongoClient.db(config.mongoDbName));
     }
+
+    /**
+     * Says out loud, once per boot, whether images will work.
+     *
+     * Every other symptom of a broken Cloudinary setup is invisible from the
+     * outside: the API starts, the site loads, posts and messages work, and
+     * the only evidence is a toast in a browser that happens to try an image
+     * upload. This is the one line that turns that into a visible boot log —
+     * including the case where the credentials exist but Cloudinary rejects
+     * them, which otherwise stays hidden until the first real upload.
+     *
+     * Deliberately not fatal: images are one feature, and the rest of the app
+     * must keep serving while an operator fixes this.
+     */
+    void checkCloudinaryConnection().then((check) => {
+      if (!check.configured) {
+        console.warn(
+          `[startup] Image uploads are DISABLED — Cloudinary is not configured (missing ${config.cloudinary.missingVars.join(", ")}). Set them in server/.env or in the service environment.`
+        );
+      } else if (check.reachable) {
+        console.log(
+          `[startup] Image uploads: Cloudinary OK (${check.detail}), folder "${config.cloudinary.folder}", credentials from ${config.cloudinary.credentialSource}`
+        );
+      } else {
+        console.error(
+          `[startup] Image uploads are CONFIGURED BUT NOT WORKING — Cloudinary rejected the credentials (${check.detail}). Check CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET.`
+        );
+      }
+    });
 
     httpServer.listen(config.port, () => {
       console.log(`Server running on port ${config.port}`);

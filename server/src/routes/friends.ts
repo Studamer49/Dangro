@@ -194,7 +194,12 @@ router.post(
     if (friendRequest.receiverId !== userId) throw AppError.of("FORBIDDEN", "Not authorized");
     if (friendRequest.status !== "pending") throw AppError.of("CONFLICT", "Friend request already processed");
 
-    await prisma.friendRequest.update({ where: { id: requestId }, data: { status: "rejected" } });
+    // Deleted rather than marked "rejected". FriendRequest is unique on
+    // (senderId, receiverId), so keeping the row made the sender's next
+    // request collide with it and fail with a 409 "already taken" — the two
+    // people could never befriend each other again. Nothing reads the
+    // "rejected" status; the request is simply over.
+    await prisma.friendRequest.delete({ where: { id: requestId } });
 
     ok(res, { message: "Friend request rejected" });
   })

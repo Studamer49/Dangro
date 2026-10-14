@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
-import api, { apiErrorMessage } from "@/lib/api";
+import api from "@/lib/api";
+import { uploadErrorMessage, uploadMedia } from "@/lib/upload";
 import { useAuthStore } from "@/stores/authStore";
 import { useToast } from "@/stores/toastStore";
 import Avatar from "@/components/Avatar";
@@ -60,17 +61,29 @@ export default function CreatePostComposer({ onCreated }: CreatePostComposerProp
     if (files.length === 0 || posting) return;
     setPosting(true);
     try {
-      const media: Array<{ url: string; type: "image" | "video" }> = [];
+      const media: Array<{
+        url: string;
+        type: "image" | "video";
+        width?: number;
+        height?: number;
+      }> = [];
+
+      // Sequential, not Promise.all: each file is its own request with its own
+      // size limit, and uploading ten at once makes a slow connection fail all
+      // of them instead of the one that was too big.
       for (const file of files) {
-        const form = new FormData();
-        form.append("file", file);
-        const { data } = await api.post("/uploads", form, {
-          headers: { "Content-Type": "multipart/form-data" },
-        });
-        if (data.type !== "image" && data.type !== "video") {
+        const uploaded = await uploadMedia(file);
+        if (uploaded.type !== "image" && uploaded.type !== "video") {
           throw new Error("Only images and videos can be posted");
         }
-        media.push({ url: data.url, type: data.type === "video" ? "video" : "image" });
+        media.push({
+          url: uploaded.url,
+          type: uploaded.type,
+          // Reported by Cloudinary, so the feed can reserve space and avoid a
+          // layout jump as each image loads.
+          ...(uploaded.width ? { width: uploaded.width } : {}),
+          ...(uploaded.height ? { height: uploaded.height } : {}),
+        });
       }
 
       const trimmed = caption.trim();
@@ -84,7 +97,7 @@ export default function CreatePostComposer({ onCreated }: CreatePostComposerProp
       setCaption("");
       toast.success("Post published");
     } catch (err) {
-      toast.error(apiErrorMessage(err));
+      toast.error(uploadErrorMessage(err, "Could not publish your post"));
     } finally {
       setPosting(false);
     }

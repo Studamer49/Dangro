@@ -39,6 +39,13 @@ services:
       # explicit message rather than silently writing to the local disk.
       # Render -> Environment. Never give any of these a VITE_ prefix: that
       # would inline the secret into the browser bundle.
+      #
+      # The service pings Cloudinary on every boot and logs the result, so a
+      # wrong value shows up in the deploy log rather than on the first upload:
+      #   [startup] Image uploads: Cloudinary OK (cloud "..."), folder "..."
+      # GET /api/health reports the same as "imageStorage".
+      # (CLOUDINARY_URL="cloudinary://KEY:SECRET@CLOUD" is accepted instead,
+      # but not alongside these.)
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
       - key: CLOUDINARY_API_KEY

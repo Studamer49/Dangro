@@ -180,6 +180,21 @@ describe("GET /api/servers/:id/roles", () => {
     expect(names).toEqual(["Admin", "Moderator", "@everyone"]);
     expect(res.body.data.roles[0].memberCount).toBe(2);
   });
+
+  // The role list carries the whole permission matrix of the server, so it
+  // used to be readable by any authenticated caller who knew the server id.
+  it("refuses a user who is not a member of the server", async () => {
+    const res = await request(app).get(`/api/servers/${SID}/roles`).set("x-user", "stranger-1");
+
+    expect(res.status).toBe(403);
+    expect(res.body.data).toBeUndefined();
+  });
+
+  it("still serves a member who holds no management role", async () => {
+    const res = await request(app).get(`/api/servers/${SID}/roles`).set("x-user", "plain-1");
+
+    expect(res.status).toBe(200);
+  });
 });
 
 describe("POST /api/servers/:id/roles", () => {
@@ -283,6 +298,20 @@ describe("PATCH /api/servers/:id/roles/:roleId", () => {
       .send({ position: 1000 });
 
     expect(res.status).toBe(400);
+  });
+
+  // Regression: including `position` in the body used to swap the target check
+  // from `>=` to `>`, so an admin could rename and demote the very Admin role
+  // that grants them their powers by sending { name, position } together.
+  it("refuses to edit the admin's own role when position is also in the body", async () => {
+    const res = await request(app)
+      .patch(`/api/servers/${SID}/roles/${admin.id}`)
+      .set("x-user", "admin-1")
+      .send({ name: "Demoted", position: 5 });
+
+    expect(res.status).toBe(403);
+    expect(store.roles.get(admin.id)!.name).toBe("Admin");
+    expect(store.roles.get(admin.id)!.position).toBe(20);
   });
 });
 

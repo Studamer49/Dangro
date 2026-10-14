@@ -171,13 +171,89 @@ const mongoDbName = optional("MONGODB_DB_NAME", "dangro");
 // take down the whole API for users who are not uploading an image; the
 // upload path fails with a message naming the missing variables instead.
 // ---------------------------------------------------------------------------
-const cloudinaryCloudName = optional("CLOUDINARY_CLOUD_NAME", "");
-const cloudinaryApiKey = optional("CLOUDINARY_API_KEY", "");
-const cloudinaryApiSecret = optional("CLOUDINARY_API_SECRET", "");
 
-/** Names absent from the environment, for the "not configured" error message. */
-const cloudinaryMissingVars = (["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"] as const)
-  .filter((name) => !optional(name, ""));
+/**
+ * Cloudinary's own single-variable form:
+ *
+ *   CLOUDINARY_URL="cloudinary://<api_key>:<api_secret>@<cloud_name>"
+ *
+ * This is what the Cloudinary documentation, dashboard "copy" button and CLI
+ * default to, so it is a very plausible thing to have been configured while
+ * `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_API_KEY` / `CLOUDINARY_API_SECRET`
+ * stayed empty. Before this existed the app reported itself unconfigured in
+ * that setup and refused every image, which looked exactly like the upload
+ * code never calling Cloudinary.
+ *
+ * Read as a fallback only: the three discrete variables always win, so adding
+ * CLOUDINARY_URL can never override a deliberately-set value.
+ */
+function credentialsFromCloudinaryUrl(): { cloudName: string; apiKey: string; apiSecret: string } {
+  const empty = { cloudName: "", apiKey: "", apiSecret: "" };
+  const raw = optional("CLOUDINARY_URL", "");
+  if (!raw) return empty;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(raw.trim());
+  } catch {
+    fail(
+      "CLOUDINARY_URL is not a valid URL",
+      'Use CLOUDINARY_URL="cloudinary://API_KEY:API_SECRET@CLOUD_NAME", or set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET instead.'
+    );
+  }
+
+  if (parsed.protocol !== "cloudinary:") {
+    fail(
+      `CLOUDINARY_URL must use the cloudinary:// scheme, received "${parsed.protocol}//"`,
+      'Example: CLOUDINARY_URL="cloudinary://123456789012345:abcdef...@my-cloud"'
+    );
+  }
+
+  // username/password carry the API key and secret; the host carries the cloud
+  // name. decodeURIComponent because a secret may legitimately contain '%'.
+  const apiKey = decodeURIComponent(parsed.username || "").trim();
+  const apiSecret = decodeURIComponent(parsed.password || "").trim();
+  const cloudName = (parsed.hostname || parsed.pathname.replace(/^\/+/, "")).trim();
+
+  if (!apiKey || !apiSecret || !cloudName) {
+    fail(
+      "CLOUDINARY_URL is missing its API key, API secret or cloud name",
+      'Expected the form CLOUDINARY_URL="cloudinary://API_KEY:API_SECRET@CLOUD_NAME".'
+    );
+  }
+
+  return { cloudName, apiKey, apiSecret };
+}
+
+const fromUrl = credentialsFromCloudinaryUrl();
+const cloudinaryCloudName = optional("CLOUDINARY_CLOUD_NAME", "") || fromUrl.cloudName;
+const cloudinaryApiKey = optional("CLOUDINARY_API_KEY", "") || fromUrl.apiKey;
+const cloudinaryApiSecret = optional("CLOUDINARY_API_SECRET", "") || fromUrl.apiSecret;
+
+/**
+ * Names absent from the *resolved* credentials, for the "not configured"
+ * message. Checked after the CLOUDINARY_URL fallback, so that URL alone is
+ * reported as configured rather than as three missing variables.
+ */
+const cloudinaryMissingVars = (
+  [
+    ["CLOUDINARY_CLOUD_NAME", cloudinaryCloudName],
+    ["CLOUDINARY_API_KEY", cloudinaryApiKey],
+    ["CLOUDINARY_API_SECRET", cloudinaryApiSecret],
+  ] as const
+)
+  .filter(([, value]) => value.trim() === "")
+  .map(([name]) => name);
+
+/**
+ * Which variable supplied the credentials, purely for the startup log. Never
+ * any part of the credentials themselves.
+ */
+const cloudinaryCredentialSource = cloudinaryMissingVars.length
+  ? null
+  : cloudinaryCloudName === fromUrl.cloudName && fromUrl.cloudName
+    ? "CLOUDINARY_URL"
+    : "CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET";
 
 // Images default to 8 MB. CLOUDINARY_IMAGE_MAX_BYTES overrides it; the value
 // is clamped so a typo cannot turn the limit off entirely.
@@ -228,6 +304,8 @@ export const config = {
     apiSecret: cloudinaryApiSecret,
     configured: cloudinaryConfigured,
     missingVars: cloudinaryMissingVars,
+    /** Which variable supplied them. Startup logs only — never the values. */
+    credentialSource: cloudinaryCredentialSource,
     imageMaxBytes: cloudinaryImageMaxBytes,
     /**
      * The delivery host. Images are fetched from here by the browser, so it
@@ -235,8 +313,13 @@ export const config = {
      * itself reports success.
      */
     deliveryHost: "https://res.cloudinary.com",
-    /** Folder inside the Cloudinary media library. */
-    folder: optional("CLOUDINARY_FOLDER", "dangro"),
+    /**
+     * Folder inside the Cloudinary media library. Images go to a nested
+     * `images` folder so they sit apart from anything else in the account.
+     * Trailing slashes are stripped so a stray one cannot produce a double
+     * slash in the asset path.
+     */
+    folder: optional("CLOUDINARY_FOLDER", "dangro/images").replace(/\/+$/, ""),
     /** Abort an upload that has not completed within this many ms. */
     timeoutMs: Number.parseInt(optional("CLOUDINARY_TIMEOUT_MS", "30000"), 10) || 30_000,
   },

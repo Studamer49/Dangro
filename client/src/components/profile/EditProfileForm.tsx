@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
 import api, { apiErrorMessage } from "@/lib/api";
+import { uploadErrorMessage, uploadMedia } from "@/lib/upload";
 import { useToast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import type { User } from "@/types";
@@ -45,14 +46,12 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
 
     setUploading(true);
     try {
-      const form = new FormData();
-      form.append("file", file);
-      const { data } = await api.post("/uploads", form, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      setAvatar(data.url);
+      // The URL is a Cloudinary delivery address once this returns; it is
+      // persisted when the form is saved, not before.
+      const uploaded = await uploadMedia(file);
+      setAvatar(uploaded.url);
     } catch (err) {
-      toast.error(apiErrorMessage(err));
+      toast.error(uploadErrorMessage(err, "Could not upload your photo"));
     } finally {
       setUploading(false);
     }

@@ -71,12 +71,17 @@ export async function renderTextStory(options: {
   ctx.fillStyle = background.css;
   ctx.fillRect(0, 0, STORY_WIDTH, STORY_HEIGHT);
 
+  // The font has to be applied *before* wrapping: `measureText` measures with
+  // whatever font is currently set, and a fresh context starts at the 10px
+  // default. Wrapping at 10px and then drawing at 84px puts every line past the
+  // edge of the canvas.
+  ctx.font = font.css;
+
   const maxWidth = STORY_WIDTH - 160;
   const lines = wrapText(ctx, options.text, maxWidth);
   const lineHeight = 104;
   const startY = STORY_HEIGHT / 2 - ((lines.length - 1) * lineHeight) / 2;
 
-  ctx.font = font.css;
   ctx.fillStyle = "#ffffff";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -130,13 +135,45 @@ function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number)
   const paragraphs = text.split("\n");
   const lines: string[] = [];
 
+  const fits = (value: string): boolean => ctx.measureText(value).width <= maxWidth;
+
+  /**
+   * A word with no spaces in it (a URL, a long hashtag) cannot be wrapped by
+   * the greedy pass above, and would be drawn past the edge of the canvas and
+   * clipped. Break it at the last character that still fits.
+   */
+  const splitLongWord = (word: string): string[] => {
+    const parts: string[] = [];
+    let remainder = word;
+    while (remainder.length > 0) {
+      if (fits(remainder)) {
+        parts.push(remainder);
+        break;
+      }
+      let cut = 1;
+      while (cut < remainder.length && !fits(remainder.slice(0, cut + 1))) cut += 1;
+      parts.push(remainder.slice(0, cut));
+      remainder = remainder.slice(cut);
+    }
+    return parts;
+  };
+
   for (const paragraph of paragraphs) {
     const words = paragraph.split(/\s+/).filter(Boolean);
     let current = "";
 
     for (const word of words) {
+      if (!fits(word)) {
+        if (current) lines.push(current);
+        const parts = splitLongWord(word);
+        // The tail stays as the line being built so the next word can join it.
+        current = parts.pop() ?? "";
+        lines.push(...parts);
+        continue;
+      }
+
       const candidate = current ? `${current} ${word}` : word;
-      if (ctx.measureText(candidate).width <= maxWidth) {
+      if (fits(candidate)) {
         current = candidate;
         continue;
       }
