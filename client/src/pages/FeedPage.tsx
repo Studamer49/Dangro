@@ -145,17 +145,17 @@ export default function FeedPage() {
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      {/* Pinned header: a sibling of the scroll area, not a child of it, so the
-          stories strip is structurally incapable of scrolling away. */}
-      <div className="glass-panel z-10 w-full shrink-0 border-x-0 border-t-0 px-4 py-4">
-        <div className="mx-auto w-full max-w-xl">
-          <StoriesBar groups={stories} viewer={user} onAdded={handleStoryAdded} />
-        </div>
-      </div>
-
-      {/* The scroll area spans the whole width so the wheel works anywhere on
-          the page; the feed column is centred inside it. */}
+      {/* The scroll layer spans the whole width so the wheel works anywhere on
+          the page. The stories strip is its first child and sticks to its top,
+          so it lives in the same layer as the feed and stays pinned while the
+          feed scrolls underneath it. */}
       <div className="min-h-0 w-full flex-1 overflow-y-auto">
+        <div className="glass-panel sticky top-0 z-10 w-full border-x-0 border-t-0 px-4 py-4">
+          <div className="mx-auto w-full max-w-xl">
+            <StoriesBar groups={stories} viewer={user} onAdded={handleStoryAdded} />
+          </div>
+        </div>
+
         <div className="mx-auto w-full max-w-xl space-y-4 p-4 pb-10">
         <CreatePostComposer onCreated={handleCreated} />
 
