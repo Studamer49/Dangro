@@ -13,6 +13,7 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 // vi.mock factories are hoisted above module-level declarations, so the
 // stub has to be created through vi.hoisted to exist by the time it runs.
 const prismaMock = vi.hoisted(() => ({
+  block: { findFirst: vi.fn() },
   friend: { findFirst: vi.fn() },
   follow: { findUnique: vi.fn() },
   user: { update: vi.fn() },
@@ -31,7 +32,7 @@ interface Emitted {
 }
 
 function fakeSocket(userId: string) {
-  const handlers = new Map<string, (payload: unknown) => unknown>();
+  const handlers = new Map<string, (payload: unknown, ack?: unknown) => unknown>();
   const rooms = new Set<string>([`user:${userId}`]);
   const emitted: Emitted[] = [];
 
@@ -43,11 +44,13 @@ function fakeSocket(userId: string) {
     handshake: { auth: { token: "test" } },
     join: (room: string) => rooms.add(room),
     leave: (room: string) => rooms.delete(room),
-    on: (event: string, handler: (payload: unknown) => unknown) => handlers.set(event, handler),
+    on: (event: string, handler: (payload: unknown, ack?: unknown) => unknown) =>
+      handlers.set(event, handler),
     emit: (event: string, payload: unknown) => {
       emitted.push({ room: `socket:${userId}`, event, payload });
     },
-    fire: (event: string, payload: unknown) => handlers.get(event)?.(payload),
+    fire: (event: string, payload: unknown, ack?: (response: unknown) => void) =>
+      handlers.get(event)?.(payload, ack),
     has: (event: string) => handlers.has(event),
   };
 }
@@ -97,6 +100,8 @@ beforeEach(() => {
   // cases or one test's call authorises the next test's signalling.
   resetActiveCalls();
   prismaMock.user.update.mockResolvedValue({});
+  // Nobody is blocked by default; a case that cares overrides this.
+  prismaMock.block.findFirst.mockResolvedValue(null);
 });
 
 describe("call_invite", () => {
@@ -347,5 +352,226 @@ describe("async handler failures", () => {
     await a.fire("call_invite", { targetUserId: B, callType: "voice", roomId: nextRoom() });
 
     expect(io.emitted.filter((e) => e.event === "call_invite")).toHaveLength(1);
+  });
+});
+
+/** Captures the acknowledgement an event handler sends back to its emitter. */
+async function ackOf(
+  socket: ReturnType<typeof fakeSocket>,
+  event: string,
+  payload: unknown
+): Promise<{ ok?: boolean; reason?: string }> {
+  let response: { ok?: boolean; reason?: string } | undefined;
+  await socket.fire(event, payload, (reply) => {
+    response = reply as { ok?: boolean; reason?: string };
+  });
+  return response ?? {};
+}
+
+describe("invite acknowledgement", () => {
+  it("tells the caller when they are not allowed to ring", async () => {
+    asStrangers();
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    io.connect(a);
+
+    const reply = await ackOf(a, "call_invite", {
+      targetUserId: B,
+      callType: "voice",
+      roomId: nextRoom(),
+    });
+
+    // The old behaviour dropped the invite in silence, so the caller rang at
+    // a screen nobody was ever going to answer.
+    expect(reply).toEqual({ ok: false, reason: "unavailable" });
+  });
+
+  it("tells the caller when the callee is already in another call", async () => {
+    asFriends();
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    const c = fakeSocket(ATTACKER);
+    io.connect(a);
+    io.connect(c);
+
+    await a.fire("call_invite", { targetUserId: B, callType: "voice", roomId: nextRoom() });
+    const reply = await ackOf(c, "call_invite", {
+      targetUserId: B,
+      callType: "voice",
+      roomId: nextRoom(),
+    });
+
+    expect(reply).toEqual({ ok: false, reason: "busy" });
+  });
+
+  it("reuses the first room when the caller rings the same person twice", async () => {
+    asFriends();
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    io.connect(a);
+
+    const roomId = nextRoom();
+    await a.fire("call_invite", { targetUserId: B, callType: "voice", roomId });
+    // A double tap minted a second room id that was never registered, so the
+    // callee's accept landed on nothing and both sides hung.
+    const reply = await ackOf(a, "call_invite", {
+      targetUserId: B,
+      callType: "voice",
+      roomId: nextRoom(),
+    });
+
+    expect(reply).toEqual({ ok: true });
+    const invites = io.emitted.filter((e) => e.event === "call_invite");
+    expect(invites).toHaveLength(2);
+    expect(invites[1].payload).toEqual(expect.objectContaining({ roomId }));
+  });
+});
+
+describe("ring timeout", () => {
+  it("tells both sides when nobody answers, and stops relaying", async () => {
+    asFriends();
+    vi.useFakeTimers();
+    try {
+      const io = fakeIo();
+      setupSocketHandlers(io as never);
+      const a = fakeSocket(A);
+      io.connect(a);
+
+      await a.fire("call_invite", { targetUserId: B, callType: "voice", roomId: nextRoom() });
+      io.emitted.length = 0;
+
+      // The callee's client auto-declines after 30s on its own; this fires
+      // when it never saw the invite at all.
+      vi.advanceTimersByTime(41_000);
+
+      expect(io.emitted.filter((e) => e.event === "call_timeout")).toHaveLength(2);
+      expect(io.emitted.map((e) => e.room)).toEqual(expect.arrayContaining([`user:${A}`, `user:${B}`]));
+
+      await a.fire("ice_candidate", { targetUserId: B, signal: { candidate: "x" } });
+      expect(io.emitted.filter((e) => e.event === "ice_candidate")).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not fire once the call was answered", async () => {
+    asFriends();
+    vi.useFakeTimers();
+    try {
+      const io = fakeIo();
+      setupSocketHandlers(io as never);
+      const a = fakeSocket(A);
+      const b = fakeSocket(B);
+      io.connect(a);
+      io.connect(b);
+
+      const roomId = nextRoom();
+      await a.fire("call_invite", { targetUserId: B, callType: "video", roomId });
+      const accept = await ackOf(b, "call_accept", { targetUserId: A, roomId });
+      expect(accept).toEqual({ ok: true });
+
+      io.emitted.length = 0;
+      vi.advanceTimersByTime(41_000);
+
+      expect(io.emitted.filter((e) => e.event === "call_timeout")).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("call_accept acknowledgement", () => {
+  it("refuses an accept for a room the caller already left", async () => {
+    asFriends();
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    const b = fakeSocket(B);
+    io.connect(a);
+    io.connect(b);
+
+    const roomId = nextRoom();
+    await a.fire("call_invite", { targetUserId: B, callType: "video", roomId });
+    await a.fire("call_end", { targetUserId: B });
+    io.emitted.length = 0;
+
+    // Without this refusal the callee sat at "Connecting…" forever, waiting
+    // for an offer the caller would never send.
+    const reply = await ackOf(b, "call_accept", { targetUserId: A, roomId });
+    expect(reply).toEqual({ ok: false, reason: "gone" });
+    expect(io.emitted.filter((e) => e.event === "call_accept")).toHaveLength(0);
+  });
+
+  it("lets only the first device win the race", async () => {
+    asFriends();
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    const b = fakeSocket(B);
+    const bSecondDevice = fakeSocket(B);
+    io.connect(a);
+    io.connect(b);
+    io.connect(bSecondDevice);
+
+    const roomId = nextRoom();
+    await a.fire("call_invite", { targetUserId: B, callType: "video", roomId });
+    io.emitted.length = 0;
+
+    const first = await ackOf(b, "call_accept", { targetUserId: A, roomId });
+    const second = await ackOf(bSecondDevice, "call_accept", { targetUserId: A, roomId });
+
+    expect(first).toEqual({ ok: true });
+    expect(second).toEqual({ ok: false, reason: "gone" });
+    // The caller must receive exactly one offer's worth of "go ahead".
+    expect(io.emitted.filter((e) => e.event === "call_accept")).toHaveLength(1);
+    // And the winning device's siblings are told to stop ringing.
+    expect(io.emitted.filter((e) => e.event === "call_accepted")).toHaveLength(1);
+  });
+});
+
+describe("participant disconnect", () => {
+  it("ends an answered call for the peer when the last device drops", async () => {
+    asFriends();
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    const b = fakeSocket(B);
+    io.connect(a);
+    io.connect(b);
+
+    const roomId = nextRoom();
+    await a.fire("call_invite", { targetUserId: B, callType: "video", roomId });
+    await b.fire("call_accept", { targetUserId: A, roomId });
+    io.emitted.length = 0;
+
+    // The peer used to be left in a call that could never be signalled
+    // again: no hang-up, no candidates, just a frozen screen.
+    b.fire("disconnect", undefined);
+
+    expect(io.emitted).toContainEqual(
+      expect.objectContaining({ event: "call_end", room: `user:${A}` })
+    );
+  });
+
+  it("reports an unanswered ring as timed out for the caller", async () => {
+    asFriends();
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    const b = fakeSocket(B);
+    io.connect(a);
+    io.connect(b);
+
+    await a.fire("call_invite", { targetUserId: B, callType: "voice", roomId: nextRoom() });
+    io.emitted.length = 0;
+
+    b.fire("disconnect", undefined);
+
+    expect(io.emitted).toContainEqual(
+      expect.objectContaining({ event: "call_timeout", room: `user:${A}` })
+    );
   });
 });

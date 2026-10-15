@@ -54,6 +54,98 @@ function drainStashedOffer(handler: OfferHandler): void {
   handler(stashed.offer, stashed.userId);
 }
 
+/**
+ * ICE candidates get the same "arrived before anyone was listening" problem
+ * as the offer, for the same reason and window: the callee accepts the call,
+ * and their in-call effect — the only thing that listens for `ice_candidate`
+ * — has not flushed yet, while the caller is already trickling candidates out.
+ * Candidates are emitted exactly once, so anything landing in that gap was
+ * gone for good; on a strict network where only the early host candidates
+ * would have worked, the call then never connects at all.
+ *
+ * So this listener is bound at app start (see `bindCallSignalling`) rather
+ * than inside the call effect, and holds candidates until a hook is ready.
+ */
+type IceHandler = (data: { candidate: RTCIceCandidateInit }) => void;
+let activeIceHandler: IceHandler | null = null;
+let stashedIce: { data: { candidate: RTCIceCandidateInit }; at: number }[] = [];
+let iceBoundTo: Socket | null = null;
+const ICE_SHELF_LIFE_MS = 30_000;
+
+function bindIceStash(socket: Socket): void {
+  if (iceBoundTo === socket) return;
+  iceBoundTo = socket;
+  socket.on("ice_candidate", (data: { candidate: RTCIceCandidateInit }) => {
+    if (activeIceHandler) {
+      activeIceHandler(data);
+      return;
+    }
+    stashedIce.push({ data, at: Date.now() });
+    // Candidates arrive in bursts of dozens; a ring nobody answered for a
+    // while must not grow this without bound.
+    if (stashedIce.length > 64) stashedIce.shift();
+  });
+}
+
+/** Hands stashed candidates to whoever just became ready, then clears them. */
+function drainStashedIce(handler: IceHandler): void {
+  const queued = stashedIce;
+  stashedIce = [];
+  const now = Date.now();
+  for (const entry of queued) {
+    if (now - entry.at <= ICE_SHELF_LIFE_MS) handler(entry.data);
+  }
+}
+
+/**
+ * Binds the signalling listeners that must exist before a call starts.
+ *
+ * Called from `CallInvitation`, which is mounted for the whole session, so an
+ * offer or candidate is stashed from the very first call in a fresh tab —
+ * binding them only inside the in-call effect would leave the first few
+ * milliseconds of every first call unguarded.
+ */
+export function bindCallSignalling(socket: Socket): void {
+  bindOfferStash(socket);
+  bindIceStash(socket);
+}
+
+/** One m-line of a remote offer: its kind, and whether media rides on it. */
+interface OfferSection {
+  kind: "audio" | "video";
+  hasMsid: boolean;
+}
+
+/**
+ * The caller's m-line layout, in order, read straight from the offer SDP.
+ *
+ * `addTrack(track, stream)` stamps `a=msid:` on the m-line it creates; the
+ * reserved screen line from `addTransceiver` has none. That difference is how
+ * the answerer tells the caller's camera from the screen line — and, more
+ * importantly, how it reproduces the layout exactly.
+ *
+ * The old code always built *audio + camera + screen* regardless of what the
+ * offer actually contained. When one device denied its camera the two layouts
+ * disagreed, so m-lines shifted against each other: a screen share could land
+ * on the camera's line, the camera on the screen's, and an answer could fail
+ * to fit the offer at all — which killed the entire call instead of
+ * degrading to "no camera". Two devices with different permission states is
+ * exactly the cross-device case.
+ */
+function parseOfferShape(sdp: string | undefined): OfferSection[] {
+  if (!sdp) return [];
+  const sections = sdp.split(/^m=/m).slice(1);
+  const shape: OfferSection[] = [];
+  for (const section of sections) {
+    const ws = section.search(/[\s\r\n]/);
+    const kind = (ws === -1 ? section : section.slice(0, ws)).trim();
+    if (kind === "audio" || kind === "video") {
+      shape.push({ kind, hasMsid: section.includes("a=msid:") });
+    }
+  }
+  return shape;
+}
+
 export function useWebRTC() {
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   /**
@@ -132,11 +224,14 @@ export function useWebRTC() {
       const track = event.track;
       const [stream] = event.streams ?? [];
 
-      // A screen share is video that travels without the participant's audio,
-      // on its own transceiver. Routing it to a separate stream is what lets
-      // the viewer paint the screen and the person as two tiles that can swap.
-      const isScreenVideo =
-        track.kind === "video" && (!stream || stream.getAudioTracks().length === 0);
+      // A screen share is video on the reserved transceiver, which is created
+      // with no stream attached, so it arrives with no msid at all. Relying on
+      // "no audio in the stream" instead misread a video-only camera — the case
+      // where someone denied the microphone but allowed the camera, which the
+      // local stream fallback now produces — as a screen share. Routing it to a
+      // separate stream is what lets the viewer paint the screen and the person
+      // as two tiles that can swap.
+      const isScreenVideo = track.kind === "video" && !stream;
 
       if (isScreenVideo) {
         let assembled = assembledRemoteScreenRef.current;
@@ -242,44 +337,42 @@ export function useWebRTC() {
   const startLocalStream = useCallback(async (video: boolean) => {
     const existing = useCallStore.getState().localStream;
     if (existing) return existing;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: true,
-        video,
-      });
-      // The permission prompt is open across an await the caller cannot
-      // cancel. If the call ended while it was pending, nobody is left to stop
-      // these tracks — the effect cleanup already ran against a null stream —
-      // so the OS recording indicator would stay on indefinitely.
-      if (!useCallStore.getState().isInCall) {
-        stream.getTracks().forEach((track) => track.stop());
-        throw new Error("Call ended before the microphone was ready");
-      }
-      setLocalStream(stream);
-      return stream;
-    } catch (err) {
-      if (err instanceof Error && err.message.startsWith("Call ended")) throw err;
-      // Camera denied or unavailable: fall back to audio only.
+
+    // Degrade instead of failing: one device may allow the camera but deny
+    // the microphone (or vice versa), and refusing the whole call over that
+    // left the other side ringing into nothing. Audio is attempted first — a
+    // voice conversation beats a silent video — then video alone.
+    const attempts: MediaStreamConstraints[] = video
+      ? [
+          { audio: true, video: true },
+          { audio: true, video: false },
+          { audio: false, video: true },
+        ]
+      : [{ audio: true, video: false }];
+
+    for (const constraints of attempts) {
       try {
-        const audioOnly = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-          video: false,
-        });
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        // The permission prompt is open across an await the caller cannot
+        // cancel. If the call ended while it was pending, nobody is left to stop
+        // these tracks — the effect cleanup already ran against a null stream —
+        // so the OS recording indicator would stay on indefinitely.
         if (!useCallStore.getState().isInCall) {
-          audioOnly.getTracks().forEach((track) => track.stop());
+          stream.getTracks().forEach((track) => track.stop());
           throw new Error("Call ended before the microphone was ready");
         }
-        setLocalStream(audioOnly);
-        return audioOnly;
-      } catch (fallbackErr) {
-        if (fallbackErr instanceof Error && fallbackErr.message.startsWith("Call ended")) {
-          throw fallbackErr;
-        }
-        // The fallback used to reject unhandled, leaving the call UI showing
-        // a live call with no microphone and nothing in the console.
-        throw new Error("Microphone access was denied");
+        setLocalStream(stream);
+        return stream;
+      } catch (err) {
+        // A call that ended mid-prompt is not a permission problem; surface it
+        // as-is and stop trying the remaining shapes.
+        if (err instanceof Error && err.message.startsWith("Call ended")) throw err;
       }
     }
+
+    // Every shape was refused: report why rather than rejecting with the raw
+    // NotAllowedError, which reads as an internal failure to the user.
+    throw new Error(video ? "Camera and microphone access were denied" : "Microphone access was denied");
   }, [setLocalStream]);
 
   /**
@@ -324,10 +417,44 @@ export function useWebRTC() {
     const stream = await startLocalStream(callType === "video");
     if (!stillInCall()) return;
     const pc = createPeerConnection();
-    stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-    // Mirror the caller's reserved screen m-line so the share sender exists on
-    // both ends and `replaceTrack` has a home when this side shares.
-    pc.addTransceiver("video", { direction: "sendrecv" });
+
+    // Mirror the caller's m-line layout exactly, in order. The offer is the
+    // authority: if their camera was denied it carries no camera m-line, and
+    // pre-creating one anyway shifted every video line against theirs — screen
+    // shares landed on the camera's line and vice versa, and the answer could
+    // fail to fit the offer, taking the whole call down with it. A video
+    // m-line only has `a=msid:` when a camera stream was attached to it, which
+    // is what separates the camera from the reserved screen line. The last
+    // video line stays free for the screen share on both sides.
+    const shape = parseOfferShape(offer.sdp);
+    const audioTrack = stream.getAudioTracks()[0] ?? null;
+    const videoTrack = stream.getVideoTracks()[0] ?? null;
+    let cameraPlaced = false;
+
+    if (shape.length === 0) {
+      // No usable SDP: fall back to the classic fixed layout so the call can
+      // still be attempted rather than failing on a parse.
+      if (audioTrack) pc.addTrack(audioTrack, stream);
+      else pc.addTransceiver("audio", { direction: "sendrecv" });
+      if (videoTrack) pc.addTrack(videoTrack, stream);
+      pc.addTransceiver("video", { direction: "sendrecv" });
+    } else {
+      for (const section of shape) {
+        if (section.kind === "audio") {
+          if (audioTrack) pc.addTrack(audioTrack, stream);
+          else pc.addTransceiver("audio", { direction: "sendrecv" });
+        } else if (section.hasMsid && videoTrack && !cameraPlaced) {
+          pc.addTrack(videoTrack, stream);
+          cameraPlaced = true;
+        } else {
+          // Their screen line (or a camera line we have no camera for): keep
+          // the m-line and its sendrecv direction so a share can travel both
+          // ways later via replaceTrack, with nothing attached yet.
+          pc.addTransceiver("video", { direction: "sendrecv" });
+        }
+      }
+    }
+
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     remoteDescriptionReadyRef.current = true;
     // Only now can the queued candidates be applied.
@@ -455,6 +582,13 @@ export function useWebRTC() {
   const failCall = useCallback((err: unknown) => {
     const message = err instanceof Error ? err.message : "The call could not be set up";
     setCallError(message);
+    // Tell the other side this call is dead. Without it a side that failed
+    // setup (permission denied on one device, media hardware missing) tore
+    // down locally while the peer sat at "Ringing…" or "Connecting…" forever.
+    const { targetUserId: peer } = useCallStore.getState();
+    if (peer) {
+      getSocket().emit("call_end", { targetUserId: peer });
+    }
     cleanup();
     useCallStore.getState().resetCall();
   }, [cleanup]);
@@ -462,11 +596,24 @@ export function useWebRTC() {
   useEffect(() => {
     if (!isInCall) return;
 
+    /** Backstop for the caller when the signalling server itself is gone. */
+    let ringTimer: number | undefined;
+
     if (isCaller) {
       // Pre-acquire the local stream so permission is requested immediately;
       // a denial has to end the call rather than surface as an unhandled
       // rejection.
       startLocalStream(callType === "video").catch(failCall);
+      // The server times an unanswered ring out after 40s, but a dead or
+      // unreachable server times nothing out: without this the caller rang
+      // at "Ringing…" for as long as they were willing to watch.
+      ringTimer = window.setTimeout(() => {
+        const state = useCallStore.getState();
+        if (!state.isInCall || !state.isCaller || state.remoteStream) return;
+        cleanup();
+        state.resetCall();
+        state.setCallNotice("No answer.");
+      }, 45_000);
     }
 
     const socket = getSocket();
@@ -488,7 +635,7 @@ export function useWebRTC() {
       handleAnswer(data.answer).catch(failCall);
     };
 
-    const handleIceEvent = (data: { candidate: RTCIceCandidateInit }) => {
+    const handleIceEvent: IceHandler = (data) => {
       handleIceCandidate(data.candidate).catch(() => {
         // A candidate that arrives after teardown is expected and harmless.
       });
@@ -504,30 +651,50 @@ export function useWebRTC() {
       useCallStore.getState().resetCall();
     };
 
-    // `webrtc_offer` is bound once at module scope rather than here, so an
-    // offer that beats this effect is stashed instead of lost. Everything else
-    // still registers per call, because those can only arrive while one is up.
-    bindOfferStash(socket);
+    /**
+     * The server gave up on an unanswered ring — or discovered mid-accept that
+     * the room was already gone. Either way this side must stop: the caller
+     * stops ringing, and a callee whose accept lost a race stops waiting for
+     * an offer that will never come.
+     */
+    const handleCallTimeout = (data: { roomId: string }) => {
+      const state = useCallStore.getState();
+      if (state.roomId !== data.roomId) return;
+      const wasCaller = state.isCaller;
+      cleanup();
+      state.resetCall();
+      if (wasCaller) useCallStore.getState().setCallNotice("No answer.");
+    };
+
+    // Offers and candidates are bound once at module scope rather than here,
+    // so signals that beat this effect are stashed instead of lost. Everything
+    // else still registers per call, because those can only arrive while one
+    // is up.
+    bindCallSignalling(socket);
     activeOfferHandler = handleOfferEvent;
-    // An offer that landed while nobody was listening is ready now.
+    activeIceHandler = handleIceEvent;
+    // Signals that landed while nobody was listening are ready now.
     drainStashedOffer(handleOfferEvent);
+    drainStashedIce(handleIceEvent);
 
     socket.on("call_accept", handleCallAccept);
     socket.on("webrtc_answer", handleAnswerEvent);
-    socket.on("ice_candidate", handleIceEvent);
     socket.on("call_end", handleCallEnd);
     socket.on("call_reject", handleCallReject);
+    socket.on("call_timeout", handleCallTimeout);
 
     return () => {
       socket.off("call_accept", handleCallAccept);
       socket.off("webrtc_answer", handleAnswerEvent);
-      socket.off("ice_candidate", handleIceEvent);
       socket.off("call_end", handleCallEnd);
       socket.off("call_reject", handleCallReject);
-      // Detach the handler but keep the stash: it is the whole reason the
-      // module-scope listener exists, and the stashed offer may belong to the
-      // next call rather than this one.
+      socket.off("call_timeout", handleCallTimeout);
+      if (ringTimer !== undefined) window.clearTimeout(ringTimer);
+      // Detach the handlers but keep the stashes: they are the whole reason
+      // the module-scope listeners exist, and anything stashed may belong to
+      // the next call rather than this one.
       if (activeOfferHandler === handleOfferEvent) activeOfferHandler = null;
+      if (activeIceHandler === handleIceEvent) activeIceHandler = null;
       cleanup();
     };
   }, [isInCall, isCaller, callType, createOffer, handleOffer, handleAnswer, handleIceCandidate, cleanup, startLocalStream, failCall]);

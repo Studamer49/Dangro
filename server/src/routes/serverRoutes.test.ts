@@ -225,6 +225,8 @@ prismaMock.channel = {
 };
 
 prismaMock.user = { findUnique: async () => null, update: async () => ({}) };
+// The invite-join route gained a ban check; nobody is banned in these tests.
+prismaMock.ban = { findUnique: async () => null };
 prismaMock.$transaction = async (ops: any[]) => Promise.all(ops);
 
 // --- roles -----------------------------------------------------------------

@@ -17,6 +17,15 @@ interface CallState {
   targetUserId: string | null;
   targetUser: User | null;
   incomingCall: IncomingCall | null;
+  /**
+   * A call-scoped message for the UI to show as a toast.
+   *
+   * Invite refusals and unanswered rings used to be silent: the server dropped
+   * the event and the user sat at "Ringing..." with nothing to read. The
+   * message survives `resetCall` so the modal can toast it after the call
+   * state is gone, and is cleared when displayed or when a new call starts.
+   */
+  callNotice: string | null;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
   /**
@@ -53,7 +62,18 @@ interface CallState {
   toggleMute: () => void;
   toggleVideo: () => void;
   setIncomingCall: (call: IncomingCall | null) => void;
+  setCallNotice: (notice: string | null) => void;
 }
+
+/** Why the server refused an invite, in words the caller can read. */
+const INVITE_REFUSALS: Record<string, string> = {
+  unavailable: "You can't call this person right now.",
+  busy: "They're in another call.",
+  "in-call": "You're already in a call.",
+  rate: "Too many call attempts — wait a minute and try again.",
+  invalid: "Couldn't place the call.",
+  error: "Couldn't place the call.",
+};
 
 export const useCallStore = create<CallState>((set, get) => ({
   isInCall: false,
@@ -63,6 +83,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   targetUserId: null,
   targetUser: null,
   incomingCall: null,
+  callNotice: null,
   localStream: null,
   remoteStream: null,
   localScreenStream: null,
@@ -74,8 +95,6 @@ export const useCallStore = create<CallState>((set, get) => ({
 
   initiateCall: (targetUserId, targetUser, callType) => {
     const roomId = `call_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    const socket = getSocket();
-    socket.emit("call_invite", { targetUserId, callType, roomId });
     set({
       isInCall: true,
       isCaller: true,
@@ -85,27 +104,53 @@ export const useCallStore = create<CallState>((set, get) => ({
       targetUser,
       isMuted: false,
       isVideoOff: false,
+      callNotice: null,
     });
+    const socket = getSocket();
+    // The server acknowledges: a refused invite (not allowed to contact them,
+    // already in a call, rate limited) used to be dropped in silence, leaving
+    // the caller ringing at "Ringing..." until they gave up on their own.
+    socket.emit(
+      "call_invite",
+      { targetUserId, callType, roomId },
+      (response: { ok?: boolean; reason?: string } | undefined) => {
+        if (!response || response.ok !== false) return;
+        const state = get();
+        // Only tear down if this refusal belongs to the call still on screen.
+        if (!state.isCaller || state.roomId !== roomId) return;
+        state.resetCall();
+        get().setCallNotice(INVITE_REFUSALS[response.reason ?? ""] ?? "Couldn't place the call.");
+      }
+    );
   },
 
   acceptCall: () => {
     const { incomingCall } = get();
     if (!incomingCall) return;
-    const socket = getSocket();
-    socket.emit("call_accept", {
-      targetUserId: incomingCall.callerId,
-      roomId: incomingCall.roomId,
-    });
+    const { callerId, callType, roomId, caller } = incomingCall;
     set({
       isInCall: true,
       isCaller: false,
-      callType: incomingCall.callType,
-      roomId: incomingCall.roomId,
-      targetUserId: incomingCall.callerId,
-      targetUser: incomingCall.caller,
+      callType,
+      roomId,
+      targetUserId: callerId,
+      targetUser: caller,
       incomingCall: null,
       isMuted: false,
       isVideoOff: false,
+      callNotice: null,
+    });
+    const socket = getSocket();
+    // The room may already be gone — the caller hung up, the ring timed out,
+    // or a second device of ours answered first. Without this ack the callee
+    // sat in a call whose offer would never come, showing "Connecting…"
+    // forever with no way to know why.
+    socket.emit("call_accept", { targetUserId: callerId, roomId }, (response: { ok?: boolean } | undefined) => {
+      if (!response || response.ok !== false) return;
+      const state = get();
+      if (!state.isInCall || state.isCaller || state.roomId !== roomId) return;
+      state.resetCall();
+      state.setCallNotice("That call has ended.");
     });
   },
 
@@ -178,4 +223,5 @@ export const useCallStore = create<CallState>((set, get) => ({
   },
 
   setIncomingCall: (call) => set({ incomingCall: call }),
+  setCallNotice: (callNotice) => set({ callNotice }),
 }));

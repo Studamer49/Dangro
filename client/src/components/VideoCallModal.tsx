@@ -55,6 +55,7 @@ export default function VideoCallModal() {
     isMuted,
     isVideoOff,
     isScreenSharing,
+    callNotice,
     toggleMute,
     toggleVideo,
     connectionStatus,
@@ -84,6 +85,16 @@ export default function VideoCallModal() {
     if (!callError) return;
     toastRef.current.error(callError);
   }, [callError]);
+
+  // Refused invites, lost accepts and unanswered rings all land here. The
+  // notice outlives the call state (the call is already reset by then), so
+  // this effect — which runs whether or not the modal renders — is the one
+  // that shows it and clears it.
+  useEffect(() => {
+    if (!callNotice) return;
+    toastRef.current.error(callNotice);
+    useCallStore.getState().setCallNotice(null);
+  }, [callNotice]);
 
   useEffect(() => {
     const audio = remoteAudioRef.current;
