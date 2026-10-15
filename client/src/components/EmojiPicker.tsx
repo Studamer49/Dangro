@@ -12,7 +12,7 @@ interface EmojiCategory {
   emojis: string[];
 }
 
-const EMOJI_CATEGORIES: EmojiCategory[] = [
+export const EMOJI_CATEGORIES: EmojiCategory[] = [
   {
     name: "Smileys",
     icon: "😀",

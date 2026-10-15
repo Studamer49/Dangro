@@ -10,10 +10,12 @@ import VoiceRecorder from "@/components/VoiceRecorder";
 import Avatar from "@/components/Avatar";
 import ContextMenu, { ContextMenuItem, ContextMenuSeparator } from "@/components/ContextMenu";
 import UserContextMenu from "@/components/UserContextMenu";
-import EmojiPicker from "@/components/EmojiPicker";
+import EmojiPicker, { EMOJI_CATEGORIES } from "@/components/EmojiPicker";
 import Emoji from "@/components/Emoji";
 import ChatDayDivider from "@/components/ChatDayDivider";
 import { useToast } from "@/stores/toastStore";
+
+const EMOJI_SHORTCODE_RE = /;;([A-Za-z0-9_+\-]+);;/g;
 import { useDmPrefsStore } from "@/stores/dmPrefsStore";
 import { useBlocksStore } from "@/stores/blocksStore";
 import type { Conversation, DirectMessage, DirectReaction } from "@/types";
@@ -268,7 +270,11 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
     const socket = getSocket();
     socket.emit("dm_typing_stop", { conversationId: conversation.id });
 
-    const content = newMessage;
+    let content = newMessage;
+    content = content.replace(EMOJI_SHORTCODE_RE, (_m, name) => {
+      const all = EMOJI_CATEGORIES.flatMap((c) => c.emojis);
+      return all.find((e) => e === name || e === `:${name}:`) ?? _m;
+    });
     const tempId = `temp-${Date.now()}`;
     setNewMessage("");
     setReplyTo(null);
