@@ -45,6 +45,7 @@ model User {
   conversations1  Conversation[] @relation("ConversationUser1")
   conversations2  Conversation[] @relation("ConversationUser2")
   sentDMs         DirectMessage[] @relation("DirectMessageSender")
+  directReactions DirectReaction[]
 
   posts           Post[]         @relation("PostAuthor")
   postLikes       PostLike[]
@@ -261,6 +262,23 @@ model Reaction {
   @@map("reactions")
 }
 
+/// Emoji reactions on direct messages. Mirrors `Reaction`, but for a DM thread:
+/// reactions never cross between channels and DMs, so the two live in separate
+/// tables and the toggle routes stay independent.
+model DirectReaction {
+  id              String   @id @default(uuid())
+  emoji           String
+  userId          String
+  directMessageId String
+  createdAt       DateTime @default(now())
+
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  directMessage DirectMessage @relation(fields: [directMessageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, directMessageId, emoji])
+  @@map("direct_reactions")
+}
+
 model Attachment {
   id        String   @id @default(uuid())
   filename  String
@@ -332,6 +350,7 @@ model DirectMessage {
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   replyTo      DirectMessage? @relation("DMReplies", fields: [replyToId], references: [id], onDelete: SetNull)
   replies      DirectMessage[] @relation("DMReplies")
+  reactions    DirectReaction[]
 
   @@map("direct_messages")
 }

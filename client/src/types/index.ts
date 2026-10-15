@@ -150,6 +150,16 @@ export interface Reaction {
   user?: User;
 }
 
+/** A reaction left on a direct message. Mirrors `Reaction`, keyed by DM id. */
+export interface DirectReaction {
+  id: string;
+  emoji: string;
+  userId: string;
+  directMessageId: string;
+  createdAt: string;
+  user?: User;
+}
+
 export interface Attachment {
   id: string;
   filename: string;
@@ -217,6 +227,7 @@ export interface DirectMessage {
   updatedAt: string;
   sender?: User;
   replyTo?: DirectMessage;
+  reactions?: DirectReaction[];
 }
 
 export interface Post {

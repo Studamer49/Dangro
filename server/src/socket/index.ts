@@ -84,6 +84,19 @@ async function isConversationParticipant(conversationId: string, userId: string)
 async function canContact(fromUserId: string, toUserId: string): Promise<boolean> {
   if (fromUserId === toUserId) return false;
 
+  // A block in either direction is a hard stop for calls, matching the DM
+  // routes so a blocked user cannot reach someone by ringing them instead.
+  const block = await prisma.block.findFirst({
+    where: {
+      OR: [
+        { userId: fromUserId, blockedId: toUserId },
+        { userId: toUserId, blockedId: fromUserId },
+      ],
+    },
+    select: { id: true },
+  });
+  if (block) return false;
+
   const friendship = await prisma.friend.findFirst({
     where: {
       OR: [

@@ -5,6 +5,7 @@ import { getIO } from "../socket/io.js";
 import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { assertChannelMember, assertChannelReply, paramId } from "../lib/access.js";
+import { actorCan, loadActor } from "../lib/permissions.js";
 
 const router = Router();
 
@@ -60,7 +61,7 @@ router.get(
     const userId = requireUser(req);
     const channelId = paramId(req.params.channelId, "channel id");
 
-    await assertChannelMember(channelId, userId);
+    const channel = await assertChannelMember(channelId, userId);
 
     const messages = await prisma.message.findMany({
       where: { channelId },
@@ -69,7 +70,12 @@ router.get(
       take: 100,
     });
 
-    ok(res, { messages: messages.reverse() });
+    // Surfaced so the client knows whether to offer "delete message" on other
+    // people's messages without a second round trip.
+    const actor = await loadActor(channel.serverId, userId);
+    const canManageMessages = actorCan(actor, "MANAGE_MESSAGES");
+
+    ok(res, { messages: messages.reverse(), canManageMessages });
   })
 );
 
@@ -108,9 +114,18 @@ router.delete(
 
     const message = await prisma.message.findUnique({ where: { id: messageId } });
     if (!message) throw AppError.of("NOT_FOUND", "Message not found");
-    if (message.authorId !== userId) throw AppError.of("FORBIDDEN", "You can only delete your own messages");
 
-    await assertChannelMember(message.channelId, userId);
+    const channel = await assertChannelMember(message.channelId, userId);
+
+    // The author may always remove their own message. Anyone else needs
+    // MANAGE_MESSAGES, which the server owner holds implicitly.
+    if (message.authorId !== userId) {
+      const actor = await loadActor(channel.serverId, userId);
+      if (!actorCan(actor, "MANAGE_MESSAGES")) {
+        throw AppError.of("FORBIDDEN", "You need the MANAGE_MESSAGES permission to delete this message");
+      }
+    }
+
     await prisma.message.delete({ where: { id: messageId } });
 
     getIO()?.to(`channel:${message.channelId}`).emit("message_deleted", { messageId });

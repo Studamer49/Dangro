@@ -21,6 +21,19 @@ router.post(
     const targetUser = await prisma.user.findUnique({ where: { id: targetUserId }, select: { id: true } });
     if (!targetUser) throw AppError.of("NOT_FOUND", "User not found");
 
+    // A block in either direction ends followship: a blocked account cannot
+    // follow their blocker, and vice versa.
+    const block = await prisma.block.findFirst({
+      where: {
+        OR: [
+          { userId: userId, blockedId: targetUserId },
+          { userId: targetUserId, blockedId: userId },
+        ],
+      },
+      select: { id: true },
+    });
+    if (block) throw AppError.of("FORBIDDEN", "You cannot follow this user");
+
     const existing = await prisma.follow.findUnique({
       where: { followerId_followingId: { followerId: userId, followingId: targetUserId } },
     });

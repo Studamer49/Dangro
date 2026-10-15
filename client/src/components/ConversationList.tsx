@@ -5,6 +5,8 @@ import { useBounce } from "@/hooks/useBounce";
 import api from "@/lib/api";
 import Avatar from "@/components/Avatar";
 import { useConfirm } from "@/hooks/useConfirm";
+import { useBlocksStore } from "@/stores/blocksStore";
+import { useDmPrefsStore } from "@/stores/dmPrefsStore";
 import type { Conversation, DirectMessage, User } from "@/types";
 
 interface Props {
@@ -45,6 +47,9 @@ function ConversationRow({
 export default function ConversationList({ activeConversation, onSelectConversation }: Props) {
   const user = useAuthStore((s) => s.user);
   const confirm = useConfirm();
+  const blockedIds = useBlocksStore((s) => s.blockedIds);
+  const loadBlocks = useBlocksStore((s) => s.load);
+  const isMuted = useDmPrefsStore((s) => s.isMuted);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<User[]>([]);
@@ -86,6 +91,10 @@ export default function ConversationList({ activeConversation, onSelectConversat
       // silent
     }
   }, []);
+
+  useEffect(() => {
+    void loadBlocks();
+  }, [loadBlocks]);
 
   useEffect(() => {
     void fetchConversations();
@@ -317,10 +326,15 @@ export default function ConversationList({ activeConversation, onSelectConversat
     return prefix + (text.length > 40 ? text.substring(0, 40) + "..." : text);
   };
 
-  const myRequests = conversations.filter(
+  // Blocked accounts disappear from the list entirely; the server also refuses
+  // their messages, so hiding the row here just matches what can happen.
+  const visible = conversations.filter(
+    (c) => !blockedIds.includes(c.otherUser?.id ?? "")
+  );
+  const myRequests = visible.filter(
     (c) => c.status === "pending" && c.requestSenderId !== user?.id
   );
-  const regular = conversations.filter(
+  const regular = visible.filter(
     (c) => c.status !== "pending" || c.requestSenderId === user?.id
   );
 
@@ -372,6 +386,10 @@ export default function ConversationList({ activeConversation, onSelectConversat
         {conversations.length === 0 ? (
           <div className="px-4 py-12 text-center text-sm text-gray-500">
             No conversations yet
+          </div>
+        ) : regular.length === 0 && myRequests.length === 0 ? (
+          <div className="px-4 py-12 text-center text-sm text-gray-500">
+            No conversations to show
           </div>
         ) : (
           <>
@@ -431,6 +449,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
             {regular.map((conv) => {
               const isActive = activeConversation?.id === conv.id;
               const preview = messagePreview(conv, user?.id);
+              const muted = isMuted(conv.id);
               const awaitingAccept =
                 conv.status === "pending" && conv.requestSenderId === user?.id;
 
@@ -450,16 +469,28 @@ export default function ConversationList({ activeConversation, onSelectConversat
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between">
-                      <span
-                        className={`truncate text-sm font-semibold tracking-tight ${
-                          conv.unreadCount > 0 ? "text-white" : "text-gray-200"
-                        }`}
-                      >
-                        {conv.otherUser?.username}
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        {muted && (
+                          <svg
+                            className="h-3.5 w-3.5 shrink-0 text-gray-500"
+                            fill="currentColor"
+                            viewBox="0 0 24 24"
+                            aria-label="Muted"
+                          >
+                            <path d="M16.5 12A4.5 4.5 0 0014 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0021 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 003.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
+                          </svg>
+                        )}
+                        <span
+                          className={`truncate text-sm font-semibold tracking-tight ${
+                            conv.unreadCount > 0 && !muted ? "text-white" : "text-gray-200"
+                          }`}
+                        >
+                          {conv.otherUser?.username}
+                        </span>
                       </span>
                       <span
                         className={`tabular ml-2 flex-shrink-0 text-xs ${
-                          conv.unreadCount > 0 ? "text-accent-300" : "text-gray-500"
+                          conv.unreadCount > 0 && !muted ? "text-accent-300" : "text-gray-500"
                         }`}
                       >
                         {formatTime(conv.lastMessageAt)}
@@ -467,7 +498,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <p className="truncate text-xs text-gray-400">{preview}</p>
-                      {conv.unreadCount > 0 && (
+                      {conv.unreadCount > 0 && !muted && (
                         <span className="tabular flex h-5 min-w-5 flex-shrink-0 items-center justify-center rounded-full bg-accent-500 px-1.5 text-[10px] font-bold text-white shadow-glow">
                           {conv.unreadCount > 99 ? "99+" : conv.unreadCount}
                         </span>

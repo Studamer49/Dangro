@@ -5,6 +5,8 @@ import { getSocket } from "@/lib/socket";
 import api from "@/lib/api";
 import { scrollBehavior } from "@/lib/motion";
 import Avatar from "@/components/Avatar";
+import ContextMenu, { ContextMenuItem, ContextMenuSeparator } from "@/components/ContextMenu";
+import EmojiPicker from "@/components/EmojiPicker";
 import type { Message, Reaction } from "@/types";
 
 export default function ChatArea() {
@@ -17,6 +19,10 @@ export default function ChatArea() {
   const [editContent, setEditContent] = useState("");
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ message: Message; x: number; y: number } | null>(null);
+  // Granted by the API on the message list: owners and anyone with
+  // MANAGE_MESSAGES may delete other people's messages from the context menu.
+  const [canManageMessages, setCanManageMessages] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const flashTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -38,6 +44,7 @@ export default function ChatArea() {
       // written into the new channel's view.
       if (activeChannelRef.current !== requestChannelId) return;
       setMessages(data.messages);
+      setCanManageMessages(Boolean(data.canManageMessages));
     } catch {
       // Silent: the next poll retries, and the messages already on screen stay.
     }
@@ -163,6 +170,8 @@ export default function ChatArea() {
     setEditContent("");
     setReplyTo(null);
     setFlashId(null);
+    setMenu(null);
+    setCanManageMessages(false);
     // `messages` and `typingUsers` carry the previous channel's state. Leaving
     // them in place meant a failed fetch left the old channel's history under
     // the new channel's header, and a typing indicator followed you across.
@@ -251,6 +260,21 @@ export default function ChatArea() {
     }
   };
 
+  const openMessageMenu = (event: React.MouseEvent, message: Message) => {
+    // Optimistic rows have no server id yet, so their actions would 404.
+    if (message.id.startsWith("temp-")) return;
+    event.preventDefault();
+    setMenu({ message, x: event.clientX, y: event.clientY });
+  };
+
+  const copyMessage = async (content: string) => {
+    try {
+      await navigator.clipboard?.writeText(content);
+    } catch {
+      // Clipboard can be blocked by permissions; nothing useful to show.
+    }
+  };
+
   const handleTyping = () => {
     const socket = getSocket();
     if (channelId) {
@@ -328,6 +352,7 @@ export default function ChatArea() {
               <div
                 key={message.id}
                 id={message.id.startsWith("temp-") ? undefined : `message-${message.id}`}
+                onContextMenu={(event) => openMessageMenu(event, message)}
                 className={`group relative flex gap-3 rounded-xl px-3 py-1.5 transition-colors duration-150 hover:bg-gray-800/40 ${
                   flashId === message.id ? "ring-1 ring-accent-400" : ""
                 }`}
@@ -436,29 +461,29 @@ export default function ChatArea() {
                         </svg>
                       </button>
                       {message.authorId === user?.id && (
-                        <>
-                          <button
-                            onClick={() => {
-                              setEditingId(message.id);
-                              setEditContent(message.content);
-                            }}
-                            className="icon-btn !h-7 !w-7"
-                            title="Edit"
-                          >
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                            </svg>
-                          </button>
-                          <button
-                            onClick={() => void deleteMessage(message.id)}
-                            className="icon-btn !h-7 !w-7 hover:!text-red-400"
-                            title="Delete"
-                          >
-                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                          </button>
-                        </>
+                        <button
+                          onClick={() => {
+                            setEditingId(message.id);
+                            setEditContent(message.content);
+                          }}
+                          className="icon-btn !h-7 !w-7"
+                          title="Edit"
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                      )}
+                      {(message.authorId === user?.id || canManageMessages) && (
+                        <button
+                          onClick={() => void deleteMessage(message.id)}
+                          className="icon-btn !h-7 !w-7 hover:!text-red-400"
+                          title="Delete"
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
                       )}
                     </div>
                   </div>
@@ -528,6 +553,76 @@ export default function ChatArea() {
           </button>
         </div>
       </div>
+
+      {menu && (
+        <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} width={288}>
+          <p className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+            React
+          </p>
+          <EmojiPicker
+            maxHeight={176}
+            onSelect={(emoji) => {
+              void toggleReaction(menu.message.id, emoji);
+              setMenu(null);
+            }}
+          />
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            label="Reply"
+            icon={
+              <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+            }
+            onClick={() => {
+              setReplyTo(menu.message);
+              setMenu(null);
+            }}
+          />
+          <ContextMenuItem
+            label="Copy text"
+            icon={
+              <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            }
+            onClick={() => {
+              void copyMessage(menu.message.content);
+              setMenu(null);
+            }}
+          />
+          {menu.message.authorId === user?.id && (
+            <ContextMenuItem
+              label="Edit"
+              icon={
+                <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              }
+              onClick={() => {
+                setEditingId(menu.message.id);
+                setEditContent(menu.message.content);
+                setMenu(null);
+              }}
+            />
+          )}
+          {(menu.message.authorId === user?.id || canManageMessages) && (
+            <ContextMenuItem
+              label="Delete message"
+              danger
+              icon={
+                <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              }
+              onClick={() => {
+                void deleteMessage(menu.message.id);
+                setMenu(null);
+              }}
+            />
+          )}
+        </ContextMenu>
+      )}
     </div>
   );
 }

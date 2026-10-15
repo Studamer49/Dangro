@@ -1,14 +1,20 @@
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { useCallStore } from "@/stores/callStore";
 import { getSocket } from "@/lib/socket";
-import api from "@/lib/api";
+import api, { apiErrorMessage } from "@/lib/api";
 import { uploadErrorMessage, uploadMedia } from "@/lib/upload";
 import { scrollBehavior } from "@/lib/motion";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import Avatar from "@/components/Avatar";
+import ContextMenu, { ContextMenuItem, ContextMenuSeparator } from "@/components/ContextMenu";
+import EmojiPicker from "@/components/EmojiPicker";
 import { useToast } from "@/stores/toastStore";
-import type { Conversation, DirectMessage } from "@/types";
+import { useDmPrefsStore } from "@/stores/dmPrefsStore";
+import { useBlocksStore } from "@/stores/blocksStore";
+import { useConfirm } from "@/hooks/useConfirm";
+import type { Conversation, DirectMessage, DirectReaction } from "@/types";
 
 interface Props {
   conversation: Conversation;
@@ -18,6 +24,15 @@ interface Props {
 export default function DMChatArea({ conversation, onConversationUpdated }: Props) {
   const user = useAuthStore((s) => s.user);
   const initiateCall = useCallStore((s) => s.initiateCall);
+  const navigate = useNavigate();
+  const confirm = useConfirm();
+  const toggleDmMute = useDmPrefsStore((s) => s.toggleMute);
+  const dmMarkRead = useDmPrefsStore((s) => s.markRead);
+  const dmMuted = useDmPrefsStore((s) => s.isMuted(conversation.id));
+  const otherUserId = conversation.otherUser?.id ?? "";
+  const blocked = useBlocksStore((s) => s.isBlocked(otherUserId));
+  const toggleBlock = useBlocksStore((s) => s.toggle);
+  const loadBlocks = useBlocksStore((s) => s.load);
   const isPendingRequest = conversation.status === "pending";
   const amRequester = conversation.requestSenderId === user?.id;
   const [messages, setMessages] = useState<DirectMessage[]>([]);
@@ -27,6 +42,9 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editContent, setEditContent] = useState("");
   const [flashId, setFlashId] = useState<string | null>(null);
+  const [menu, setMenu] = useState<{ message: DirectMessage; x: number; y: number } | null>(null);
+  const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number } | null>(null);
+  const [isFollowing, setIsFollowing] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   // 0-100 while an upload is in flight; reset to 0 when idle.
@@ -41,6 +59,10 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   // The conversation currently on screen, so a response for one already left
   // behind cannot overwrite the thread that replaced it.
   const activeConversationRef = useRef(conversation.id);
+
+  useEffect(() => {
+    void loadBlocks();
+  }, [loadBlocks]);
 
   const markAsRead = useCallback(async () => {
     try {
@@ -166,10 +188,22 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
       }
     };
 
+    const handleReactionsUpdated = (data: {
+      conversationId: string;
+      messageId: string;
+      reactions: DirectReaction[];
+    }) => {
+      if (data.conversationId !== conversation.id) return;
+      setMessages((prev) =>
+        prev.map((m) => (m.id === data.messageId ? { ...m, reactions: data.reactions } : m))
+      );
+    };
+
     socket.on("new_dm", handleNewDM);
     socket.on("dm_updated", handleDMUpdated);
     socket.on("dm_message_edited", handleEdited);
     socket.on("dm_message_deleted", handleDeleted);
+    socket.on("dm_reactions_updated", handleReactionsUpdated);
     socket.on("dm_typing_start", handleTypingStart);
     socket.on("dm_typing_stop", handleTypingStop);
     socket.on("dm_read", handleRead);
@@ -182,6 +216,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
       socket.off("dm_updated", handleDMUpdated);
       socket.off("dm_message_edited", handleEdited);
       socket.off("dm_message_deleted", handleDeleted);
+      socket.off("dm_reactions_updated", handleReactionsUpdated);
       socket.off("dm_typing_start", handleTypingStart);
       socket.off("dm_typing_stop", handleTypingStop);
       socket.off("dm_read", handleRead);
@@ -201,6 +236,8 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
     setEditContent("");
     setReplyTo(null);
     setFlashId(null);
+    setMenu(null);
+    setHeaderMenu(null);
     // These carry the previous thread's state. Clearing them stops a failed
     // fetch from leaving one person's private messages under another person's
     // name, and stops the typing indicator from following you across — it is
@@ -225,7 +262,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   };
 
   const sendMessage = async () => {
-    if (!newMessage.trim()) return;
+    if (blocked || !newMessage.trim()) return;
     const socket = getSocket();
     socket.emit("dm_typing_stop", { conversationId: conversation.id });
 
@@ -444,6 +481,95 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
     }
   };
 
+  const toggleReaction = async (messageId: string, emoji: string) => {
+    try {
+      await api.post(`/dms/${messageId}/reactions`, { emoji });
+    } catch {
+      // silent
+    }
+  };
+
+  const copyMessage = async (content: string) => {
+    try {
+      await navigator.clipboard?.writeText(content);
+    } catch {
+      // Clipboard can be blocked by permissions; nothing useful to show.
+    }
+  };
+
+  const openMessageMenu = (event: React.MouseEvent, message: DirectMessage) => {
+    if (message.id.startsWith("temp-")) return;
+    event.preventDefault();
+    setMenu({ message, x: event.clientX, y: event.clientY });
+  };
+
+  const openHeaderMenu = (event: React.MouseEvent) => {
+    event.preventDefault();
+    // A keyboard-triggered button reports 0,0 rather than a point; anchor below
+    // the control instead so the menu still appears next to it.
+    const fromButton = event.clientX === 0 && event.clientY === 0;
+    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    setHeaderMenu({
+      x: fromButton ? Math.max(8, rect.right - 224) : event.clientX,
+      y: fromButton ? rect.bottom + 6 : event.clientY,
+    });
+    const target = conversation.otherUser?.id;
+    if (!target) return;
+    void api
+      .get(`/follows/${target}`)
+      .then(({ data }) => setIsFollowing(Boolean(data.isFollowing)))
+      .catch(() => {
+        // Keep the last known state; the toggle re-checks server-side anyway.
+      });
+  };
+
+  const handleMarkRead = () => {
+    dmMarkRead(conversation.id);
+    void markAsRead();
+    setHeaderMenu(null);
+  };
+
+  const handleToggleMute = () => {
+    toggleDmMute(conversation.id);
+    setHeaderMenu(null);
+  };
+
+  const handleToggleBlock = async () => {
+    const target = conversation.otherUser;
+    setHeaderMenu(null);
+    if (!target) return;
+
+    if (!blocked) {
+      const confirmed = await confirm({
+        title: `Block ${target.username}?`,
+        message: "They will not be able to message, follow, or call you, and this conversation will be hidden.",
+        confirmLabel: "Block",
+        tone: "danger",
+      });
+      if (!confirmed) return;
+    }
+
+    try {
+      const nowBlocked = await toggleBlock(target.id);
+      toast.success(nowBlocked ? `Blocked ${target.username}` : `Unblocked ${target.username}`);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not update block"));
+    }
+  };
+
+  const handleToggleFollow = async () => {
+    const target = conversation.otherUser;
+    setHeaderMenu(null);
+    if (!target) return;
+    try {
+      const { data } = await api.post(`/follows/${target.id}`);
+      setIsFollowing(Boolean(data.isFollowing));
+      toast.success(data.isFollowing ? `Following ${target.username}` : `Unfollowed ${target.username}`);
+    } catch (err) {
+      toast.error(apiErrorMessage(err, "Could not update follow"));
+    }
+  };
+
   const handleTyping = () => {
     const socket = getSocket();
     socket.emit("dm_typing_start", { conversationId: conversation.id });
@@ -534,7 +660,10 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
 
   return (
     <div className="flex h-full flex-col">
-      <div className="glass sticky top-0 z-10 flex items-center gap-3 border-b px-4 py-3">
+      <div
+        onContextMenu={openHeaderMenu}
+        className="glass sticky top-0 z-10 flex items-center gap-3 border-b px-4 py-3"
+      >
         <div className="relative">
           <Avatar user={conversation.otherUser} className="h-9 w-9 text-sm" />
           <div
@@ -574,6 +703,11 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
               </button>
             </>
           )}
+          <button onClick={openHeaderMenu} className="icon-btn" title="More options" aria-label="More options">
+            <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 8a2 2 0 100-4 2 2 0 000 4zm0 6a2 2 0 100-4 2 2 0 000 4zm0 6a2 2 0 100-4 2 2 0 000 4z" />
+            </svg>
+          </button>
         </div>
       </div>
 
@@ -618,6 +752,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
                 <div
                   key={msg.id}
                   id={msg.id.startsWith("temp-") ? undefined : `dm-message-${msg.id}`}
+                  onContextMenu={(event) => openMessageMenu(event, msg)}
                   className={`group flex rounded-xl px-3 py-1.5 transition-colors duration-150 ease-out hover:bg-gray-800/40 ${
                     isSelf ? "justify-end" : "justify-start"
                   }`}
@@ -699,6 +834,24 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
                         {renderReadReceipt(msg)}
                       </div>
                     </div>
+
+                    {msg.reactions && msg.reactions.length > 0 && (
+                      <div className={`mt-1 flex flex-wrap gap-1 ${isSelf ? "justify-end" : "justify-start"}`}>
+                        {msg.reactions.map((reaction) => (
+                          <button
+                            key={reaction.id}
+                            onClick={() => void toggleReaction(msg.id, reaction.emoji)}
+                            className={`rounded-full border px-2 py-0.5 text-xs tabular-nums transition-all duration-150 ${
+                              reaction.userId === user?.id
+                                ? "border-accent-400 bg-accent-500/20 text-accent-200"
+                                : "border-gray-700 bg-gray-800/60 text-gray-400 hover:border-gray-600 hover:text-gray-200"
+                            }`}
+                          >
+                            {reaction.emoji}
+                          </button>
+                        ))}
+                      </div>
+                    )}
 
                     {editingId !== msg.id && !msg.id.startsWith("temp-") && (
                       <div className="absolute -top-3.5 right-0 z-10 transition-opacity">
@@ -788,6 +941,14 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
         </div>
       )}
 
+      {blocked && (
+        <div className="border-t border-gray-800/70 bg-red-500/10 px-4 py-2">
+          <p className="text-xs text-red-200">
+            You blocked {conversation.otherUser?.username ?? "this user"}. Unblock them from the menu above to send messages.
+          </p>
+        </div>
+      )}
+
       <div className="p-4 pt-2">
         {isUploading && (
           <div className="mb-2" role="status" aria-live="polite">
@@ -870,16 +1031,17 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
               handleTyping();
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Type a message..."
-            className="min-h-[2.75rem] max-h-32 flex-1 resize-none bg-transparent px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none"
+            placeholder={blocked ? "You blocked this user" : "Type a message..."}
+            disabled={blocked}
+            className="min-h-[2.75rem] max-h-32 flex-1 resize-none bg-transparent px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none disabled:cursor-not-allowed"
             rows={1}
           />
 
-          <VoiceRecorder onRecordingComplete={sendVoiceMessage} disabled={isUploading} />
+          <VoiceRecorder onRecordingComplete={sendVoiceMessage} disabled={isUploading || blocked} />
 
           <button
             onClick={sendMessage}
-            disabled={!newMessage.trim() || isUploading}
+            disabled={!newMessage.trim() || isUploading || blocked}
             className="btn-primary !h-11 !w-11 shrink-0 !p-0"
             aria-label="Send message"
           >
@@ -889,6 +1051,166 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
           </button>
         </div>
       </div>
+
+      {menu && (
+        <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} width={288}>
+          <p className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+            React
+          </p>
+          <EmojiPicker
+            maxHeight={176}
+            onSelect={(emoji) => {
+              void toggleReaction(menu.message.id, emoji);
+              setMenu(null);
+            }}
+          />
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            label="Reply"
+            icon={
+              <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+            }
+            onClick={() => {
+              setReplyTo(menu.message);
+              setMenu(null);
+            }}
+          />
+          <ContextMenuItem
+            label="Copy text"
+            icon={
+              <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            }
+            onClick={() => {
+              void copyMessage(menu.message.content);
+              setMenu(null);
+            }}
+          />
+          {menu.message.senderId === user?.id && (
+            <ContextMenuItem
+              label="Edit"
+              icon={
+                <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                </svg>
+              }
+              onClick={() => {
+                setEditingId(menu.message.id);
+                setEditContent(menu.message.content);
+                setMenu(null);
+              }}
+            />
+          )}
+          {menu.message.senderId === user?.id && (
+            <ContextMenuItem
+              label="Delete message"
+              danger
+              icon={
+                <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              }
+              onClick={() => {
+                void deleteMessage(menu.message.id);
+                setMenu(null);
+              }}
+            />
+          )}
+        </ContextMenu>
+      )}
+
+      {headerMenu && (
+        <ContextMenu x={headerMenu.x} y={headerMenu.y} onClose={() => setHeaderMenu(null)} width={224}>
+          <p className="truncate px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+            {conversation.otherUser?.username}
+          </p>
+          <ContextMenuItem
+            label="Mark as read"
+            icon={
+              <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            }
+            onClick={handleMarkRead}
+          />
+          <ContextMenuItem
+            label={dmMuted ? "Unmute chat" : "Mute chat"}
+            icon={
+              <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M16.5 12A4.5 4.5 0 0014 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0021 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 003.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
+              </svg>
+            }
+            onClick={handleToggleMute}
+          />
+          <ContextMenuSeparator />
+          {conversation.otherUser && (
+            <>
+              <ContextMenuItem
+                label="Visit profile"
+                icon={
+                  <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                }
+                onClick={() => {
+                  const target = conversation.otherUser;
+                  setHeaderMenu(null);
+                  if (target) navigate(`/profile/${target.id}`);
+                }}
+              />
+              <ContextMenuItem
+                label={isFollowing ? "Unfollow user" : "Follow user"}
+                icon={
+                  <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                  </svg>
+                }
+                onClick={() => void handleToggleFollow()}
+              />
+              <ContextMenuItem
+                label="Voice call"
+                icon={
+                  <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a1 1 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                  </svg>
+                }
+                onClick={() => {
+                  const target = conversation.otherUser;
+                  setHeaderMenu(null);
+                  if (target) initiateCall(target.id, target, "voice");
+                }}
+              />
+              <ContextMenuItem
+                label="Video call"
+                icon={
+                  <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                }
+                onClick={() => {
+                  const target = conversation.otherUser;
+                  setHeaderMenu(null);
+                  if (target) initiateCall(target.id, target, "video");
+                }}
+              />
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                label={blocked ? "Unblock user" : "Block user"}
+                danger
+                icon={
+                  <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 105.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+                  </svg>
+                }
+                onClick={() => void handleToggleBlock()}
+              />
+            </>
+          )}
+        </ContextMenu>
+      )}
     </div>
   );
 }

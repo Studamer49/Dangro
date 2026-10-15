@@ -70,9 +70,12 @@ const editMessageSchema = z.object({
   content: z.string().trim().min(1).max(4000),
 });
 
+const reactionSchema = z.object({ emoji: z.string().min(1).max(16) });
+
 const dmInclude = {
   sender: { select: { id: true, username: true, avatar: true, status: true } },
   replyTo: { include: { sender: { select: { id: true, username: true } } } },
+  reactions: { include: { user: { select: { id: true, username: true } } } },
 } as const;
 
 const otherUserSelect = {
@@ -103,6 +106,18 @@ async function canMessageDirectly(senderId: string, candidateId: string): Promis
     where: { followerId_followingId: { followerId: candidateId, followingId: senderId } },
   });
   return !!follow;
+}
+
+/**
+ * True when either side has blocked the other. A block is a wall, not a
+ * direction: once it exists neither party may start or continue a thread.
+ */
+async function isBlockedEitherWay(a: string, b: string): Promise<boolean> {
+  const block = await prisma.block.findFirst({
+    where: { OR: [{ userId: a, blockedId: b }, { userId: b, blockedId: a }] },
+    select: { id: true },
+  });
+  return !!block;
 }
 
 router.get(
@@ -189,6 +204,10 @@ router.post(
     });
     if (!otherUser) throw AppError.of("NOT_FOUND", "User not found");
 
+    if (await isBlockedEitherWay(userId, otherUserId)) {
+      throw AppError.of("FORBIDDEN", "You cannot message this user");
+    }
+
     const sortedIds = [userId, otherUserId].sort();
     let conversation = await prisma.conversation.findUnique({
       where: { user1Id_user2Id: { user1Id: sortedIds[0], user2Id: sortedIds[1] } },
@@ -272,6 +291,11 @@ router.post(
     await assertDirectMessageReply(replyToId, conversationId);
 
     const otherUserId = conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
+
+    if (await isBlockedEitherWay(userId, otherUserId)) {
+      throw AppError.of("FORBIDDEN", "You cannot message this user");
+    }
+
     const isPending = conversation.status === "pending";
     const amRequester = conversation.requestSenderId === userId;
     const requesterId = conversation.requestSenderId;
@@ -438,6 +462,50 @@ router.delete(
     }
 
     ok(res, { message: "Message deleted" });
+  })
+);
+
+/** Toggles a reaction on a direct message, mirroring the channel route. */
+router.post(
+  "/:id/reactions",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const { emoji } = parseOrThrow(reactionSchema, req.body);
+    const messageId = paramId(req.params.id, "message id");
+
+    const message = await prisma.directMessage.findUnique({ where: { id: messageId } });
+    if (!message) throw AppError.of("NOT_FOUND", "Message not found");
+
+    await assertConversationMember(message.conversationId, userId);
+
+    const existing = await prisma.directReaction.findUnique({
+      where: { userId_directMessageId_emoji: { userId, directMessageId: messageId, emoji } },
+    });
+
+    if (existing) {
+      await prisma.directReaction.delete({ where: { id: existing.id } });
+    } else {
+      await prisma.directReaction.create({
+        data: { userId, directMessageId: messageId, emoji },
+      });
+    }
+
+    const updatedMessage = await prisma.directMessage.findUnique({
+      where: { id: messageId },
+      include: { reactions: { include: { user: { select: { id: true, username: true } } } } },
+    });
+
+    const io = getIO();
+    if (io && updatedMessage) {
+      io.to(`dm:${message.conversationId}`).emit("dm_reactions_updated", {
+        conversationId: message.conversationId,
+        messageId,
+        reactions: updatedMessage.reactions,
+      });
+    }
+
+    ok(res, { reactionToggled: !existing, message: updatedMessage });
   })
 );
 

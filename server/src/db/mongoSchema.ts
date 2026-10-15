@@ -83,6 +83,7 @@ export const MODELS: Record<string, ModelDef> = {
       relation("memberships", "member", "many", { backKey: "userId" }),
       relation("sentMessages", "message", "many", { backKey: "authorId", orderBy: { createdAt: "desc" } }),
       relation("reactions", "reaction", "many", { backKey: "userId" }),
+      relation("directReactions", "directReaction", "many", { backKey: "userId" }),
       relation("sentFriendRequests", "friendRequest", "many", { backKey: "senderId" }),
       relation("receivedFriendRequests", "friendRequest", "many", { backKey: "receiverId" }),
       relation("friendships1", "friend", "many", { backKey: "userId" }),
@@ -433,6 +434,24 @@ export const MODELS: Record<string, ModelDef> = {
       relation("conversation", "conversation", "one", { ownKey: "conversationId" }),
       relation("replyTo", "directMessage", "one", { ownKey: "replyToId", onDelete: "SetNull" }),
       relation("replies", "directMessage", "many", { backKey: "replyToId", orderBy: { createdAt: "asc" } }),
+      relation("reactions", "directReaction", "many", { backKey: "directMessageId" }),
+    ],
+  },
+
+  directReaction: {
+    name: "directReaction",
+    collection: "direct_reactions",
+    fields: {
+      emoji: { type: "string" },
+      userId: { type: "string" },
+      directMessageId: { type: "string" },
+      createdAt: { type: "date", default: () => new Date() },
+    },
+    uniques: { userId_directMessageId_emoji: ["userId", "directMessageId", "emoji"] },
+    defaultOrder: { createdAt: "asc" },
+    relations: [
+      relation("user", "user", "one", { ownKey: "userId" }),
+      relation("directMessage", "directMessage", "one", { ownKey: "directMessageId" }),
     ],
   },
 
