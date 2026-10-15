@@ -82,6 +82,8 @@ export function useWebRTC() {
    * Only used when the engine hands over a track with no associated stream.
    */
   const assembledRemoteRef = useRef<MediaStream | null>(null);
+  /** The display-capture stream while sharing, so it can be stopped cleanly. */
+  const screenStreamRef = useRef<MediaStream | null>(null);
   const {
     isInCall,
     isCaller,
@@ -90,6 +92,7 @@ export function useWebRTC() {
     setLocalStream,
     setRemoteStream,
     setConnectionStatus,
+    setScreenSharing,
     endCall,
   } = useCallStore();
 
@@ -248,6 +251,11 @@ export function useWebRTC() {
     if (!stillInCall()) return;
     const pc = createPeerConnection();
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+    // A voice call still reserves a video m-line so the screen-share button
+    // can send video later via replaceTrack without a renegotiation round.
+    if (callType === "voice") {
+      pc.addTransceiver("video", { direction: "sendrecv" });
+    }
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     if (targetUserId) {
@@ -309,6 +317,10 @@ export function useWebRTC() {
     pendingCandidatesRef.current = [];
     remoteDescriptionReadyRef.current = false;
     assembledRemoteRef.current = null;
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach((track) => track.stop());
+      screenStreamRef.current = null;
+    }
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
@@ -320,9 +332,72 @@ export function useWebRTC() {
     setLocalStream(null);
     setRemoteStream(null);
     setConnectionStatus(null);
-  }, [setLocalStream, setRemoteStream, setConnectionStatus]);
+    setScreenSharing(false);
+  }, [setLocalStream, setRemoteStream, setConnectionStatus, setScreenSharing]);
 
   const [callError, setCallError] = useState<string | null>(null);
+
+  /**
+   * Swaps the outgoing video track for the user's screen (or back to the
+   * camera) without renegotiating the connection. The peer connection already
+   * has a video sender (the camera track, or the reserved transceiver on a
+   * voice call), so replaceTrack keeps the existing m-line intact.
+   */
+  const toggleScreenShare = useCallback(async () => {
+    const pc = peerConnectionRef.current;
+    const { isScreenSharing, localStream, setScreenSharing } = useCallStore.getState();
+    if (!pc) return;
+
+    // The camera track lives on a sender; a voice call instead has an idle
+    // video transceiver, whose sender is where the screen track must go.
+    const videoSender =
+      pc.getSenders().find((s) => s.track?.kind === "video") ??
+      pc.getTransceivers().find((t) => t.receiver.track?.kind === "video")?.sender;
+
+    if (isScreenSharing) {
+      // Swap back to the camera track that was saved when sharing started.
+      const cameraTrack = localStream?.getVideoTracks()[0];
+      if (videoSender && cameraTrack) {
+        await videoSender.replaceTrack(cameraTrack);
+      }
+      screenStreamRef.current?.getTracks().forEach((track) => track.stop());
+      screenStreamRef.current = null;
+      setScreenSharing(false);
+      return;
+    }
+
+    try {
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const screenTrack = screenStream.getVideoTracks()[0];
+      if (!screenTrack) return;
+
+      if (videoSender) {
+        await videoSender.replaceTrack(screenTrack);
+      } else if (localStream) {
+        pc.addTrack(screenTrack, screenStream);
+      }
+      screenStreamRef.current = screenStream;
+      setScreenSharing(true);
+
+      // The user can also stop sharing from the browser's own "Stop sharing"
+      // bar; listen for that so the state does not go stale.
+      screenTrack.onended = () => {
+        const camera = useCallStore.getState().localStream?.getVideoTracks()[0];
+        const sender = peerConnectionRef.current
+          ?.getSenders()
+          .find((s) => s.track?.kind === "video");
+        if (sender && camera) {
+          sender.replaceTrack(camera).catch(() => undefined);
+        }
+        screenStreamRef.current = null;
+        useCallStore.getState().setScreenSharing(false);
+      };
+    } catch (err) {
+      // The user dismissed the picker; not an error worth surfacing.
+      if (err instanceof DOMException && err.name === "NotAllowedError") return;
+      console.warn("[webrtc] screen share failed", err);
+    }
+  }, []);
 
   /** Ends the call and surfaces why, instead of rejecting into the void. */
   const failCall = useCallback((err: unknown) => {
@@ -405,5 +480,5 @@ export function useWebRTC() {
     };
   }, [isInCall, isCaller, callType, createOffer, handleOffer, handleAnswer, handleIceCandidate, cleanup, startLocalStream, failCall]);
 
-  return { createOffer, callError };
+  return { createOffer, callError, toggleScreenShare };
 }

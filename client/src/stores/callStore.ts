@@ -21,6 +21,7 @@ interface CallState {
   remoteStream: MediaStream | null;
   isMuted: boolean;
   isVideoOff: boolean;
+  isScreenSharing: boolean;
   /**
    * Why the call is not working, in words the UI can show.
    *
@@ -39,6 +40,7 @@ interface CallState {
   setLocalStream: (stream: MediaStream | null) => void;
   setRemoteStream: (stream: MediaStream | null) => void;
   setConnectionStatus: (status: string | null) => void;
+  setScreenSharing: (sharing: boolean) => void;
   toggleMute: () => void;
   toggleVideo: () => void;
   setIncomingCall: (call: IncomingCall | null) => void;
@@ -56,6 +58,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   remoteStream: null,
   isMuted: false,
   isVideoOff: false,
+  isScreenSharing: false,
   connectionStatus: null,
 
   initiateCall: (targetUserId, targetUser, callType) => {
@@ -137,6 +140,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   setLocalStream: (stream) => set({ localStream: stream }),
   setRemoteStream: (stream) => set({ remoteStream: stream }),
   setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
+  setScreenSharing: (isScreenSharing) => set({ isScreenSharing }),
 
   toggleMute: () => {
     const { localStream, isMuted } = get();

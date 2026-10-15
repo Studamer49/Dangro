@@ -49,6 +49,8 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   const [chatMenu, setChatMenu] = useState<{ x: number; y: number } | null>(null);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  // Full-size overlay for a tapped image attachment.
+  const [lightbox, setLightbox] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   // 0-100 while an upload is in flight; reset to 0 when idle.
   const [uploadPercent, setUploadPercent] = useState(0);
@@ -636,15 +638,19 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
           {msg.id.startsWith("temp-") && (
             <div className="mb-1 text-[10px] text-gray-400">Uploading…</div>
           )}
-          <img
-            src={msg.attachmentUrl}
-            alt="Shared image"
-            // max-w-full + h-auto keeps a wide image inside the bubble instead
-            // of forcing the chat column wider; the rounded corners match the
-            // rest of the message styling.
-            className="block max-h-80 max-w-full rounded-lg border border-white/10 object-contain"
-            loading="lazy"
-          />
+          <button
+            type="button"
+            onClick={() => setLightbox(msg.attachmentUrl)}
+            className="block max-w-full"
+            aria-label="View full image"
+          >
+            <img
+              src={msg.attachmentUrl}
+              alt="Shared image"
+              className="block max-h-80 max-w-full rounded-lg border border-white/10 object-contain"
+              loading="lazy"
+            />
+          </button>
         </div>
       );
     }
@@ -1211,6 +1217,32 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
           onToggleMute={handleToggleMute}
           onClose={() => setHeaderMenu(null)}
         />
+      )}
+
+      {lightbox && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+          role="dialog"
+          aria-modal="true"
+          onClick={() => setLightbox(null)}
+        >
+          <button
+            type="button"
+            className="absolute right-4 top-4 text-white/80 hover:text-white"
+            aria-label="Close image"
+            onClick={() => setLightbox(null)}
+          >
+            <svg className="h-7 w-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          <img
+            src={lightbox}
+            alt="Shared image"
+            className="max-h-full max-w-full rounded-lg object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
       )}
     </div>
   );
