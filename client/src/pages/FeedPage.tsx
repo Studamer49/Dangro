@@ -146,6 +146,17 @@ export default function FeedPage() {
     [fetchStories]
   );
 
+  const handleStoryLiked = useCallback((storyId: string, liked: boolean, likeCount: number) => {
+    setStories((prev) =>
+      prev.map((group) => ({
+        ...group,
+        stories: group.stories.map((story) =>
+          story.id === storyId ? { ...story, liked, likeCount } : story
+        ),
+      }))
+    );
+  }, []);
+
   const expandedPost = posts.find((post) => post.id === expandedId) ?? null;
 
   return (
@@ -156,7 +167,7 @@ export default function FeedPage() {
       <div className="min-h-0 w-full flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-2xl space-y-4 p-4 pb-10">
           <div className="sticky top-0 z-10 -mx-4 bg-black px-4 py-3">
-            <StoriesBar groups={stories} viewer={user} onAdded={handleStoryAdded} />
+            <StoriesBar groups={stories} viewer={user} onAdded={handleStoryAdded} onLiked={handleStoryLiked} />
           </div>
 
           <CreatePostComposer onCreated={handleCreated} />

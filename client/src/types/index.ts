@@ -277,6 +277,10 @@ export interface Story {
   createdAt: string;
   expiresAt: string;
   author?: User;
+  /** Number of likes on this story, from the API. */
+  likeCount?: number;
+  /** Whether the signed-in viewer has liked this story. */
+  liked?: boolean;
 }
 
 export interface StoryGroup {

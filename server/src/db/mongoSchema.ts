@@ -100,6 +100,7 @@ export const MODELS: Record<string, ModelDef> = {
       relation("postLikes", "postLike", "many", { backKey: "userId" }),
       relation("postComments", "postComment", "many", { backKey: "authorId" }),
       relation("stories", "story", "many", { backKey: "authorId", orderBy: { createdAt: "desc" } }),
+      relation("storyLikes", "storyLike", "many", { backKey: "userId" }),
       relation("followers", "follow", "many", { backKey: "followingId" }),
       relation("following", "follow", "many", { backKey: "followerId" }),
       relation("sentCalls", "call", "many", { backKey: "callerId" }),
@@ -535,7 +536,26 @@ export const MODELS: Record<string, ModelDef> = {
     },
     uniques: {},
     defaultOrder: { createdAt: "desc" },
-    relations: [relation("author", "user", "one", { ownKey: "authorId" })],
+    relations: [
+      relation("author", "user", "one", { ownKey: "authorId" }),
+      relation("likes", "storyLike", "many", { backKey: "storyId" }),
+    ],
+  },
+
+  storyLike: {
+    name: "storyLike",
+    collection: "story_likes",
+    fields: {
+      storyId: { type: "string" },
+      userId: { type: "string" },
+      createdAt: { type: "date", default: () => new Date() },
+    },
+    uniques: { storyId_userId: ["storyId", "userId"] },
+    defaultOrder: { createdAt: "desc" },
+    relations: [
+      relation("user", "user", "one", { ownKey: "userId" }),
+      relation("story", "story", "one", { ownKey: "storyId" }),
+    ],
   },
 
   follow: {

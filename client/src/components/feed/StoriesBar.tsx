@@ -17,6 +17,8 @@ interface StoriesBarProps {
   groups: StoryGroup[];
   viewer: User | null;
   onAdded: (story: Story | undefined) => void;
+  /** Mirrors a like made in the viewer back into the list the bar renders. */
+  onLiked: (storyId: string, liked: boolean, likeCount: number) => void;
 }
 
 /**
@@ -36,7 +38,7 @@ const RING_SEEN = "bg-gray-700/70";
  * Compositing and viewing were split out into StoryComposer and StoryViewer;
  * this file only owns the strip itself and which of the two is open.
  */
-export default function StoriesBar({ groups, viewer, onAdded }: StoriesBarProps) {
+export default function StoriesBar({ groups, viewer, onAdded, onLiked }: StoriesBarProps) {
   const [viewing, setViewing] = useState<{ authorId: string; startIndex: number } | null>(null);
   const [composing, setComposing] = useState(false);
   const [editing, setEditing] = useState<Story | null>(null);
@@ -159,6 +161,7 @@ export default function StoriesBar({ groups, viewer, onAdded }: StoriesBarProps)
           viewerId={viewer?.id ?? null}
           onClose={() => setViewing(null)}
           onChanged={onAdded}
+          onLiked={onLiked}
           onEdit={(story) => {
             setViewing(null);
             openComposer(story);

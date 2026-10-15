@@ -12,6 +12,8 @@ interface Props {
   onClose: () => void;
   onChanged: (story: Story | undefined) => void;
   onEdit: (story: Story) => void;
+  /** Reports a changed like so the parent list stays in sync. */
+  onLiked: (storyId: string, liked: boolean, likeCount: number) => void;
 }
 
 const DURATION_MS = 5000;
@@ -40,6 +42,7 @@ export default function StoryViewer({
   onClose,
   onChanged,
   onEdit,
+  onLiked,
 }: Props) {
   const stories = group.stories;
   const [index, setIndex] = useState(() => Math.min(startIndex, Math.max(0, stories.length - 1)));
@@ -54,6 +57,38 @@ export default function StoryViewer({
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const duration = isVideo ? MAX_AUTO_MS : DURATION_MS;
+
+  // Seeded from the story the API returned, then updated optimistically on
+  // like so the heart responds instantly. Reseeds when the story advances.
+  const [likeState, setLikeState] = useState(() => ({
+    liked: story?.liked ?? false,
+    count: story?.likeCount ?? 0,
+  }));
+  const pendingLike = useRef(false);
+
+  useEffect(() => {
+    setLikeState({ liked: story?.liked ?? false, count: story?.likeCount ?? 0 });
+  }, [index, story?.id, story?.liked, story?.likeCount]);
+
+  const toggleLike = async () => {
+    if (!story || pendingLike.current) return;
+    pendingLike.current = true;
+    const previous = likeState;
+    setLikeState(
+      previous.liked
+        ? { liked: false, count: Math.max(0, previous.count - 1) }
+        : { liked: true, count: previous.count + 1 }
+    );
+    try {
+      const { data } = await api.post<{ liked: boolean; likeCount: number }>(`/stories/${story.id}/like`);
+      setLikeState({ liked: data.liked, count: data.likeCount });
+      onLiked(story.id, data.liked, data.likeCount);
+    } catch {
+      setLikeState(previous);
+    } finally {
+      pendingLike.current = false;
+    }
+  };
 
   const goNext = useCallback(() => {
     setIndex((current) => {
@@ -241,6 +276,46 @@ export default function StoryViewer({
             aria-label="Next story"
             className="absolute inset-y-0 right-0 w-1/3 cursor-pointer"
           />
+
+          {/* Like — a heart for someone else's story, their tally for your own */}
+          {isOwn ? (
+            likeState.count > 0 && (
+              <span
+                className="glass absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full border border-white/15 px-3.5 py-1.5 text-xs font-semibold text-white shadow-elev2"
+                title={`${likeState.count} ${likeState.count === 1 ? "like" : "likes"}`}
+              >
+                <svg className="h-4 w-4 text-rose-400" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 21s-7.5-4.6-9.6-9.1C1 9.2 2.6 6 5.7 6c1.9 0 3.2 1 4.3 2.4C11 7 12.4 6 14.3 6c3.1 0 4.7 3.2 3.3 5.9C19.5 16.4 12 21 12 21z" />
+                </svg>
+                <span className="tabular">{likeState.count}</span>
+              </span>
+            )
+          ) : (
+            <button
+              onClick={() => void toggleLike()}
+              aria-pressed={likeState.liked}
+              aria-label={likeState.liked ? "Unlike story" : "Like story"}
+              title={likeState.liked ? "Unlike" : "Like"}
+              className="glass absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full border border-white/15 px-3.5 py-1.5 text-xs font-semibold text-white shadow-elev2 transition-all duration-200 ease-out hover:bg-white/20"
+            >
+              <svg
+                className={`h-4 w-4 transition-transform duration-200 ease-out ${
+                  likeState.liked ? "scale-110 text-rose-400" : ""
+                }`}
+                fill={likeState.liked ? "currentColor" : "none"}
+                stroke="currentColor"
+                strokeWidth={2}
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M12 21s-7.5-4.6-9.6-9.1C1 9.2 2.6 6 5.7 6c1.9 0 3.2 1 4.3 2.4C11 7 12.4 6 14.3 6c3.1 0 4.7 3.2 3.3 5.9C19.5 16.4 12 21 12 21z"
+                />
+              </svg>
+              {likeState.count > 0 && <span className="tabular">{likeState.count}</span>}
+            </button>
+          )}
 
           {/* Hold to pause */}
           <button

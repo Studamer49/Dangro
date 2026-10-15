@@ -51,6 +51,7 @@ model User {
   postLikes       PostLike[]
   postComments    PostComment[]  @relation("PostCommentAuthor")
   stories         Story[]        @relation("StoryAuthor")
+  storyLikes      StoryLike[]
   followers       Follow[]       @relation("FollowFollowing")
   following       Follow[]       @relation("FollowFollower")
   sentCalls       Call[]         @relation("CallCaller")
@@ -419,8 +420,24 @@ model Story {
   expiresAt DateTime
 
   author User @relation("StoryAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  likes  StoryLike[]
 
   @@map("stories")
+}
+
+/// Likes on a story. Mirrors `PostLike`: one like per user per story, and the
+/// rows are removed with the story when it expires and is swept.
+model StoryLike {
+  id        String   @id @default(uuid())
+  storyId   String
+  userId    String
+  createdAt DateTime @default(now())
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  story Story @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@unique([storyId, userId])
+  @@map("story_likes")
 }
 
 model Follow {

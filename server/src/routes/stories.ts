@@ -59,16 +59,29 @@ router.get(
         expiresAt: { gt: new Date() },
         authorId: { in: [...visibleIds] },
       },
-      include: { author: { select: { id: true, username: true, avatar: true } } },
+      include: {
+        author: { select: { id: true, username: true, avatar: true } },
+        likes: { select: { userId: true } },
+      },
       orderBy: { createdAt: "desc" },
       take: 200,
     });
 
+    // The client only needs the count and whether the viewer is one of them,
+    // so the raw like rows never leave the server.
+    type Row = (typeof stories)[number];
+    type Serialized = Omit<Row, "likes"> & { likeCount: number; liked: boolean };
+    const serialize = (story: Row): Serialized => {
+      const { likes, ...rest } = story;
+      return {
+        ...rest,
+        likeCount: likes.length,
+        liked: likes.some((like) => like.userId === userId),
+      };
+    };
+
     const order: string[] = [];
-    const byAuthor = new Map<
-      string,
-      { author: (typeof stories)[number]["author"]; stories: (typeof stories)[number][] }
-    >();
+    const byAuthor = new Map<string, { author: Row["author"]; stories: Serialized[] }>();
     for (const story of stories) {
       // A story whose author could not be loaded (deleted account) would
       // otherwise produce a group with a null author, which the client then
@@ -80,10 +93,36 @@ router.get(
         byAuthor.set(story.authorId, group);
         order.push(story.authorId);
       }
-      group.stories.push(story);
+      group.stories.push(serialize(story));
     }
 
     ok(res, { stories: order.map((authorId) => byAuthor.get(authorId)!) });
+  })
+);
+
+router.post(
+  "/:id/like",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const storyId = paramId(req.params.id, "story id");
+
+    const story = await prisma.story.findUnique({ where: { id: storyId }, select: { id: true } });
+    if (!story) throw AppError.of("NOT_FOUND", "Story not found");
+
+    const existing = await prisma.storyLike.findUnique({
+      where: { storyId_userId: { storyId, userId } },
+    });
+
+    if (existing) {
+      await prisma.storyLike.delete({ where: { id: existing.id } });
+    } else {
+      await prisma.storyLike.create({ data: { storyId, userId } });
+    }
+
+    const likeCount = await prisma.storyLike.count({ where: { storyId } });
+
+    ok(res, { liked: !existing, likeCount });
   })
 );
 
