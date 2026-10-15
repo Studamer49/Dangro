@@ -2,7 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import api, { apiErrorMessage } from "@/lib/api";
 import { useToast } from "@/stores/toastStore";
-import type { Post, Server, User } from "@/types";
+import { useAuthStore } from "@/stores/authStore";
+import PostDetailModal from "@/components/feed/PostDetailModal";
+import type { Post, PostLike, Server, User } from "@/types";
 
 const MIN_QUERY_LENGTH = 2;
 const SEARCH_DEBOUNCE_MS = 300;
@@ -28,10 +30,12 @@ function ErrorBlock({ message, onRetry }: { message: string; onRetry: () => void
 
 export default function ExplorePage() {
   const toast = useToast();
+  const currentUser = useAuthStore((s) => s.user);
 
   const [posts, setPosts] = useState<Post[]>([]);
   const [postsLoading, setPostsLoading] = useState(true);
   const [postsError, setPostsError] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const [servers, setServers] = useState<Server[]>([]);
   const [serversLoading, setServersLoading] = useState(true);
@@ -135,7 +139,71 @@ export default function ExplorePage() {
     }
   };
 
+  const handleLike = async (post: Post) => {
+    const wasLiked = (post.likes?.length ?? 0) > 0;
+    const previousCount = post._count?.likes ?? 0;
+    const viewerLike: PostLike = {
+      id: `optimistic-${post.id}`,
+      postId: post.id,
+      userId: currentUser?.id ?? "",
+      createdAt: new Date().toISOString(),
+    };
+    const apply = (liked: boolean, count: number) =>
+      setPosts((prev) =>
+        prev.map((entry) =>
+          entry.id === post.id
+            ? {
+                ...entry,
+                likes: liked ? [viewerLike] : [],
+                _count: { likes: count, comments: entry._count?.comments ?? 0 },
+              }
+            : entry
+        )
+      );
+
+    apply(!wasLiked, Math.max(0, previousCount + (wasLiked ? -1 : 1)));
+    try {
+      const { data } = await api.post(`/posts/${post.id}/like`);
+      apply(Boolean(data.liked), data.likeCount);
+    } catch (err) {
+      apply(wasLiked, previousCount);
+      toast.error(apiErrorMessage(err));
+    }
+  };
+
+  const handleDelete = async (postId: string) => {
+    try {
+      await api.delete(`/posts/${postId}`);
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+      setExpandedId((current) => (current === postId ? null : current));
+      toast.success("Post deleted");
+    } catch (err) {
+      toast.error(apiErrorMessage(err));
+    }
+  };
+
+  const handleCommentCountChange = (postId: string, delta: number) => {
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              _count: {
+                likes: p._count?.likes ?? 0,
+                comments: Math.max(0, (p._count?.comments ?? 0) + delta),
+              },
+            }
+          : p
+      )
+    );
+  };
+
+  const handleEdit = (updated: Post) => {
+    setPosts((prev) => prev.map((entry) => (entry.id === updated.id ? { ...entry, ...updated } : entry)));
+  };
+
   const trimmedQuery = query.trim();
+  const expandedPost = posts.find((post) => post.id === expandedId) ?? null;
 
   return (
     <div className="flex h-full flex-col overflow-y-auto">
@@ -305,6 +373,7 @@ export default function ExplorePage() {
               {posts.map((post) => (
                 <div
                   key={post.id}
+                  onClick={() => setExpandedId(post.id)}
                   className="group relative aspect-square cursor-pointer overflow-hidden rounded-xl bg-gray-800/50 ring-1 ring-gray-700/40 transition-all duration-200 ease-out hover:shadow-elev2 hover:ring-accent-400/40"
                 >
                   {post.media?.[0] ? (
@@ -338,6 +407,19 @@ export default function ExplorePage() {
           )}
         </section>
       </div>
+
+      {expandedPost && (
+        <PostDetailModal
+          key={expandedPost.id}
+          post={expandedPost}
+          viewer={currentUser}
+          onClose={() => setExpandedId(null)}
+          onLike={(target) => void handleLike(target)}
+          onDelete={(postId) => void handleDelete(postId)}
+          onEdit={handleEdit}
+          onCommentCountChange={handleCommentCountChange}
+        />
+      )}
     </div>
   );
 }
