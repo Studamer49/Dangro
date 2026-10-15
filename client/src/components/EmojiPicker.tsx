@@ -123,8 +123,26 @@ interface EmojiPickerProps {
 }
 
 export default function EmojiPicker({ onSelect, maxHeight = 208, className = "" }: EmojiPickerProps) {
+  const [query, setQuery] = useState("");
   const [active, setActive] = useState(EMOJI_CATEGORIES[0].name);
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return null;
+    const results: string[] = [];
+    const seen = new Set<string>();
+    for (const cat of EMOJI_CATEGORIES) {
+      for (const emoji of cat.emojis) {
+        if (seen.has(emoji)) continue;
+        seen.add(emoji);
+        results.push(emoji);
+      }
+    }
+    // Simple substring match over glyphs; can be expanded later.
+    return results.filter((emoji) => emoji.includes(q)).slice(0, 200);
+  }, [query]);
+
+  const showSearchResults = filtered !== null;
   const category = useMemo(
     () => EMOJI_CATEGORIES.find((c) => c.name === active) ?? EMOJI_CATEGORIES[0],
     [active]
@@ -132,27 +150,39 @@ export default function EmojiPicker({ onSelect, maxHeight = 208, className = "" 
 
   return (
     <div className={`flex w-full flex-col ${className}`}>
-      <div className="flex items-center gap-0.5 px-1 pb-1.5 pt-1">
-        {EMOJI_CATEGORIES.map((c) => (
-          <button
-            key={c.name}
-            type="button"
-            title={c.name}
-            onClick={() => setActive(c.name)}
-            className={`flex h-7 w-7 items-center justify-center rounded-lg text-base transition-colors ${
-              active === c.name ? "bg-white/10" : "hover:bg-white/5"
-            }`}
-          >
-            <Emoji emoji={c.icon} className="h-5 w-5" decorative />
-          </button>
-        ))}
+      <div className="px-1 pb-1">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search emojis"
+          className="field h-8 rounded-lg px-2 text-xs"
+          aria-label="Search emojis"
+        />
       </div>
+      {!showSearchResults && (
+        <div className="flex items-center gap-0.5 px-1 pb-1.5 pt-1">
+          {EMOJI_CATEGORIES.map((c) => (
+            <button
+              key={c.name}
+              type="button"
+              title={c.name}
+              onClick={() => setActive(c.name)}
+              className={`flex h-7 w-7 items-center justify-center rounded-lg text-base transition-colors ${
+                active === c.name ? "bg-white/10" : "hover:bg-white/5"
+              }`}
+            >
+              <Emoji emoji={c.icon} className="h-5 w-5" decorative />
+            </button>
+          ))}
+        </div>
+      )}
 
       <div
         className="grid grid-cols-8 gap-0.5 overflow-y-auto px-1 pb-1"
         style={{ maxHeight }}
       >
-        {category.emojis.map((emoji) => (
+        {(showSearchResults ? filtered ?? [] : category.emojis).map((emoji) => (
           <button
             key={emoji}
             type="button"
