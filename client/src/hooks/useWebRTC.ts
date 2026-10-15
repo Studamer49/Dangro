@@ -84,6 +84,15 @@ export function useWebRTC() {
   const assembledRemoteRef = useRef<MediaStream | null>(null);
   /** The display-capture stream while sharing, so it can be stopped cleanly. */
   const screenStreamRef = useRef<MediaStream | null>(null);
+  /**
+   * The remote screen, assembled separately from the camera.
+   *
+   * A screen share travels on its own video transceiver, so it arrives as a
+   * second `ontrack` rather than replacing the camera. Keeping it in its own
+   * stream is what lets the viewer paint the screen large and the person in a
+   * corner tile — and swap the two on a tap.
+   */
+  const assembledRemoteScreenRef = useRef<MediaStream | null>(null);
   const {
     isInCall,
     isCaller,
@@ -91,6 +100,8 @@ export function useWebRTC() {
     targetUserId,
     setLocalStream,
     setRemoteStream,
+    setLocalScreenStream,
+    setRemoteScreenStream,
     setConnectionStatus,
     setScreenSharing,
     endCall,
@@ -103,6 +114,7 @@ export function useWebRTC() {
     peerConnectionRef.current?.close();
     remoteDescriptionReadyRef.current = false;
     assembledRemoteRef.current = null;
+    assembledRemoteScreenRef.current = null;
 
     const pc = new RTCPeerConnection(ICE_SERVERS);
 
@@ -117,12 +129,42 @@ export function useWebRTC() {
     };
 
     pc.ontrack = (event) => {
+      const track = event.track;
+      const [stream] = event.streams ?? [];
+
+      // A screen share is video that travels without the participant's audio,
+      // on its own transceiver. Routing it to a separate stream is what lets
+      // the viewer paint the screen and the person as two tiles that can swap.
+      const isScreenVideo =
+        track.kind === "video" && (!stream || stream.getAudioTracks().length === 0);
+
+      if (isScreenVideo) {
+        let assembled = assembledRemoteScreenRef.current;
+        if (!assembled) {
+          assembled = new MediaStream();
+          assembledRemoteScreenRef.current = assembled;
+        }
+        if (!assembled.getTracks().some((t) => t.id === track.id)) {
+          assembled.addTrack(track);
+        }
+        // The transceiver exists from the moment the call connects, but the
+        // screen only becomes real once the sender unmutes. Publish `null`
+        // while muted so the UI does not show an empty share.
+        const publish = () => {
+          setRemoteScreenStream(track.muted ? null : assembled);
+          if (!track.muted) setConnectionStatus(null);
+        };
+        track.onmute = publish;
+        track.onunmute = publish;
+        publish();
+        return;
+      }
+
       // `event.streams[0]` is the happy path, but it is not guaranteed. A track
       // delivered with no stream (an engine that does not populate it, or a
       // transceiver added without one) used to be dropped here, so media was
       // flowing and `remoteStream` stayed null forever — which presents as
       // "I can see myself but not them, and nobody can hear anything".
-      const [stream] = event.streams ?? [];
       if (stream) {
         assembledRemoteRef.current = null;
         setRemoteStream(stream);
@@ -135,8 +177,8 @@ export function useWebRTC() {
         assembled = new MediaStream();
         assembledRemoteRef.current = assembled;
       }
-      if (!assembled.getTracks().some((track) => track.id === event.track.id)) {
-        assembled.addTrack(event.track);
+      if (!assembled.getTracks().some((t) => t.id === track.id)) {
+        assembled.addTrack(track);
       }
       setRemoteStream(assembled);
       setConnectionStatus(null);
@@ -180,7 +222,22 @@ export function useWebRTC() {
 
     peerConnectionRef.current = pc;
     return pc;
-  }, [targetUserId, setRemoteStream, setConnectionStatus, endCall]);
+  }, [targetUserId, setRemoteStream, setRemoteScreenStream, setConnectionStatus, endCall]);
+
+  /**
+   * The sender reserved for the screen share.
+   *
+   * A call always negotiates one extra video transceiver beyond the camera (and
+   * one even for a voice call, which has no camera at all). Screen sharing is
+   * then a `replaceTrack` on that sender — no renegotiation, and the camera
+   * keeps flowing at the same time.
+   */
+  const getScreenSender = useCallback((pc: RTCPeerConnection) => {
+    const videoTransceivers = pc
+      .getTransceivers()
+      .filter((t) => (t.sender.track?.kind ?? t.receiver.track?.kind) === "video");
+    return videoTransceivers.length ? videoTransceivers[videoTransceivers.length - 1].sender : null;
+  }, []);
 
   const startLocalStream = useCallback(async (video: boolean) => {
     const existing = useCallStore.getState().localStream;
@@ -251,11 +308,10 @@ export function useWebRTC() {
     if (!stillInCall()) return;
     const pc = createPeerConnection();
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
-    // A voice call still reserves a video m-line so the screen-share button
-    // can send video later via replaceTrack without a renegotiation round.
-    if (callType === "voice") {
-      pc.addTransceiver("video", { direction: "sendrecv" });
-    }
+    // Reserve a video m-line for the screen share. It exists on every call — a
+    // voice call has no camera, but the share still needs somewhere to send its
+    // video. `getScreenSender` picks it out as the last video transceiver.
+    pc.addTransceiver("video", { direction: "sendrecv" });
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     if (targetUserId) {
@@ -269,6 +325,9 @@ export function useWebRTC() {
     if (!stillInCall()) return;
     const pc = createPeerConnection();
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
+    // Mirror the caller's reserved screen m-line so the share sender exists on
+    // both ends and `replaceTrack` has a home when this side shares.
+    pc.addTransceiver("video", { direction: "sendrecv" });
     await pc.setRemoteDescription(new RTCSessionDescription(offer));
     remoteDescriptionReadyRef.current = true;
     // Only now can the queued candidates be applied.
@@ -317,6 +376,7 @@ export function useWebRTC() {
     pendingCandidatesRef.current = [];
     remoteDescriptionReadyRef.current = false;
     assembledRemoteRef.current = null;
+    assembledRemoteScreenRef.current = null;
     if (screenStreamRef.current) {
       screenStreamRef.current.getTracks().forEach((track) => track.stop());
       screenStreamRef.current = null;
@@ -331,37 +391,33 @@ export function useWebRTC() {
     }
     setLocalStream(null);
     setRemoteStream(null);
+    setLocalScreenStream(null);
+    setRemoteScreenStream(null);
     setConnectionStatus(null);
     setScreenSharing(false);
-  }, [setLocalStream, setRemoteStream, setConnectionStatus, setScreenSharing]);
+  }, [setLocalStream, setRemoteStream, setLocalScreenStream, setRemoteScreenStream, setConnectionStatus, setScreenSharing]);
 
   const [callError, setCallError] = useState<string | null>(null);
 
   /**
-   * Swaps the outgoing video track for the user's screen (or back to the
-   * camera) without renegotiating the connection. The peer connection already
-   * has a video sender (the camera track, or the reserved transceiver on a
-   * voice call), so replaceTrack keeps the existing m-line intact.
+   * Puts the user's screen on the reserved video sender (or clears it).
+   *
+   * The camera is sent on its own sender and is left alone, so the other side
+   * receives the person and the screen as two separate tracks at once — the
+   * two tiles the viewer can swap. Starting or stopping a share is a
+   * `replaceTrack`, so the connection is never renegotiated.
    */
   const toggleScreenShare = useCallback(async () => {
     const pc = peerConnectionRef.current;
-    const { isScreenSharing, localStream, setScreenSharing } = useCallStore.getState();
+    const { isScreenSharing, setScreenSharing } = useCallStore.getState();
     if (!pc) return;
-
-    // The camera track lives on a sender; a voice call instead has an idle
-    // video transceiver, whose sender is where the screen track must go.
-    const videoSender =
-      pc.getSenders().find((s) => s.track?.kind === "video") ??
-      pc.getTransceivers().find((t) => t.receiver.track?.kind === "video")?.sender;
+    const screenSender = getScreenSender(pc);
 
     if (isScreenSharing) {
-      // Swap back to the camera track that was saved when sharing started.
-      const cameraTrack = localStream?.getVideoTracks()[0];
-      if (videoSender && cameraTrack) {
-        await videoSender.replaceTrack(cameraTrack);
-      }
       screenStreamRef.current?.getTracks().forEach((track) => track.stop());
       screenStreamRef.current = null;
+      useCallStore.getState().setLocalScreenStream(null);
+      if (screenSender) await screenSender.replaceTrack(null);
       setScreenSharing(false);
       return;
     }
@@ -371,25 +427,21 @@ export function useWebRTC() {
       const screenTrack = screenStream.getVideoTracks()[0];
       if (!screenTrack) return;
 
-      if (videoSender) {
-        await videoSender.replaceTrack(screenTrack);
-      } else if (localStream) {
+      if (screenSender) {
+        await screenSender.replaceTrack(screenTrack);
+      } else if (useCallStore.getState().localStream) {
         pc.addTrack(screenTrack, screenStream);
       }
       screenStreamRef.current = screenStream;
+      setLocalScreenStream(screenStream);
       setScreenSharing(true);
 
       // The user can also stop sharing from the browser's own "Stop sharing"
       // bar; listen for that so the state does not go stale.
       screenTrack.onended = () => {
-        const camera = useCallStore.getState().localStream?.getVideoTracks()[0];
-        const sender = peerConnectionRef.current
-          ?.getSenders()
-          .find((s) => s.track?.kind === "video");
-        if (sender && camera) {
-          sender.replaceTrack(camera).catch(() => undefined);
-        }
+        screenSender?.replaceTrack(null).catch(() => undefined);
         screenStreamRef.current = null;
+        useCallStore.getState().setLocalScreenStream(null);
         useCallStore.getState().setScreenSharing(false);
       };
     } catch (err) {
@@ -397,7 +449,7 @@ export function useWebRTC() {
       if (err instanceof DOMException && err.name === "NotAllowedError") return;
       console.warn("[webrtc] screen share failed", err);
     }
-  }, []);
+  }, [getScreenSender]);
 
   /** Ends the call and surfaces why, instead of rejecting into the void. */
   const failCall = useCallback((err: unknown) => {

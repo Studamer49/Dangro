@@ -9,12 +9,11 @@ import { uploadErrorMessage, uploadMedia } from "@/lib/upload";
 import { useToast } from "@/stores/toastStore";
 import Avatar from "@/components/Avatar";
 import ContextMenu, { ContextMenuItem, ContextMenuSeparator } from "@/components/ContextMenu";
-import EmojiPicker, { EMOJI_CATEGORIES } from "@/components/EmojiPicker";
+import EmojiPicker from "@/components/EmojiPicker";
 import Emoji from "@/components/Emoji";
 import ChatDayDivider from "@/components/ChatDayDivider";
+import { replaceEmojiShortcodes } from "@/lib/emojiData";
 import type { Message, Reaction } from "@/types";
-
-const EMOJI_SHORTCODE_RE = /;;([A-Za-z0-9_+\-]+);;/g;
 
 export default function ChatArea() {
   const { channelId } = useParams();
@@ -199,11 +198,7 @@ export default function ChatArea() {
     const socket = getSocket();
     socket.emit("typing_stop", { channelId });
 
-    let content = newMessage;
-    content = content.replace(EMOJI_SHORTCODE_RE, (_m, name) => {
-      const all = EMOJI_CATEGORIES.flatMap((c) => c.emojis);
-      return all.find((e) => e === name || e === `:${name}:`) ?? _m;
-    });
+    const content = replaceEmojiShortcodes(newMessage);
     const tempId = `temp-${Date.now()}`;
     setNewMessage("");
     setReplyTo(null);

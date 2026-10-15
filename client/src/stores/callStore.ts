@@ -19,6 +19,13 @@ interface CallState {
   incomingCall: IncomingCall | null;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
+  /**
+   * The screen being shared, kept separate from the participant streams so the
+   * viewer can show the screen large and the person in a corner tile — and
+   * swap the two on a tap.
+   */
+  localScreenStream: MediaStream | null;
+  remoteScreenStream: MediaStream | null;
   isMuted: boolean;
   isVideoOff: boolean;
   isScreenSharing: boolean;
@@ -39,6 +46,8 @@ interface CallState {
   resetCall: () => void;
   setLocalStream: (stream: MediaStream | null) => void;
   setRemoteStream: (stream: MediaStream | null) => void;
+  setLocalScreenStream: (stream: MediaStream | null) => void;
+  setRemoteScreenStream: (stream: MediaStream | null) => void;
   setConnectionStatus: (status: string | null) => void;
   setScreenSharing: (sharing: boolean) => void;
   toggleMute: () => void;
@@ -56,6 +65,8 @@ export const useCallStore = create<CallState>((set, get) => ({
   incomingCall: null,
   localStream: null,
   remoteStream: null,
+  localScreenStream: null,
+  remoteScreenStream: null,
   isMuted: false,
   isVideoOff: false,
   isScreenSharing: false,
@@ -117,10 +128,9 @@ export const useCallStore = create<CallState>((set, get) => ({
   },
 
   resetCall: () => {
-    const { localStream } = get();
-    if (localStream) {
-      localStream.getTracks().forEach((track) => track.stop());
-    }
+    const { localStream, localScreenStream } = get();
+    localStream?.getTracks().forEach((track) => track.stop());
+    localScreenStream?.getTracks().forEach((track) => track.stop());
     set({
       isInCall: false,
       isCaller: false,
@@ -131,14 +141,19 @@ export const useCallStore = create<CallState>((set, get) => ({
       incomingCall: null,
       localStream: null,
       remoteStream: null,
+      localScreenStream: null,
+      remoteScreenStream: null,
       isMuted: false,
       isVideoOff: false,
+      isScreenSharing: false,
       connectionStatus: null,
     });
   },
 
   setLocalStream: (stream) => set({ localStream: stream }),
   setRemoteStream: (stream) => set({ remoteStream: stream }),
+  setLocalScreenStream: (stream) => set({ localScreenStream: stream }),
+  setRemoteScreenStream: (stream) => set({ remoteScreenStream: stream }),
   setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
   setScreenSharing: (isScreenSharing) => set({ isScreenSharing }),
 

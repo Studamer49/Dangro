@@ -6,6 +6,42 @@ import { useToast } from "@/stores/toastStore";
 import { startRingtone } from "@/lib/ringtone";
 import Avatar from "@/components/Avatar";
 
+/**
+ * A video element bound to a stream.
+ *
+ * Binding through a ref-effect rather than `srcObject={stream}` keeps the
+ * element from tearing down the decoder on every render, and lets the same
+ * slot show different streams as the screen and the person swap places.
+ */
+function StreamVideo({
+  stream,
+  muted = true,
+  mirror = false,
+  fit = "cover",
+  className = "",
+}: {
+  stream: MediaStream | null;
+  muted?: boolean;
+  mirror?: boolean;
+  fit?: "cover" | "contain";
+  className?: string;
+}) {
+  const ref = useRef<HTMLVideoElement>(null);
+  useEffect(() => {
+    if (ref.current) ref.current.srcObject = stream;
+  }, [stream]);
+  return (
+    <video
+      ref={ref}
+      autoPlay
+      playsInline
+      muted={muted}
+      className={`${fit === "contain" ? "object-contain" : "object-cover"} ${className}`}
+      style={mirror ? { transform: "scaleX(-1)" } : undefined}
+    />
+  );
+}
+
 export default function VideoCallModal() {
   const {
     isInCall,
@@ -14,6 +50,8 @@ export default function VideoCallModal() {
     targetUser,
     localStream,
     remoteStream,
+    localScreenStream,
+    remoteScreenStream,
     isMuted,
     isVideoOff,
     isScreenSharing,
@@ -25,13 +63,12 @@ export default function VideoCallModal() {
 
   const toast = useToast();
   const { callError, toggleScreenShare } = useWebRTC();
-  const localVideoRef = useRef<HTMLVideoElement>(null);
-  const remoteVideoRef = useRef<HTMLVideoElement>(null);
-  // Remote audio is played through its own element, not the remote <video>,
-  // so a voice-only call (which renders no video) still produces sound.
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const [volume, setVolume] = useState(1);
   const [needsAudioTap, setNeedsAudioTap] = useState(false);
+  // Which of the two sharing tiles is shown large. Reset whenever a share
+  // starts or stops so the screen is always the default focus.
+  const [swapped, setSwapped] = useState(false);
 
   // useToast() returns a new wrapper object every render. Depending on it
   // here would re-run this effect on every render and, with a persistent
@@ -49,15 +86,6 @@ export default function VideoCallModal() {
   }, [callError]);
 
   useEffect(() => {
-    if (localVideoRef.current && localStream) {
-      localVideoRef.current.srcObject = localStream;
-    }
-  }, [localStream]);
-
-  useEffect(() => {
-    if (remoteVideoRef.current && remoteStream) {
-      remoteVideoRef.current.srcObject = remoteStream;
-    }
     const audio = remoteAudioRef.current;
     if (audio && remoteStream) {
       audio.srcObject = remoteStream;
@@ -79,6 +107,12 @@ export default function VideoCallModal() {
     return () => stop();
   }, [isInCall, isCaller, remoteStream]);
 
+  const remoteSharing = !!remoteScreenStream;
+  const localSharing = isScreenSharing && !!localScreenStream;
+  useEffect(() => {
+    setSwapped(false);
+  }, [remoteSharing, localSharing]);
+
   if (!isInCall) return null;
 
   const isVideoCall = callType === "video";
@@ -88,6 +122,31 @@ export default function VideoCallModal() {
   // black rectangle, so show the avatar instead — the separate audio element
   // still carries the sound either way.
   const remoteHasVideo = !!remoteStream?.getVideoTracks().length;
+
+  const anySharing = remoteSharing || localSharing;
+  const sharedScreen = remoteSharing ? remoteScreenStream : localSharing ? localScreenStream : null;
+  const sharerCamera = remoteSharing ? remoteStream : localSharing ? localStream : null;
+  // Whether the camera on screen belongs to this user (so it stays mirrored,
+  // like a selfie). The other person's camera is never mirrored.
+  const sharerCameraIsLocal = !remoteSharing && localSharing;
+  // When sharing, the screen is the focus and the person sits in the corner —
+  // unless the viewer tapped to swap them.
+  const stageStream = anySharing ? (swapped ? sharerCamera : sharedScreen) : remoteStream;
+  const cornerStream = anySharing
+    ? swapped
+      ? sharedScreen
+      : sharerCamera
+    : isVideoCall
+    ? localStream
+    : null;
+  const stageIsCamera = anySharing && swapped;
+  const cornerIsCamera = !anySharing || !swapped;
+  const stageIsLocalCamera = stageIsCamera && sharerCameraIsLocal;
+  const cornerIsLocalCamera = cornerIsCamera && (!anySharing || sharerCameraIsLocal);
+  // A voice call carries no camera, so a corner tile that would show one stays
+  // empty rather than painting a black rectangle.
+  const stageHasVideo = !!stageStream?.getVideoTracks().length;
+  const cornerHasVideo = !!cornerStream?.getVideoTracks().length;
 
   return createPortal(
     <div className="fixed inset-0 layer-call flex items-center justify-center bg-gray-950/80 p-4 backdrop-blur-sm animate-overlay-in">
@@ -101,13 +160,12 @@ export default function VideoCallModal() {
       */}
       <div className="glass-panel shadow-elev3 flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-3xl">
         <div className="relative flex-1 overflow-hidden bg-gray-950/70">
-          {isConnected && isVideoCall && remoteHasVideo ? (
-            <video
-              ref={remoteVideoRef}
-              autoPlay
-              playsInline
-              muted
-              className="h-full w-full object-cover"
+          {stageStream && stageHasVideo ? (
+            <StreamVideo
+              stream={stageStream}
+              fit={stageIsCamera ? "cover" : "contain"}
+              mirror={stageIsLocalCamera}
+              className="h-full w-full"
             />
           ) : (
             <div className="relative flex h-full items-center justify-center overflow-hidden">
@@ -131,6 +189,8 @@ export default function VideoCallModal() {
                     ? isCaller
                       ? "Ringing..."
                       : "Connecting..."
+                    : anySharing
+                    ? "Screen shared"
                     : !isVideoCall
                     ? "Voice call"
                     : remoteHasVideo
@@ -141,17 +201,22 @@ export default function VideoCallModal() {
             </div>
           )}
 
-          {localStream && isVideoCall && (
-            <div className="absolute right-4 top-4 h-40 w-32 overflow-hidden rounded-2xl border border-white/15 bg-gray-950/60 shadow-elev2">
-              <video
-                ref={localVideoRef}
-                autoPlay
-                playsInline
-                muted
-                className="h-full w-full object-cover"
-                style={{ transform: "scaleX(-1)" }}
+          {cornerStream && cornerHasVideo && (
+            <button
+              type="button"
+              onClick={() => anySharing && setSwapped((s) => !s)}
+              title={anySharing ? "Swap screen and camera" : undefined}
+              className={`absolute right-4 top-4 h-40 w-32 overflow-hidden rounded-2xl border border-white/15 bg-gray-950/60 shadow-elev2 ${
+                anySharing ? "cursor-pointer hover:border-white/40" : "cursor-default"
+              }`}
+            >
+              <StreamVideo
+                stream={cornerStream}
+                fit={cornerIsCamera ? "cover" : "contain"}
+                mirror={cornerIsLocalCamera}
+                className="h-full w-full"
               />
-            </div>
+            </button>
           )}
 
           {/*
