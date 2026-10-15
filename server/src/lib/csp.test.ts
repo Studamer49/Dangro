@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import request from "supertest";
 import { app } from "../index.js";
-import { buildCspDirectives, mediaOrigin } from "./csp.js";
+import { buildCspDirectives, mediaOrigin, TWEMOJI_ORIGIN } from "./csp.js";
 
 /**
  * Regression tests for the Content-Security-Policy.
@@ -75,9 +75,10 @@ describe("buildCspDirectives", () => {
   it("does not widen img-src beyond the origins the app actually uses", () => {
     const directives = buildCspDirectives("");
     expect(directives["img-src"]).not.toContain("*");
-    // 'self', data:, blob:, and the Cloudinary delivery host. Nothing else.
-    expect(directives["img-src"]).toHaveLength(4);
+    // 'self', data:, blob:, the Cloudinary delivery host and the Twemoji CDN.
+    expect(directives["img-src"]).toHaveLength(5);
     expect(directives["img-src"]).toContain("https://res.cloudinary.com");
+    expect(directives["img-src"]).toContain(TWEMOJI_ORIGIN);
   });
 
   it("allows the Cloudinary delivery host even with no media host configured", () => {

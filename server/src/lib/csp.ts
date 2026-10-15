@@ -2,6 +2,9 @@ import helmet from "helmet";
 import { config } from "../config.js";
 import { publicOrigin } from "./publicHost.js";
 
+/** Public origin serving the Twemoji artwork used for reaction emojis. */
+export const TWEMOJI_ORIGIN = "https://cdn.jsdelivr.net";
+
 /** Whatever shape helmet's directive map uses for this version. */
 type HelmetDirectives = ReturnType<typeof helmet.contentSecurityPolicy.getDefaultDirectives>;
 
@@ -73,6 +76,11 @@ export function buildCspDirectives(mediaPublicUrl: string): HelmetDirectives {
   const delivery = config.cloudinary.deliveryHost;
   directives["img-src"] = withSource(directives["img-src"], delivery);
   directives["media-src"] = withSource(directives["media-src"], delivery);
+
+  // Reactions render Discord's Twemoji artwork from a fixed public jsDelivr
+  // origin. Like the delivery host it is safe to name unconditionally, and
+  // omitting it would block every emoji image while the picker still worked.
+  directives["img-src"] = withSource(directives["img-src"], TWEMOJI_ORIGIN);
 
   return directives;
 }

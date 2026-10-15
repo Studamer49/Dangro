@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import Emoji from "@/components/Emoji";
 
 /**
  * A self-contained, dependency-free emoji picker. The app already avoids
@@ -142,7 +143,7 @@ export default function EmojiPicker({ onSelect, maxHeight = 208, className = "" 
               active === c.name ? "bg-white/10" : "hover:bg-white/5"
             }`}
           >
-            {c.icon}
+            <Emoji emoji={c.icon} className="h-5 w-5" decorative />
           </button>
         ))}
       </div>
@@ -156,9 +157,9 @@ export default function EmojiPicker({ onSelect, maxHeight = 208, className = "" 
             key={emoji}
             type="button"
             onClick={() => onSelect(emoji)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-lg leading-none transition-colors hover:bg-white/10"
+            className="flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-white/10"
           >
-            {emoji}
+            <Emoji emoji={emoji} className="h-6 w-6" />
           </button>
         ))}
       </div>

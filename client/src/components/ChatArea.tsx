@@ -7,6 +7,7 @@ import { scrollBehavior } from "@/lib/motion";
 import Avatar from "@/components/Avatar";
 import ContextMenu, { ContextMenuItem, ContextMenuSeparator } from "@/components/ContextMenu";
 import EmojiPicker from "@/components/EmojiPicker";
+import Emoji from "@/components/Emoji";
 import type { Message, Reaction } from "@/types";
 
 export default function ChatArea() {
@@ -431,7 +432,7 @@ export default function ChatArea() {
                               : "border-gray-700 bg-gray-800/60 text-gray-400 hover:border-gray-600 hover:text-gray-200"
                           }`}
                         >
-                          {reaction.emoji}
+                          <Emoji emoji={reaction.emoji} className="h-4 w-4" />
                         </button>
                       ))}
                     </div>
@@ -445,10 +446,10 @@ export default function ChatArea() {
                         <button
                           key={emoji}
                           onClick={() => toggleReaction(message.id, emoji)}
-                          className="icon-btn !h-7 !w-7 text-base"
+                          className="icon-btn !h-7 !w-7"
                           title={`React ${emoji}`}
                         >
-                          {emoji}
+                          <Emoji emoji={emoji} className="h-5 w-5" decorative />
                         </button>
                       ))}
                       <button

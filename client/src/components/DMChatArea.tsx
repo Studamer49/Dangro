@@ -10,6 +10,7 @@ import Avatar from "@/components/Avatar";
 import ContextMenu, { ContextMenuItem, ContextMenuSeparator } from "@/components/ContextMenu";
 import UserContextMenu from "@/components/UserContextMenu";
 import EmojiPicker from "@/components/EmojiPicker";
+import Emoji from "@/components/Emoji";
 import { useToast } from "@/stores/toastStore";
 import { useDmPrefsStore } from "@/stores/dmPrefsStore";
 import { useBlocksStore } from "@/stores/blocksStore";
@@ -798,7 +799,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
                                 : "border-gray-700 bg-gray-800/60 text-gray-400 hover:border-gray-600 hover:text-gray-200"
                             }`}
                           >
-                            {reaction.emoji}
+                            <Emoji emoji={reaction.emoji} className="h-4 w-4" />
                           </button>
                         ))}
                       </div>
