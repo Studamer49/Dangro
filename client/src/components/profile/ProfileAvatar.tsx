@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Media from "@/components/Media";
 
 interface ProfileAvatarProps {
   username: string;
@@ -32,7 +33,7 @@ export default function ProfileAvatar({
       className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-accent-500 to-accent-700 font-bold text-white ${className}`}
     >
       {avatar && !failed ? (
-        <img
+        <Media
           src={avatar}
           alt={username}
           onError={() => setFailed(true)}

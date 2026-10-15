@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import Modal from "@/components/Modal";
+import Media from "@/components/Media";
 import RoleEditor from "@/components/server/RoleEditor";
 import api, { apiErrorMessage } from "@/lib/api";
 import { uploadErrorMessage, uploadMedia } from "@/lib/upload";
@@ -46,13 +47,16 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
   const [tab, setTab] = useState<Tab>("overview");
   const [name, setName] = useState(server.name);
   const [icon, setIcon] = useState(server.icon);
+  const [banner, setBanner] = useState(server.banner ?? null);
   const [description, setDescription] = useState(server.description ?? "");
   const [members, setMembers] = useState<Member[]>([]);
   const [bans, setBans] = useState<Ban[]>([]);
   const [busy, setBusy] = useState(false);
   const [uploadingIcon, setUploadingIcon] = useState(false);
+  const [uploadingBanner, setUploadingBanner] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const iconInputRef = useRef<HTMLInputElement>(null);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
 
   const isOwner = myRole === "owner";
 
@@ -118,7 +122,7 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
   const saveProfile = async () => {
     setBusy(true);
     try {
-      const { data } = await api.patch(`/servers/${server.id}`, { name, description, icon });
+      const { data } = await api.patch(`/servers/${server.id}`, { name, description, icon, banner });
       onSaved(data.server);
       toast.success("Server updated");
     } catch (err) {
@@ -141,6 +145,21 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
       toast.error(uploadErrorMessage(err, "Could not upload the server icon"));
     } finally {
       setUploadingIcon(false);
+    }
+  };
+
+  const onBannerPicked = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setUploadingBanner(true);
+    try {
+      const uploaded = await uploadMedia(file);
+      setBanner(uploaded.url);
+    } catch (err) {
+      toast.error(uploadErrorMessage(err, "Could not upload the server banner"));
+    } finally {
+      setUploadingBanner(false);
     }
   };
 
@@ -271,7 +290,7 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
             <>
               <div className="flex items-center gap-4">
                 {icon ? (
-                  <img src={icon} alt={server.name} className="h-16 w-16 rounded-2xl object-cover" />
+                  <Media src={icon} alt={server.name} className="h-16 w-16 rounded-2xl object-cover" />
                 ) : (
                   <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-800 text-2xl font-bold text-white">
                     {server.name?.[0]?.toUpperCase() ?? "?"}
@@ -306,6 +325,44 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
                     onChange={onIconPicked}
                   />
                 </div>
+              </div>
+              <div>
+                <span className="field-label">Server banner</span>
+                <div className="aspect-[5/1] w-full overflow-hidden rounded-xl border border-gray-800/70 bg-gray-900/60">
+                  {banner ? (
+                    <Media src={banner} alt={`${server.name} banner`} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">
+                      No banner
+                    </div>
+                  )}
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => bannerInputRef.current?.click()}
+                    disabled={uploadingBanner}
+                    className="btn-ghost px-3 py-1.5 text-xs"
+                  >
+                    {uploadingBanner ? "Uploading…" : "Upload banner"}
+                  </button>
+                  {banner && (
+                    <button
+                      type="button"
+                      onClick={() => setBanner(null)}
+                      className="btn-ghost px-3 py-1.5 text-xs"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <input
+                  ref={bannerInputRef}
+                  type="file"
+                  accept="image/*,video/mp4,video/webm,video/quicktime"
+                  className="hidden"
+                  onChange={onBannerPicked}
+                />
               </div>
               <div>
                 <label className="field-label" htmlFor="server-name">

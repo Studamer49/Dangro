@@ -32,6 +32,8 @@ interface SettingsState {
   customColors: CustomColors;
   glassEffect: boolean;
   animationsEnabled: boolean;
+  /** Play GIF/video avatars, server banners and profile covers. */
+  animateAvatars: boolean;
   developerMode: boolean;
   notificationsEnabled: boolean;
   showOnlineStatus: boolean;
@@ -45,6 +47,7 @@ interface SettingsState {
   resetCustomColors: () => void;
   toggleGlassEffect: () => void;
   toggleAnimations: () => void;
+  toggleAnimateAvatars: () => void;
   toggleDeveloperMode: () => void;
   toggleNotifications: () => void;
   toggleOnlineStatus: () => void;
@@ -86,6 +89,7 @@ const DEFAULTS = {
   customColors: { bg: "", surface: "", border: "", text: "" } as CustomColors,
   glassEffect: true,
   animationsEnabled: true,
+  animateAvatars: true,
   developerMode: false,
   notificationsEnabled: true,
   showOnlineStatus: true,
@@ -113,6 +117,7 @@ function sanitize(persisted: unknown): typeof DEFAULTS {
     },
     glassEffect: bool(p.glassEffect, DEFAULTS.glassEffect),
     animationsEnabled: bool(p.animationsEnabled, DEFAULTS.animationsEnabled),
+    animateAvatars: bool(p.animateAvatars, DEFAULTS.animateAvatars),
     developerMode: bool(p.developerMode, DEFAULTS.developerMode),
     notificationsEnabled: bool(p.notificationsEnabled, DEFAULTS.notificationsEnabled),
     showOnlineStatus: bool(p.showOnlineStatus, DEFAULTS.showOnlineStatus),
@@ -136,13 +141,14 @@ export const useSettingsStore = create<SettingsState>()(
         set({ customColors: { bg: "", surface: "", border: "", text: "" } }),
       toggleGlassEffect: () => set((s) => ({ glassEffect: !s.glassEffect })),
       toggleAnimations: () => set((s) => ({ animationsEnabled: !s.animationsEnabled })),
+      toggleAnimateAvatars: () => set((s) => ({ animateAvatars: !s.animateAvatars })),
       toggleDeveloperMode: () => set((s) => ({ developerMode: !s.developerMode })),
       toggleNotifications: () => set((s) => ({ notificationsEnabled: !s.notificationsEnabled })),
       toggleOnlineStatus: () => set((s) => ({ showOnlineStatus: !s.showOnlineStatus })),
     }),
     {
       name: "dangro-settings",
-      version: 3,
+      version: 4,
       migrate: (persisted) => sanitize(persisted),
       partialize: (state) => ({
         theme: state.theme,
@@ -154,6 +160,7 @@ export const useSettingsStore = create<SettingsState>()(
         customColors: state.customColors,
         glassEffect: state.glassEffect,
         animationsEnabled: state.animationsEnabled,
+        animateAvatars: state.animateAvatars,
         developerMode: state.developerMode,
         notificationsEnabled: state.notificationsEnabled,
         showOnlineStatus: state.showOnlineStatus,

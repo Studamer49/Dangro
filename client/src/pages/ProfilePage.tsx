@@ -4,6 +4,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { useToast } from "@/stores/toastStore";
 import api, { apiErrorMessage } from "@/lib/api";
 import type { User, Post, PostLike } from "@/types";
+import Media from "@/components/Media";
 import PostDetailModal from "@/components/feed/PostDetailModal";
 import ProfileAvatar from "@/components/profile/ProfileAvatar";
 import EditProfileModal from "@/components/profile/EditProfileModal";
@@ -224,7 +225,7 @@ export default function ProfilePage() {
         <div className="glass-panel animate-fade-up relative overflow-hidden rounded-3xl">
           <div className="relative h-32 sm:h-44">
             {profileUser.cover ? (
-              <img
+              <Media
                 src={profileUser.cover}
                 alt=""
                 className="absolute inset-0 h-full w-full object-cover"

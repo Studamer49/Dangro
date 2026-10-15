@@ -15,6 +15,7 @@ const router = Router();
 const createServerSchema = z.object({
   name: z.string().trim().min(1).max(100),
   icon: mediaUrl().optional(),
+  banner: mediaUrl().optional(),
   description: z.string().trim().max(500).optional(),
 });
 
@@ -46,12 +47,13 @@ router.post(
   authenticate,
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = requireUser(req);
-    const { name, icon, description } = parseOrThrow(createServerSchema, req.body);
+    const { name, icon, banner, description } = parseOrThrow(createServerSchema, req.body);
 
     const server = await prisma.server.create({
       data: {
         name,
         icon,
+        banner,
         description: description ?? null,
         ownerId: userId,
         inviteCode: uuidv4().slice(0, 8),

@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import Media from "@/components/Media";
 import type { User } from "@/types";
 
 interface AvatarProps {
@@ -41,7 +42,7 @@ export default function Avatar({
         }`}
       >
         {user?.avatar ? (
-          <img src={user.avatar} alt="" className="h-full w-full object-cover" />
+          <Media src={user.avatar} alt="" className="h-full w-full object-cover" />
         ) : (
           user?.username?.[0]?.toUpperCase() ?? "?"
         )}

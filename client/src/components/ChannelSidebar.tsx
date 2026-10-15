@@ -5,6 +5,7 @@ import { useAuthStore } from "@/stores/authStore";
 import { useToast } from "@/stores/toastStore";
 import { useVoiceChannel } from "@/hooks/useVoiceChannel";
 import Modal from "@/components/Modal";
+import Media from "@/components/Media";
 import { useConfirm } from "@/hooks/useConfirm";
 import InviteModal from "@/components/server/InviteModal";
 import ServerSettingsModal from "@/components/server/ServerSettingsModal";
@@ -399,10 +400,16 @@ export default function ChannelSidebar() {
 
   return (
     <div className="glass relative layer-chrome flex w-60 flex-col border-r">
+      {server.banner && (
+        <div className="relative h-20 w-full shrink-0 overflow-hidden">
+          <Media src={server.banner} alt="" className="h-full w-full object-cover" />
+          <div className="absolute inset-0 bg-gradient-to-t from-gray-950/85 via-gray-950/20 to-transparent" />
+        </div>
+      )}
       <div className="flex items-center justify-between border-b border-gray-800/70 px-4 py-3">
         <button onClick={() => setShowSettings(true)} className="flex max-w-[70%] items-center gap-2">
           {server.icon ? (
-            <img src={server.icon} alt={server.name} className="h-6 w-6 rounded-md object-cover" />
+            <Media src={server.icon} alt={server.name} className="h-6 w-6 rounded-md object-cover" />
           ) : (
             <span className="ring-lit flex h-6 w-6 items-center justify-center rounded bg-accent-600 text-xs font-bold text-white">
               {serverInitial}

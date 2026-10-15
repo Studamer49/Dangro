@@ -166,6 +166,7 @@ export const MODELS: Record<string, ModelDef> = {
     fields: {
       name: { type: "string" },
       icon: { type: "string", optional: true },
+      banner: { type: "string", optional: true },
       description: { type: "string", optional: true },
       ownerId: { type: "string" },
       inviteCode: { type: "string", default: () => crypto.randomUUID() },

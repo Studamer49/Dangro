@@ -26,6 +26,7 @@ const updateServerSchema = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),
     icon: nullableMediaUrl(),
+    banner: nullableMediaUrl(),
     description: z.string().trim().max(500).nullish(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: "Nothing to update" });
@@ -51,6 +52,7 @@ router.patch(
       data: {
         name: input.name,
         icon: input.icon === undefined ? undefined : input.icon ?? null,
+        banner: input.banner === undefined ? undefined : input.banner ?? null,
         description: input.description === undefined ? undefined : input.description ?? null,
       },
       include: { channels: { orderBy: { position: "asc" } }, categories: { orderBy: { position: "asc" } } },

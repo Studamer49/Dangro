@@ -104,6 +104,8 @@ model Server {
   id          String   @id @default(uuid())
   name        String
   icon        String?
+  /// Wide banner shown behind the server header. Null falls back to the icon.
+  banner      String?
   description String?
   ownerId     String
   inviteCode  String   @unique @default(uuid())

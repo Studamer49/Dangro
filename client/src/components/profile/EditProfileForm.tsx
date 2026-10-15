@@ -5,6 +5,7 @@ import { useToast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import type { User } from "@/types";
 import ProfileAvatar from "@/components/profile/ProfileAvatar";
+import Media from "@/components/Media";
 
 interface EditProfileFormProps {
   user: User;
@@ -149,7 +150,7 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,video/mp4,video/webm,video/quicktime"
           className="hidden"
           onChange={handleFileChange}
         />
@@ -164,7 +165,7 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
         <span className="field-label">Banner</span>
         <div className="relative mb-2 h-24 overflow-hidden rounded-xl border border-gray-700 bg-gradient-to-br from-accent-600/45 via-accent-500/20 to-accent-400/5">
           {cover && (
-            <img src={cover} alt="" className="absolute inset-0 h-full w-full object-cover" />
+            <Media src={cover} alt="" className="absolute inset-0 h-full w-full object-cover" />
           )}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -190,7 +191,7 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
         <input
           ref={coverInputRef}
           type="file"
-          accept="image/*"
+          accept="image/*,video/mp4,video/webm,video/quicktime"
           className="hidden"
           onChange={handleCoverChange}
         />
