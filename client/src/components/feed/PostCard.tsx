@@ -5,7 +5,9 @@ import { useConfirm } from "@/hooks/useConfirm";
 import { useBounce } from "@/hooks/useBounce";
 import type { Post, User } from "@/types";
 import CommentsSection from "./CommentsSection";
+import LikersList from "./LikersList";
 import Avatar from "@/components/Avatar";
+import ContextMenu from "@/components/ContextMenu";
 
 interface PostCardProps {
   post: Post;
@@ -37,6 +39,10 @@ export default function PostCard({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(post.caption ?? "");
   const [saving, setSaving] = useState(false);
+  // The "who liked" list, fetched on demand for the post's author.
+  const [likersMenu, setLikersMenu] = useState<{ x: number; y: number } | null>(null);
+  const [likers, setLikers] = useState<User[] | null>(null);
+  const [likersLoading, setLikersLoading] = useState(false);
 
   // Heart pop + count nudge, played on every like/unlike tap.
   const { ref: heartRef, bounce: bounceHeart } = useBounce<HTMLSpanElement>();
@@ -74,6 +80,24 @@ export default function PostCard({
     setEditing(true);
   };
 
+  /** Author-only: open the list of everyone who liked this post. */
+  const openLikers = async (event: MouseEvent) => {
+    if (!isOwnPost) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setLikers(null);
+    setLikersLoading(true);
+    setLikersMenu({ x: event.clientX, y: event.clientY });
+    try {
+      const { data } = await api.get<{ users: User[] }>(`/posts/${post.id}/likes`);
+      setLikers(data.users);
+    } catch {
+      setLikers([]);
+    } finally {
+      setLikersLoading(false);
+    }
+  };
+
   const saveEdit = async () => {
     setSaving(true);
     try {
@@ -92,10 +116,11 @@ export default function PostCard({
   };
 
   return (
-    <article
-      onClick={onOpen ? handleOpen : undefined}
-      className={`glass-card glass-card-hover overflow-hidden rounded-2xl ${onOpen ? "cursor-pointer" : ""}`}
-    >
+    <>
+      <article
+        onClick={onOpen ? handleOpen : undefined}
+        className={`glass-card glass-card-hover overflow-hidden rounded-2xl ${onOpen ? "cursor-pointer" : ""}`}
+      >
       <div className="flex items-center gap-3 p-5">
         <Avatar user={post.author} className="h-11 w-11 text-base" />
         <div className="min-w-0 flex-1">
@@ -168,6 +193,8 @@ export default function PostCard({
               bounceLikeCount("pop");
               onLike(post);
             }}
+            onContextMenu={openLikers}
+            title={isOwnPost ? "Right-click to see who liked" : undefined}
             aria-pressed={liked}
             aria-label={liked ? "Unlike post" : "Like post"}
             data-bounce="self"
@@ -277,6 +304,16 @@ export default function PostCard({
       {showComments && (
         <CommentsSection postId={post.id} viewer={viewer} onCountChange={onCommentCountChange} />
       )}
-    </article>
+      </article>
+
+      {likersMenu && isOwnPost && (
+        <ContextMenu x={likersMenu.x} y={likersMenu.y} onClose={() => setLikersMenu(null)} width={240}>
+          <p className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+            Liked by
+          </p>
+          <LikersList users={likers} loading={likersLoading} />
+        </ContextMenu>
+      )}
+    </>
   );
 }

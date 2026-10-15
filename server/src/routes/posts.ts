@@ -238,6 +238,33 @@ router.post(
   })
 );
 
+/**
+ * Who liked a post. Author-only: the like button is public, but the list of
+ * people behind it is only exposed to the person who owns the post.
+ */
+router.get(
+  "/:id/likes",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const postId = paramId(req.params.id, "post id");
+
+    const post = await prisma.post.findUnique({ where: { id: postId }, select: { authorId: true } });
+    if (!post) throw AppError.of("NOT_FOUND", "Post not found");
+    if (post.authorId !== userId) {
+      throw AppError.of("FORBIDDEN", "Only the author can see who liked this post");
+    }
+
+    const likes = await prisma.postLike.findMany({
+      where: { postId },
+      include: { user: { select: { id: true, username: true, avatar: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+
+    ok(res, { users: likes.map((like) => like.user) });
+  })
+);
+
 router.get(
   "/:id/comments",
   authenticate,

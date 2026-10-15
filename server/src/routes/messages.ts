@@ -5,15 +5,31 @@ import { getIO } from "../socket/io.js";
 import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { assertChannelMember, assertChannelReply, paramId } from "../lib/access.js";
+import { mediaUrl } from "../lib/urls.js";
 import { actorCan, loadActor } from "../lib/permissions.js";
 
 const router = Router();
 
-const sendMessageSchema = z.object({
-  content: z.string().trim().min(1).max(4000),
-  channelId: z.string().uuid(),
-  replyToId: z.string().uuid().nullish(),
+const attachmentSchema = z.object({
+  url: mediaUrl(),
+  type: z.enum(["image", "video", "audio", "file"]),
+  filename: z.string().trim().min(1).max(255),
+  size: z.number().int().min(0),
+  mimeType: z.string().trim().min(1).max(255),
 });
+
+const sendMessageSchema = z
+  .object({
+    content: z.string().trim().max(4000).optional(),
+    channelId: z.string().uuid(),
+    replyToId: z.string().uuid().nullish(),
+    /** Optional single file, uploaded first and attached to the message. */
+    attachment: attachmentSchema.optional(),
+  })
+  // A message must carry words or a file; an empty row has nothing to show.
+  .refine((value) => Boolean(value.content?.trim()) || Boolean(value.attachment), {
+    message: "Add a message or an attachment",
+  });
 
 const editMessageSchema = z.object({
   content: z.string().trim().min(1).max(4000),
@@ -33,17 +49,30 @@ router.post(
   authenticate,
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = requireUser(req);
-    const { content, channelId, replyToId } = parseOrThrow(sendMessageSchema, req.body);
+    const { content, channelId, replyToId, attachment } = parseOrThrow(sendMessageSchema, req.body);
 
     await assertChannelMember(channelId, userId);
     await assertChannelReply(replyToId, channelId);
 
     const message = await prisma.message.create({
       data: {
-        content,
+        content: content?.trim() ?? "",
         authorId: userId,
         channelId,
         replyToId: replyToId ?? undefined,
+        ...(attachment
+          ? {
+              attachments: {
+                create: {
+                  url: attachment.url,
+                  filename: attachment.filename,
+                  size: attachment.size,
+                  mimeType: attachment.mimeType,
+                  userId,
+                },
+              },
+            }
+          : {}),
       },
       include: messageInclude,
     });

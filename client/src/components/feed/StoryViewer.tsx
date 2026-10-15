@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Avatar from "@/components/Avatar";
+import LikersList from "./LikersList";
 import api from "@/lib/api";
-import type { Story, StoryGroup } from "@/types";
+import type { Story, StoryGroup, User } from "@/types";
 
 interface Props {
   group: StoryGroup;
@@ -66,9 +67,35 @@ export default function StoryViewer({
   }));
   const pendingLike = useRef(false);
 
+  // The author's "who liked" panel. Loaded lazily the first time it is opened
+  // for each story.
+  const [showLikers, setShowLikers] = useState(false);
+  const [likers, setLikers] = useState<User[] | null>(null);
+  const [likersLoading, setLikersLoading] = useState(false);
+
   useEffect(() => {
     setLikeState({ liked: story?.liked ?? false, count: story?.likeCount ?? 0 });
+    setShowLikers(false);
+    setLikers(null);
   }, [index, story?.id, story?.liked, story?.likeCount]);
+
+  // Reading the list should not race the auto-advance timer.
+  const isPaused = paused || showLikers;
+
+  const openLikers = async () => {
+    if (!story) return;
+    setShowLikers((current) => !current);
+    if (likers !== null) return;
+    setLikersLoading(true);
+    try {
+      const { data } = await api.get<{ users: User[] }>(`/stories/${story.id}/likes`);
+      setLikers(data.users);
+    } catch {
+      setLikers([]);
+    } finally {
+      setLikersLoading(false);
+    }
+  };
 
   const toggleLike = async () => {
     if (!story || pendingLike.current) return;
@@ -118,7 +145,7 @@ export default function StoryViewer({
   }, [index]);
 
   useEffect(() => {
-    if (paused) return;
+    if (isPaused) return;
     let frame = 0;
 
     const tick = (now: number) => {
@@ -134,19 +161,19 @@ export default function StoryViewer({
 
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
-  }, [index, duration, paused, goNext]);
+  }, [index, duration, isPaused, goNext]);
 
   // Paused must not lose the time already served, or the bar jumps forward
   // on resume.
   useEffect(() => {
-    if (!paused) {
+    if (!isPaused) {
       startedAtRef.current = performance.now();
       return;
     }
     return () => {
       elapsedRef.current += performance.now() - startedAtRef.current;
     };
-  }, [paused]);
+  }, [isPaused]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -272,7 +299,7 @@ export default function StoryViewer({
             className="absolute inset-y-0 left-0 w-1/3 cursor-pointer"
           />
           <button
-            onClick={paused ? undefined : goNext}
+            onClick={isPaused ? undefined : goNext}
             aria-label="Next story"
             className="absolute inset-y-0 right-0 w-1/3 cursor-pointer"
           />
@@ -280,15 +307,18 @@ export default function StoryViewer({
           {/* Like — a heart for someone else's story, their tally for your own */}
           {isOwn ? (
             likeState.count > 0 && (
-              <span
-                className="glass absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full border border-white/15 px-3.5 py-1.5 text-xs font-semibold text-white shadow-elev2"
-                title={`${likeState.count} ${likeState.count === 1 ? "like" : "likes"}`}
+              <button
+                type="button"
+                onClick={() => void openLikers()}
+                aria-expanded={showLikers}
+                className="glass absolute bottom-3 left-3 flex items-center gap-1.5 rounded-full border border-white/15 px-3.5 py-1.5 text-xs font-semibold text-white shadow-elev2 transition-all duration-200 ease-out hover:bg-white/20"
+                title={`${likeState.count} ${likeState.count === 1 ? "like" : "likes"} — tap to see who`}
               >
                 <svg className="h-4 w-4 text-rose-400" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M12 21s-7.5-4.6-9.6-9.1C1 9.2 2.6 6 5.7 6c1.9 0 3.2 1 4.3 2.4C11 7 12.4 6 14.3 6c3.1 0 4.7 3.2 3.3 5.9C19.5 16.4 12 21 12 21z" />
                 </svg>
                 <span className="tabular">{likeState.count}</span>
-              </span>
+              </button>
             )
           ) : (
             <button
@@ -317,15 +347,26 @@ export default function StoryViewer({
             </button>
           )}
 
+          {/* Author-only: who liked this story. Rendered inline (not a portal
+              menu) because it sits above the viewer's own overlay layer. */}
+          {isOwn && showLikers && (
+            <div className="absolute bottom-14 left-3 z-20 w-56 rounded-xl border border-white/15 bg-gray-950/90 p-2 shadow-elev3 backdrop-blur-xl">
+              <p className="px-2 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
+                Liked by
+              </p>
+              <LikersList users={likers} loading={likersLoading} />
+            </div>
+          )}
+
           {/* Hold to pause */}
           <button
             onPointerDown={() => setPaused(true)}
             onPointerUp={() => setPaused(false)}
             onPointerLeave={() => setPaused(false)}
-            aria-label={paused ? "Resume" : "Pause"}
+            aria-label={isPaused ? "Resume" : "Pause"}
             className="glass absolute bottom-3 right-3 rounded-full border border-white/15 px-3.5 py-1.5 text-xs font-semibold text-white shadow-elev2 transition-all duration-200 ease-out hover:bg-white/20"
           >
-            {paused ? "▶" : "❚❚"}
+            {isPaused ? "▶" : "❚❚"}
           </button>
         </div>
       </div>

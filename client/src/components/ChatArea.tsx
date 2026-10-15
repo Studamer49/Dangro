@@ -1,13 +1,17 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, Fragment } from "react";
 import { useParams } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { getSocket } from "@/lib/socket";
 import api from "@/lib/api";
 import { scrollBehavior } from "@/lib/motion";
+import { dayKey } from "@/lib/time";
+import { uploadErrorMessage, uploadMedia } from "@/lib/upload";
+import { useToast } from "@/stores/toastStore";
 import Avatar from "@/components/Avatar";
 import ContextMenu, { ContextMenuItem, ContextMenuSeparator } from "@/components/ContextMenu";
 import EmojiPicker from "@/components/EmojiPicker";
 import Emoji from "@/components/Emoji";
+import ChatDayDivider from "@/components/ChatDayDivider";
 import type { Message, Reaction } from "@/types";
 
 export default function ChatArea() {
@@ -21,9 +25,16 @@ export default function ChatArea() {
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [flashId, setFlashId] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ message: Message; x: number; y: number } | null>(null);
+  // Right-click on the empty chat area: offers "paste image".
+  const [chatMenu, setChatMenu] = useState<{ x: number; y: number } | null>(null);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState(0);
   // Granted by the API on the message list: owners and anyone with
   // MANAGE_MESSAGES may delete other people's messages from the context menu.
   const [canManageMessages, setCanManageMessages] = useState(false);
+  const toast = useToast();
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const flashTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -221,6 +232,113 @@ export default function ChatArea() {
     }
   };
 
+  /** Uploads one file and sends it as a channel message with an attachment. */
+  const sendAttachment = async (file: File) => {
+    if (isUploading || !channelId) return;
+    setIsUploading(true);
+
+    const tempId = `temp-${Date.now()}`;
+    // A local object URL previews an image before the upload lands, and is
+    // revoked below so the bytes are not held for the session.
+    const objectUrl = file.type.startsWith("image") ? URL.createObjectURL(file) : null;
+    const replyToId = replyTo?.id ?? null;
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: tempId,
+        content: file.name,
+        authorId: user?.id ?? "",
+        channelId,
+        replyToId,
+        edited: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        author: user ?? undefined,
+        reactions: [],
+        attachments: [
+          {
+            id: tempId,
+            filename: file.name,
+            url: objectUrl ?? "",
+            size: file.size,
+            mimeType: file.type,
+            messageId: tempId,
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      },
+    ]);
+    setReplyTo(null);
+
+    try {
+      const uploaded = await uploadMedia(file, file.name, { onProgress: setUploadPercent });
+      await api.post("/messages", {
+        content: file.name,
+        channelId,
+        replyToId: replyToId || null,
+        attachment: {
+          url: uploaded.url,
+          type: uploaded.type,
+          filename: uploaded.filename,
+          size: uploaded.size,
+          mimeType: uploaded.mimeType,
+        },
+      });
+    } catch (err) {
+      // Without this the optimistic bubble lingers forever on a failed upload.
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      toast.error(uploadErrorMessage(err, "Upload failed"));
+    } finally {
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      setUploadPercent(0);
+      setIsUploading(false);
+    }
+  };
+
+  const renderAttachments = (message: Message) => {
+    if (!message.attachments || message.attachments.length === 0) return null;
+    return (
+      <div className="mt-1.5 flex flex-col gap-1.5">
+        {message.attachments.map((attachment) => {
+          if (!attachment.url) return null;
+          if (attachment.mimeType.startsWith("image/")) {
+            return (
+              <img
+                key={attachment.id}
+                src={attachment.url}
+                alt={attachment.filename}
+                loading="lazy"
+                className="max-h-80 max-w-sm rounded-lg border border-white/10 object-contain"
+              />
+            );
+          }
+          if (attachment.mimeType.startsWith("video/")) {
+            return (
+              <video
+                key={attachment.id}
+                src={attachment.url}
+                controls
+                className="max-h-80 max-w-sm rounded-lg border border-white/10"
+              />
+            );
+          }
+          return (
+            <a
+              key={attachment.id}
+              href={attachment.url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex max-w-sm items-center gap-2 rounded-lg border border-gray-700 bg-gray-800/40 px-3 py-2 text-sm text-gray-200 transition-colors hover:bg-gray-800/70"
+            >
+              {attachment.filename}
+            </a>
+          );
+        })}
+      </div>
+    );
+  };
+
   const editMessage = async (messageId: string) => {
     if (!editContent.trim() || messageId.startsWith("temp-")) return;
     try {
@@ -265,7 +383,68 @@ export default function ChatArea() {
     // Optimistic rows have no server id yet, so their actions would 404.
     if (message.id.startsWith("temp-")) return;
     event.preventDefault();
+    // Keep the message menu from also raising the chat-area "paste" menu.
+    event.stopPropagation();
     setMenu({ message, x: event.clientX, y: event.clientY });
+  };
+
+  /** Right-click on the empty chat area (not on a message). */
+  const openChatMenu = (event: React.MouseEvent) => {
+    event.preventDefault();
+    setChatMenu({ x: event.clientX, y: event.clientY });
+  };
+
+  const insertEmoji = (emoji: string) => {
+    const el = composerRef.current;
+    const start = el?.selectionStart ?? newMessage.length;
+    const end = el?.selectionEnd ?? newMessage.length;
+    setNewMessage(newMessage.slice(0, start) + emoji + newMessage.slice(end));
+    handleTyping();
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.selectionStart = el.selectionEnd = start + emoji.length;
+    });
+  };
+
+  const firstImageFile = (data: DataTransfer | null): File | null => {
+    const fromItems = Array.from(data?.items ?? []).find(
+      (entry) => entry.kind === "file" && entry.type.startsWith("image/")
+    );
+    const itemFile = fromItems?.getAsFile();
+    if (itemFile) return itemFile;
+    return Array.from(data?.files ?? []).find((file) => file.type.startsWith("image/")) ?? null;
+  };
+
+  /** Ctrl+V of an image sends it as an attachment. */
+  const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (isUploading) return;
+    const file = firstImageFile(event.clipboardData);
+    if (!file) return;
+    event.preventDefault();
+    void sendAttachment(file);
+  };
+
+  /** "Paste image" from the chat context menu, via the async Clipboard API. */
+  const pasteImageFromClipboard = async () => {
+    if (isUploading) return;
+    if (!navigator.clipboard?.read) {
+      toast.error("This browser cannot read the clipboard for paste");
+      return;
+    }
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((entry) => entry.startsWith("image/"));
+        if (!type) continue;
+        const blob = await item.getType(type);
+        await sendAttachment(new File([blob], "pasted-image", { type }));
+        return;
+      }
+      toast.info("No image found on the clipboard");
+    } catch {
+      toast.error("Could not read the clipboard");
+    }
   };
 
   const copyMessage = async (content: string) => {
@@ -339,7 +518,7 @@ export default function ChatArea() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex-1 overflow-y-auto px-4 py-4" ref={scrollRef} onScroll={handleScroll}>
+      <div className="flex-1 overflow-y-auto px-4 py-4" ref={scrollRef} onScroll={handleScroll} onContextMenu={openChatMenu}>
         {messages.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <div className="text-center">
@@ -349,9 +528,14 @@ export default function ChatArea() {
           </div>
         ) : (
           <div className="space-y-1">
-            {messages.map((message) => (
+            {messages.map((message, index) => {
+              const showDivider =
+                index === 0 ||
+                dayKey(messages[index - 1].createdAt) !== dayKey(message.createdAt);
+              return (
+              <Fragment key={message.id}>
+              {showDivider && <ChatDayDivider iso={message.createdAt} />}
               <div
-                key={message.id}
                 id={message.id.startsWith("temp-") ? undefined : `message-${message.id}`}
                 onContextMenu={(event) => openMessageMenu(event, message)}
                 className={`group relative flex gap-3 rounded-xl px-3 py-1.5 transition-colors duration-150 hover:bg-gray-800/40 ${
@@ -417,7 +601,12 @@ export default function ChatArea() {
                       </p>
                     </div>
                   ) : (
-                    <p className="break-words leading-relaxed text-gray-200">{message.content}</p>
+                    <>
+                      {message.content && (
+                        <p className="break-words leading-relaxed text-gray-200">{message.content}</p>
+                      )}
+                      {renderAttachments(message)}
+                    </>
                   )}
 
                   {message.reactions && message.reactions.length > 0 && (
@@ -490,7 +679,9 @@ export default function ChatArea() {
                   </div>
                 )}
               </div>
-            ))}
+              </Fragment>
+              );
+            })}
             <div ref={messagesEndRef} />
           </div>
         )}
@@ -529,14 +720,49 @@ export default function ChatArea() {
       )}
 
       <div className="p-4 pt-2">
+        {isUploading && (
+          <div className="mb-2" role="status" aria-live="polite">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-gray-700">
+              <div
+                className="h-full rounded-full bg-accent-500 transition-all"
+                style={{ width: `${uploadPercent || 5}%` }}
+              />
+            </div>
+            <p className="mt-1 text-[11px] text-gray-400">
+              Uploading… <span className="tabular">{uploadPercent}%</span>
+            </p>
+          </div>
+        )}
         <div className="glass-panel flex items-end gap-2 rounded-2xl p-2">
+          <div className="relative">
+            <button
+              onClick={() => setShowEmojiPicker((current) => !current)}
+              className="icon-btn"
+              aria-label="Insert emoji"
+              title="Emoji"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </button>
+            {showEmojiPicker && (
+              <>
+                <div className="fixed inset-0 z-10" onMouseDown={() => setShowEmojiPicker(false)} />
+                <div className="absolute bottom-full left-0 z-20 mb-2 w-72 rounded-xl border border-gray-700/60 bg-gray-950/95 p-1.5 shadow-elev2">
+                  <EmojiPicker maxHeight={192} onSelect={insertEmoji} />
+                </div>
+              </>
+            )}
+          </div>
           <textarea
+            ref={composerRef}
             value={newMessage}
             onChange={(e) => {
               setNewMessage(e.target.value);
               handleTyping();
             }}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder="Type a message..."
             aria-label="Message"
             className="max-h-40 min-h-[2.75rem] flex-1 resize-none bg-transparent px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none"
@@ -556,7 +782,7 @@ export default function ChatArea() {
       </div>
 
       {menu && (
-        <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} width={288}>
+        <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} width={288} dark>
           <p className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
             React
           </p>
@@ -622,6 +848,23 @@ export default function ChatArea() {
               }}
             />
           )}
+        </ContextMenu>
+      )}
+
+      {chatMenu && (
+        <ContextMenu x={chatMenu.x} y={chatMenu.y} onClose={() => setChatMenu(null)}>
+          <ContextMenuItem
+            label="Paste image"
+            icon={
+              <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            }
+            onClick={() => {
+              void pasteImageFromClipboard();
+              setChatMenu(null);
+            }}
+          />
         </ContextMenu>
       )}
     </div>

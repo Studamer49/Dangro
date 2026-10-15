@@ -8,6 +8,11 @@ interface ContextMenuProps {
   children: React.ReactNode;
   /** Preferred width; the menu is clamped to the viewport regardless. */
   width?: number;
+  /**
+   * Renders an opaque charcoal panel instead of the frosted glass. Used for
+   * menus that carry the emoji grid, where pale glyphs wash out over glass.
+   */
+  dark?: boolean;
 }
 
 /**
@@ -16,7 +21,7 @@ interface ContextMenuProps {
  * that would otherwise trap the popup, and the position is clamped to the
  * viewport so menus near an edge stay fully visible.
  */
-export default function ContextMenu({ x, y, onClose, children, width = 220 }: ContextMenuProps) {
+export default function ContextMenu({ x, y, onClose, children, width = 220, dark = false }: ContextMenuProps) {
   const ref = useRef<HTMLDivElement>(null);
   const [pos, setPos] = useState({ left: x, top: y });
 
@@ -34,13 +39,21 @@ export default function ContextMenu({ x, y, onClose, children, width = 220 }: Co
     const onKey = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
     };
+    // A scroll closes the menu because its anchor point has moved — but a
+    // scroll *inside* the menu (a long emoji grid, a list of likers) is the
+    // user reading it, not the page moving. Ignore those.
+    const onScroll = (event: Event) => {
+      const el = ref.current;
+      if (el && event.target instanceof Node && el.contains(event.target)) return;
+      onClose();
+    };
     window.addEventListener("keydown", onKey);
     window.addEventListener("resize", onClose);
-    window.addEventListener("scroll", onClose, true);
+    window.addEventListener("scroll", onScroll, true);
     return () => {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("resize", onClose);
-      window.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("scroll", onScroll, true);
     };
   }, [onClose]);
 
@@ -56,7 +69,9 @@ export default function ContextMenu({ x, y, onClose, children, width = 220 }: Co
       <div
         ref={ref}
         role="menu"
-        className="glass-panel anim-pop-in fixed rounded-xl border border-gray-700/60 p-1.5 shadow-elev2"
+        className={`anim-pop-in fixed rounded-xl border border-gray-700/60 p-1.5 shadow-elev2 ${
+          dark ? "bg-gray-950/95 backdrop-blur-xl" : "glass-panel"
+        }`}
         style={{ left: pos.left, top: pos.top, width }}
         onMouseDown={(event) => event.stopPropagation()}
       >

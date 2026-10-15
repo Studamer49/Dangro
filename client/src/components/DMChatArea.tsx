@@ -1,16 +1,18 @@
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, Fragment } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { useCallStore } from "@/stores/callStore";
 import { getSocket } from "@/lib/socket";
 import api from "@/lib/api";
 import { uploadErrorMessage, uploadMedia } from "@/lib/upload";
 import { scrollBehavior } from "@/lib/motion";
+import { dayKey } from "@/lib/time";
 import VoiceRecorder from "@/components/VoiceRecorder";
 import Avatar from "@/components/Avatar";
 import ContextMenu, { ContextMenuItem, ContextMenuSeparator } from "@/components/ContextMenu";
 import UserContextMenu from "@/components/UserContextMenu";
 import EmojiPicker from "@/components/EmojiPicker";
 import Emoji from "@/components/Emoji";
+import ChatDayDivider from "@/components/ChatDayDivider";
 import { useToast } from "@/stores/toastStore";
 import { useDmPrefsStore } from "@/stores/dmPrefsStore";
 import { useBlocksStore } from "@/stores/blocksStore";
@@ -41,7 +43,10 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   const [flashId, setFlashId] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ message: DirectMessage; x: number; y: number } | null>(null);
   const [headerMenu, setHeaderMenu] = useState<{ x: number; y: number } | null>(null);
+  // Right-click on the empty chat area: offers "paste image".
+  const [chatMenu, setChatMenu] = useState<{ x: number; y: number } | null>(null);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   // 0-100 while an upload is in flight; reset to 0 when idle.
   const [uploadPercent, setUploadPercent] = useState(0);
@@ -50,6 +55,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const flashTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   // The conversation currently on screen, so a response for one already left
@@ -496,7 +502,69 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   const openMessageMenu = (event: React.MouseEvent, message: DirectMessage) => {
     if (message.id.startsWith("temp-")) return;
     event.preventDefault();
+    // Keep the message menu from also raising the chat-area "paste" menu.
+    event.stopPropagation();
     setMenu({ message, x: event.clientX, y: event.clientY });
+  };
+
+  /** Right-click on the empty chat area (not on a message). */
+  const openChatMenu = (event: React.MouseEvent) => {
+    if (blocked) return;
+    event.preventDefault();
+    setChatMenu({ x: event.clientX, y: event.clientY });
+  };
+
+  const insertEmoji = (emoji: string) => {
+    const el = composerRef.current;
+    const start = el?.selectionStart ?? newMessage.length;
+    const end = el?.selectionEnd ?? newMessage.length;
+    setNewMessage(newMessage.slice(0, start) + emoji + newMessage.slice(end));
+    handleTyping();
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.selectionStart = el.selectionEnd = start + emoji.length;
+    });
+  };
+
+  const firstImageFile = (data: DataTransfer | null): File | null => {
+    const fromItems = Array.from(data?.items ?? []).find(
+      (entry) => entry.kind === "file" && entry.type.startsWith("image/")
+    );
+    const itemFile = fromItems?.getAsFile();
+    if (itemFile) return itemFile;
+    return Array.from(data?.files ?? []).find((file) => file.type.startsWith("image/")) ?? null;
+  };
+
+  /** Ctrl+V of an image sends it as an attachment, like the attach menu. */
+  const handlePaste = (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (blocked || isUploading) return;
+    const file = firstImageFile(event.clipboardData);
+    if (!file) return;
+    event.preventDefault();
+    void sendAttachment(file);
+  };
+
+  /** "Paste image" from the chat context menu, via the async Clipboard API. */
+  const pasteImageFromClipboard = async () => {
+    if (blocked || isUploading) return;
+    if (!navigator.clipboard?.read) {
+      toast.error("This browser cannot read the clipboard for paste");
+      return;
+    }
+    try {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const type = item.types.find((entry) => entry.startsWith("image/"));
+        if (!type) continue;
+        const blob = await item.getType(type);
+        await sendAttachment(new File([blob], "pasted-image", { type }));
+        return;
+      }
+      toast.info("No image found on the clipboard");
+    } catch {
+      toast.error("Could not read the clipboard");
+    }
   };
 
   const openHeaderMenu = (event: React.MouseEvent) => {
@@ -684,6 +752,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
       <div
         ref={chatContainerRef}
         onScroll={handleScroll}
+        onContextMenu={openChatMenu}
         className="flex-1 overflow-y-auto px-4 py-2"
       >
         {messages.length === 0 ? (
@@ -697,12 +766,15 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
           </div>
         ) : (
           <div className="space-y-1">
-            {messages.map((msg) => {
+            {messages.map((msg, index) => {
               const isSelf = msg.senderId === user?.id;
               const isFlashing = flashId === msg.id;
+              const showDivider =
+                index === 0 || dayKey(messages[index - 1].createdAt) !== dayKey(msg.createdAt);
               return (
+                <Fragment key={msg.id}>
+                {showDivider && <ChatDayDivider iso={msg.createdAt} />}
                 <div
-                  key={msg.id}
                   id={msg.id.startsWith("temp-") ? undefined : `dm-message-${msg.id}`}
                   onContextMenu={(event) => openMessageMenu(event, msg)}
                   className={`group flex rounded-xl px-3 py-1.5 transition-colors duration-150 ease-out hover:bg-gray-800/40 ${
@@ -845,8 +917,9 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
                         </div>
                       </div>
                     )}
+                   </div>
                   </div>
-                </div>
+                </Fragment>
               );
             })}
             <div ref={messagesEndRef} />
@@ -963,6 +1036,34 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
             )}
           </div>
 
+          <div className="relative">
+            <button
+              onClick={() => setShowEmojiPicker((open) => !open)}
+              disabled={blocked}
+              className="icon-btn disabled:cursor-not-allowed disabled:opacity-50"
+              aria-label="Insert emoji"
+              aria-expanded={showEmojiPicker}
+              title="Emoji"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+            </button>
+            {showEmojiPicker && (
+              <>
+                <div className="fixed inset-0 z-10" onMouseDown={() => setShowEmojiPicker(false)} />
+                <div className="absolute bottom-full left-0 z-20 mb-2 w-72 rounded-xl border border-gray-700/60 bg-gray-950/95 p-1.5 shadow-elev2">
+                  <EmojiPicker maxHeight={192} onSelect={insertEmoji} />
+                </div>
+              </>
+            )}
+          </div>
+
           <input
             ref={fileInputRef}
             type="file"
@@ -977,12 +1078,14 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
           />
 
           <textarea
+            ref={composerRef}
             value={newMessage}
             onChange={(e) => {
               setNewMessage(e.target.value);
               handleTyping();
             }}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={blocked ? "You blocked this user" : "Type a message..."}
             disabled={blocked}
             className="min-h-[2.75rem] max-h-32 flex-1 resize-none bg-transparent px-3 py-2.5 text-sm text-white placeholder-gray-600 focus:outline-none disabled:cursor-not-allowed"
@@ -1005,7 +1108,7 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
       </div>
 
       {menu && (
-        <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} width={288}>
+        <ContextMenu x={menu.x} y={menu.y} onClose={() => setMenu(null)} width={288} dark>
           <p className="px-2.5 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
             React
           </p>
@@ -1071,6 +1174,23 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
               }}
             />
           )}
+        </ContextMenu>
+      )}
+
+      {chatMenu && !blocked && (
+        <ContextMenu x={chatMenu.x} y={chatMenu.y} onClose={() => setChatMenu(null)}>
+          <ContextMenuItem
+            label="Paste image"
+            icon={
+              <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+              </svg>
+            }
+            onClick={() => {
+              void pasteImageFromClipboard();
+              setChatMenu(null);
+            }}
+          />
         </ContextMenu>
       )}
 

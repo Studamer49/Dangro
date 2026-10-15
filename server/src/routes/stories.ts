@@ -126,6 +126,33 @@ router.post(
   })
 );
 
+/**
+ * Who liked a story. Author-only, mirroring the post likers endpoint: the tally
+ * is public, the names behind it are not.
+ */
+router.get(
+  "/:id/likes",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const storyId = paramId(req.params.id, "story id");
+
+    const story = await prisma.story.findUnique({ where: { id: storyId }, select: { authorId: true } });
+    if (!story) throw AppError.of("NOT_FOUND", "Story not found");
+    if (story.authorId !== userId) {
+      throw AppError.of("FORBIDDEN", "Only the author can see who liked this story");
+    }
+
+    const likes = await prisma.storyLike.findMany({
+      where: { storyId },
+      include: { user: { select: { id: true, username: true, avatar: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+
+    ok(res, { users: likes.map((like) => like.user) });
+  })
+);
+
 router.patch(
   "/:id",
   authenticate,
