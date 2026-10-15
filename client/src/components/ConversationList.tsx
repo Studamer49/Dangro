@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import { useAuthStore } from "@/stores/authStore";
 import { getSocket } from "@/lib/socket";
 import { useBounce } from "@/hooks/useBounce";
 import api from "@/lib/api";
 import Avatar from "@/components/Avatar";
+import UserContextMenu from "@/components/UserContextMenu";
 import { useConfirm } from "@/hooks/useConfirm";
 import { useBlocksStore } from "@/stores/blocksStore";
 import { useDmPrefsStore } from "@/stores/dmPrefsStore";
@@ -21,10 +22,12 @@ interface Props {
  */
 function ConversationRow({
   onClick,
+  onContextMenu,
   className,
   children,
 }: {
   onClick: () => void;
+  onContextMenu?: (event: MouseEvent) => void;
   className: string;
   children: ReactNode;
 }) {
@@ -37,6 +40,7 @@ function ConversationRow({
         bounce("tap");
         onClick();
       }}
+      onContextMenu={onContextMenu}
       className={className}
     >
       {children}
@@ -50,10 +54,13 @@ export default function ConversationList({ activeConversation, onSelectConversat
   const blockedIds = useBlocksStore((s) => s.blockedIds);
   const loadBlocks = useBlocksStore((s) => s.load);
   const isMuted = useDmPrefsStore((s) => s.isMuted);
+  const toggleDmMute = useDmPrefsStore((s) => s.toggleMute);
+  const dmMarkRead = useDmPrefsStore((s) => s.markRead);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [showSearch, setShowSearch] = useState(false);
+  const [userMenu, setUserMenu] = useState<{ conversation: Conversation; x: number; y: number } | null>(null);
 
   // Mirrors the loaded conversation ids so a socket handler can tell an
   // unknown conversation from a known one *before* calling setState.
@@ -293,6 +300,22 @@ export default function ConversationList({ activeConversation, onSelectConversat
     }
   };
 
+  const openUserMenu = (event: MouseEvent, conversation: Conversation) => {
+    if (!conversation.otherUser) return;
+    event.preventDefault();
+    setUserMenu({ conversation, x: event.clientX, y: event.clientY });
+  };
+
+  const markConversationRead = (conversation: Conversation) => {
+    dmMarkRead(conversation.id);
+    setConversations((prev) =>
+      prev.map((c) => (c.id === conversation.id ? { ...c, unreadCount: 0 } : c))
+    );
+    void api.patch(`/dms/${conversation.id}/read`).catch(() => {
+      // silent: the next poll re-syncs the count
+    });
+  };
+
   const formatTime = (dateStr: string | null) => {
     if (!dateStr) return "";
     const date = new Date(dateStr);
@@ -406,6 +429,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
                   return (
                     <div
                       key={conv.id}
+                      onContextMenu={(event) => openUserMenu(event, conv)}
                       className="flex w-full items-center gap-3 rounded-xl px-2 py-2.5 transition-colors duration-200 ease-out hover:bg-accent-500/10"
                     >
                       <Avatar user={conv.otherUser} className="h-10 w-10 text-sm" />
@@ -457,6 +481,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
                 <ConversationRow
                   key={conv.id}
                   onClick={() => onSelectConversation(conv)}
+                  onContextMenu={(event) => openUserMenu(event, conv)}
                   className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition-all duration-200 ease-out ${
                     isActive ? "row-active" : "text-gray-300 hover:bg-white/5"
                   }`}
@@ -516,6 +541,19 @@ export default function ConversationList({ activeConversation, onSelectConversat
           </>
         )}
       </div>
+
+      {userMenu?.conversation.otherUser && (
+        <UserContextMenu
+          user={userMenu.conversation.otherUser}
+          x={userMenu.x}
+          y={userMenu.y}
+          conversationId={userMenu.conversation.id}
+          muted={isMuted(userMenu.conversation.id)}
+          onMarkRead={() => markConversationRead(userMenu.conversation)}
+          onToggleMute={() => toggleDmMute(userMenu.conversation.id)}
+          onClose={() => setUserMenu(null)}
+        />
+      )}
     </div>
   );
 }

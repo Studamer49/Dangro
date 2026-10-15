@@ -5,6 +5,7 @@ import { useToast } from "@/stores/toastStore";
 import type { Post, PostLike, Story, StoryGroup } from "@/types";
 import CreatePostComposer from "@/components/feed/CreatePostComposer";
 import PostCard from "@/components/feed/PostCard";
+import PostDetailModal from "@/components/feed/PostDetailModal";
 import StoriesBar from "@/components/feed/StoriesBar";
 
 export default function FeedPage() {
@@ -14,6 +15,7 @@ export default function FeedPage() {
   const [stories, setStories] = useState<StoryGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
   const pendingLikes = useRef<Set<string>>(new Set());
 
   const fetchFeed = useCallback(async () => {
@@ -96,6 +98,7 @@ export default function FeedPage() {
     try {
       await api.delete(`/posts/${postId}`);
       setPosts((prev) => prev.filter((p) => p.id !== postId));
+      setExpandedId((current) => (current === postId ? null : current));
       toast.success("Post deleted");
     } catch (err) {
       toast.error(apiErrorMessage(err));
@@ -142,6 +145,8 @@ export default function FeedPage() {
     },
     [fetchStories]
   );
+
+  const expandedPost = posts.find((post) => post.id === expandedId) ?? null;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -213,6 +218,7 @@ export default function FeedPage() {
               key={post.id}
               post={post}
               viewer={user}
+              onOpen={(target) => setExpandedId(target.id)}
               onLike={(target) => void handleLike(target)}
               onDelete={(postId) => void handleDelete(postId)}
               onEdit={(updated) =>
@@ -224,6 +230,21 @@ export default function FeedPage() {
         )}
         </div>
       </div>
+
+      {expandedPost && (
+        <PostDetailModal
+          key={expandedPost.id}
+          post={expandedPost}
+          viewer={user}
+          onClose={() => setExpandedId(null)}
+          onLike={(target) => void handleLike(target)}
+          onDelete={(postId) => void handleDelete(postId)}
+          onEdit={(updated) =>
+            setPosts((prev) => prev.map((entry) => (entry.id === updated.id ? { ...entry, ...updated } : entry)))
+          }
+          onCommentCountChange={handleCommentCountChange}
+        />
+      )}
     </div>
   );
 }

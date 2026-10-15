@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import api, { apiErrorMessage } from "@/lib/api";
 import { useToast } from "@/stores/toastStore";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -15,6 +15,10 @@ interface PostCardProps {
   onCommentCountChange: (postId: string, delta: number) => void;
   /** Lets the feed replace the post with the server's version after an edit. */
   onEdit?: (post: Post) => void;
+  /** When provided, clicking the card opens the expanded post popup. */
+  onOpen?: (post: Post) => void;
+  /** Opens the comment thread on first render (used by the expanded popup). */
+  defaultShowComments?: boolean;
 }
 
 export default function PostCard({
@@ -24,10 +28,12 @@ export default function PostCard({
   onDelete,
   onCommentCountChange,
   onEdit,
+  onOpen,
+  defaultShowComments = false,
 }: PostCardProps) {
   const toast = useToast();
   const confirm = useConfirm();
-  const [showComments, setShowComments] = useState(false);
+  const [showComments, setShowComments] = useState(defaultShowComments);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(post.caption ?? "");
   const [saving, setSaving] = useState(false);
@@ -43,6 +49,15 @@ export default function PostCard({
   const likeCount = post._count?.likes ?? 0;
   const commentCount = post._count?.comments ?? 0;
   const isOwnPost = viewer !== null && post.authorId === viewer.id;
+
+  const handleOpen = (event: MouseEvent<HTMLElement>) => {
+    if (!onOpen) return;
+    // Nested controls (like/comment, media players, edit/delete, links) keep
+    // their own click behaviour; only clicks on inert regions open the popup.
+    const target = event.target as HTMLElement;
+    if (target.closest("button, a, input, textarea, video, audio, select, label")) return;
+    onOpen(post);
+  };
 
   const handleDelete = async () => {
     const ok = await confirm({
@@ -77,7 +92,10 @@ export default function PostCard({
   };
 
   return (
-    <article className="glass-card glass-card-hover overflow-hidden rounded-2xl">
+    <article
+      onClick={onOpen ? handleOpen : undefined}
+      className={`glass-card glass-card-hover overflow-hidden rounded-2xl ${onOpen ? "cursor-pointer" : ""}`}
+    >
       <div className="flex items-center gap-3 p-5">
         <Avatar user={post.author} className="h-11 w-11 text-base" />
         <div className="min-w-0 flex-1">

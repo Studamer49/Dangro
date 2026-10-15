@@ -3,7 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { useToast } from "@/stores/toastStore";
 import api, { apiErrorMessage } from "@/lib/api";
-import type { User, Post } from "@/types";
+import type { User, Post, PostLike } from "@/types";
+import PostDetailModal from "@/components/feed/PostDetailModal";
 import ProfileAvatar from "@/components/profile/ProfileAvatar";
 import EditProfileModal from "@/components/profile/EditProfileModal";
 
@@ -20,6 +21,7 @@ export default function ProfilePage() {
   const [followingCount, setFollowingCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const isOwnProfile = !!currentUser && currentUser.id === userId;
 
@@ -106,6 +108,71 @@ export default function ProfilePage() {
       toast.error(apiErrorMessage(err));
     }
   };
+
+  const handleLike = async (post: Post) => {
+    const wasLiked = (post.likes?.length ?? 0) > 0;
+    const previousCount = post._count?.likes ?? 0;
+    const viewerLike: PostLike = {
+      id: `optimistic-${post.id}`,
+      postId: post.id,
+      userId: currentUser?.id ?? "",
+      createdAt: new Date().toISOString(),
+    };
+    const apply = (liked: boolean, count: number) =>
+      setPosts((prev) =>
+        prev.map((entry) =>
+          entry.id === post.id
+            ? {
+                ...entry,
+                likes: liked ? [viewerLike] : [],
+                _count: { likes: count, comments: entry._count?.comments ?? 0 },
+              }
+            : entry
+        )
+      );
+
+    apply(!wasLiked, Math.max(0, previousCount + (wasLiked ? -1 : 1)));
+    try {
+      const { data } = await api.post(`/posts/${post.id}/like`);
+      apply(Boolean(data.liked), data.likeCount);
+    } catch (err) {
+      apply(wasLiked, previousCount);
+      toast.error(apiErrorMessage(err));
+    }
+  };
+
+  const handleDelete = async (postId: string) => {
+    try {
+      await api.delete(`/posts/${postId}`);
+      setPosts((prev) => prev.filter((p) => p.id !== postId));
+      setExpandedId((current) => (current === postId ? null : current));
+      toast.success("Post deleted");
+    } catch (err) {
+      toast.error(apiErrorMessage(err));
+    }
+  };
+
+  const handleCommentCountChange = (postId: string, delta: number) => {
+    setPosts((prev) =>
+      prev.map((p) =>
+        p.id === postId
+          ? {
+              ...p,
+              _count: {
+                likes: p._count?.likes ?? 0,
+                comments: Math.max(0, (p._count?.comments ?? 0) + delta),
+              },
+            }
+          : p
+      )
+    );
+  };
+
+  const handleEdit = (updated: Post) => {
+    setPosts((prev) => prev.map((entry) => (entry.id === updated.id ? { ...entry, ...updated } : entry)));
+  };
+
+  const expandedPost = posts.find((post) => post.id === expandedId) ?? null;
 
   if (loading) {
     return (
@@ -282,6 +349,7 @@ export default function ProfilePage() {
               {posts.map((post) => (
                 <div
                   key={post.id}
+                  onClick={() => setExpandedId(post.id)}
                   className="glass-card group relative aspect-square cursor-pointer overflow-hidden rounded-2xl"
                 >
                   {post.media?.[0] ? (
@@ -319,6 +387,19 @@ export default function ProfilePage() {
           onSaved={() => {
             void fetchProfile(seqRef.current);
           }}
+        />
+      )}
+
+      {expandedPost && (
+        <PostDetailModal
+          key={expandedPost.id}
+          post={expandedPost}
+          viewer={currentUser}
+          onClose={() => setExpandedId(null)}
+          onLike={(target) => void handleLike(target)}
+          onDelete={(postId) => void handleDelete(postId)}
+          onEdit={handleEdit}
+          onCommentCountChange={handleCommentCountChange}
         />
       )}
     </div>
