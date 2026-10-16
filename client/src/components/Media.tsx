@@ -1,17 +1,22 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type PointerEventHandler, type ReactNode } from "react";
 import { isGifUrl, isVideoUrl } from "@/lib/media";
 import { useSettingsStore } from "@/stores/settingsStore";
+
+/**
+ * How a piece of animated media is allowed to start playing.
+ *
+ * `hover` (the default) keeps a page full of avatars quiet until the pointer
+ * is actually over one — a feed or member list no longer runs a dozen decoders
+ * at once. `always` is for the places where the animation *is* the content:
+ * the profile someone opened, and a story. `never` freezes it.
+ */
+export type MediaAnimation = "hover" | "always" | "never";
 
 interface MediaProps {
   src: string;
   alt?: string;
   className?: string;
-  /**
-   * Whether this media is allowed to animate. Defaults to the viewer's
-   * "animate avatars" setting, which is what lets one switch freeze every GIF
-   * and video avatar at once.
-   */
-  animated?: boolean;
+  animation?: MediaAnimation;
   loop?: boolean;
   fallback?: ReactNode;
   onError?: () => void;
@@ -19,20 +24,38 @@ interface MediaProps {
 
 /**
  * Renders an avatar/banner from whatever the user uploaded: a still image, an
- * animated GIF, or a short video. Videos and (optionally) GIFs are frozen when
- * animations are turned off in settings.
+ * animated GIF, or a short video.
+ *
+ * Videos and GIFs animate only in the contexts that ask for it (see
+ * `MediaAnimation`) and only while the viewer's "animate avatars" setting is
+ * on. `always` callers — the profile page and stories — animate outright;
+ * everything else waits for a hover. The setting is the master switch: turning
+ * it off freezes even those.
  */
 export default function Media({
   src,
   alt = "",
   className = "",
-  animated,
+  animation = "hover",
   loop = true,
   fallback = null,
   onError,
 }: MediaProps) {
   const settingAnimate = useSettingsStore((s) => s.animateAvatars);
-  const animate = animated ?? settingAnimate;
+  const [hovered, setHovered] = useState(false);
+
+  const hoverEnabled = animation === "hover";
+  const animate = settingAnimate && (animation === "always" || (hoverEnabled && hovered));
+
+  const hoverHandlers: {
+    onPointerEnter?: PointerEventHandler;
+    onPointerLeave?: PointerEventHandler;
+  } = hoverEnabled
+    ? {
+        onPointerEnter: () => setHovered(true),
+        onPointerLeave: () => setHovered(false),
+      }
+    : {};
 
   if (isVideoUrl(src)) {
     return (
@@ -43,13 +66,35 @@ export default function Media({
         loop={loop}
         fallback={fallback}
         onError={onError}
+        hoverHandlers={hoverHandlers}
       />
     );
   }
+
+  // A GIF animates only once it is allowed to; otherwise the first frame is
+  // drawn to a canvas and shown as a still, so the layout does not jump.
   if (isGifUrl(src) && !animate) {
-    return <FrozenGif src={src} alt={alt} className={className} onError={onError} />;
+    return (
+      <FrozenGif
+        src={src}
+        alt={alt}
+        className={className}
+        onError={onError}
+        hoverHandlers={hoverHandlers}
+      />
+    );
   }
-  return <img src={src} alt={alt} draggable={false} className={className} onError={onError} />;
+
+  return (
+    <img
+      src={src}
+      alt={alt}
+      draggable={false}
+      className={className}
+      onError={onError}
+      {...hoverHandlers}
+    />
+  );
 }
 
 function VideoMedia({
@@ -59,6 +104,7 @@ function VideoMedia({
   loop,
   fallback,
   onError,
+  hoverHandlers,
 }: {
   src: string;
   className: string;
@@ -66,11 +112,15 @@ function VideoMedia({
   loop: boolean;
   fallback: ReactNode;
   onError?: () => void;
+  hoverHandlers: {
+    onPointerEnter?: PointerEventHandler;
+    onPointerLeave?: PointerEventHandler;
+  };
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const [failed, setFailed] = useState(false);
 
-  // Play/pause as the setting flips, instead of remounting the element.
+  // Play/pause as the animation state flips, instead of remounting the element.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -111,6 +161,7 @@ function VideoMedia({
         setFailed(true);
         onError?.();
       }}
+      {...hoverHandlers}
     />
   );
 }
@@ -126,11 +177,16 @@ function FrozenGif({
   alt,
   className,
   onError,
+  hoverHandlers,
 }: {
   src: string;
   alt: string;
   className: string;
   onError?: () => void;
+  hoverHandlers: {
+    onPointerEnter?: PointerEventHandler;
+    onPointerLeave?: PointerEventHandler;
+  };
 }) {
   const [snapshot, setSnapshot] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -166,7 +222,16 @@ function FrozenGif({
   }, [src, onError]);
 
   if (failed || !snapshot) {
-    return <img src={src} alt={alt} draggable={false} className={className} onError={onError} />;
+    return (
+      <img
+        src={src}
+        alt={alt}
+        draggable={false}
+        className={className}
+        onError={onError}
+        {...hoverHandlers}
+      />
+    );
   }
-  return <img src={snapshot} alt={alt} draggable={false} className={className} />;
+  return <img src={snapshot} alt={alt} draggable={false} className={className} {...hoverHandlers} />;
 }

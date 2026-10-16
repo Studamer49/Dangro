@@ -281,6 +281,30 @@ const databaseUrl = usesMongo
         : "Add DATABASE_URL to server/.env — see server/.env.example."
     );
 
+/**
+ * TURN relay configuration.
+ *
+ * Calls between two networks (different cities, countries, mobile data,
+ * corporate NAT) frequently have no direct path, so the media has to be
+ * relayed. Two credential modes:
+ *   - static:  TURN_USERNAME + TURN_CREDENTIAL are handed to every client.
+ *   - secret:  TURN_SECRET signs short-lived per-user credentials (the coturn
+ *              "REST API" / `static-auth-secret` scheme), so the shared relay
+ *              password never reaches the browser and a leaked credential
+ *              expires on its own.
+ */
+const turnUrls = optional("TURN_URLS", "")
+  .split(",")
+  .map((url) => url.trim())
+  .filter(Boolean);
+const turnSecret = optional("TURN_SECRET", "");
+const turnUsername = optional("TURN_USERNAME", "");
+const turnCredential = optional("TURN_CREDENTIAL", "");
+const turnTtlSeconds = Math.min(
+  24 * 60 * 60,
+  Math.max(60, Number.parseInt(optional("TURN_TTL_SECONDS", "3600"), 10) || 3600)
+);
+
 /** Comma-separated list of allowed browser origins (CORS + Socket.IO). */
 const clientUrls = optional("CLIENT_URL", "http://localhost:5173")
   .split(",")
@@ -329,6 +353,14 @@ export const config = {
   jwtSecret,
   jwtRefreshSecret: optional("JWT_REFRESH_SECRET", jwtSecret + "_refresh"),
   clientUrls,
+  turn: {
+    urls: turnUrls,
+    configured: turnUrls.length > 0,
+    secret: turnSecret,
+    username: turnUsername,
+    credential: turnCredential,
+    ttlSeconds: turnTtlSeconds,
+  },
   /** Absolute, CWD-independent directory where uploaded files are written.
    *  Override with UPLOAD_DIR (e.g. a persistent disk mount in production). */
   uploadDir: process.env.UPLOAD_DIR

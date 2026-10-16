@@ -234,7 +234,7 @@ export default function StoryViewer({
         <div className="glass-panel relative overflow-hidden rounded-2xl shadow-elev3">
           {/* Header */}
           <div className="absolute inset-x-0 top-0 z-10 flex items-center gap-2 bg-gradient-to-b from-black/80 via-black/40 to-transparent p-3">
-            <Avatar user={group.author} className="h-8 w-8 text-sm" />
+            <Avatar user={group.author} className="h-8 w-8 text-sm" animation="always" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-semibold tracking-tight text-white">{group.author.username}</p>
               <p className="tabular text-xs text-white/60">{relativeTime(story.createdAt)}</p>

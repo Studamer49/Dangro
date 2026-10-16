@@ -146,6 +146,79 @@ function parseOfferShape(sdp: string | undefined): OfferSection[] {
   return shape;
 }
 
+/**
+ * Capture constraints.
+ *
+ * Without these, capture is whatever the browser's driver defaults to — often
+ * 640×480 on desktop webcams, which reads as a blurry call on a modern screen.
+ * `ideal` asks for 720p and `max` caps at 1080p so a 4K webcam cannot saturate
+ * the uplink; the audio processing flags are what keep a call intelligible
+ * (echo cancellation in particular is the difference between "call" and
+ * "everything I say comes back to me twice").
+ */
+const AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: true,
+  noiseSuppression: true,
+  autoGainControl: true,
+  sampleRate: 48000,
+};
+
+const VIDEO_CONSTRAINTS: MediaTrackConstraints = {
+  width: { ideal: 1280, max: 1920 },
+  height: { ideal: 720, max: 1080 },
+  frameRate: { ideal: 30, max: 30 },
+};
+
+/**
+ * Encoder ceilings, in bits per second.
+ *
+ * WebRTC's default video bitrate is low enough to look soft on a 720p frame;
+ * these are the quality/latency trade-offs a normal call wants, and the screen
+ * share is given more because legible text needs it. They are capped (not
+ * fixed) values — congestion control still lowers them on a weak link.
+ */
+const AUDIO_MAX_BITRATE = 128_000;
+const VIDEO_MAX_BITRATE = 2_500_000;
+const SCREEN_MAX_BITRATE = 4_000_000;
+
+/** Applies a `maxBitrate` to a sender, best-effort. */
+async function tuneSender(sender: RTCRtpSender, maxBitrate: number): Promise<void> {
+  try {
+    const params = sender.getParameters();
+    // Some engines report no encodings until the first description is set;
+    // adding one lets the change stick instead of silently doing nothing.
+    if (!params.encodings || params.encodings.length === 0) params.encodings = [{}];
+    for (const encoding of params.encodings) {
+      encoding.maxBitrate = maxBitrate;
+    }
+    await sender.setParameters(params);
+  } catch {
+    // Not fatal: the connection falls back to the browser's own congestion
+    // control, which still produces a working (if less sharp) call.
+  }
+}
+
+/**
+ * Applies the bitrate ceilings to every live sender.
+ *
+ * Called after each offer/answer is applied, because `setParameters` is a
+ * no-op until the connection has negotiated its encodings. The content hint on
+ * the track decides whether a video sender is the camera or a screen share.
+ */
+async function tuneConnection(pc: RTCPeerConnection): Promise<void> {
+  await Promise.all(
+    pc.getSenders().map((sender) => {
+      const track = sender.track;
+      if (!track) return Promise.resolve();
+      if (track.kind === "audio") return tuneSender(sender, AUDIO_MAX_BITRATE);
+      if (track.kind === "video") {
+        return tuneSender(sender, track.contentHint === "detail" ? SCREEN_MAX_BITRATE : VIDEO_MAX_BITRATE);
+      }
+      return Promise.resolve();
+    })
+  );
+}
+
 export function useWebRTC() {
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   /**
@@ -344,11 +417,11 @@ export function useWebRTC() {
     // voice conversation beats a silent video — then video alone.
     const attempts: MediaStreamConstraints[] = video
       ? [
-          { audio: true, video: true },
-          { audio: true, video: false },
-          { audio: false, video: true },
+          { audio: AUDIO_CONSTRAINTS, video: VIDEO_CONSTRAINTS },
+          { audio: AUDIO_CONSTRAINTS, video: false },
+          { audio: false, video: VIDEO_CONSTRAINTS },
         ]
-      : [{ audio: true, video: false }];
+      : [{ audio: AUDIO_CONSTRAINTS, video: false }];
 
     for (const constraints of attempts) {
       try {
@@ -361,6 +434,12 @@ export function useWebRTC() {
           stream.getTracks().forEach((track) => track.stop());
           throw new Error("Call ended before the microphone was ready");
         }
+        // Tell the encoder this is live motion, not a static image, so it
+        // favours smoothness over per-frame detail. The screen share sets the
+        // opposite ("detail") when it goes on the wire.
+        stream.getVideoTracks().forEach((track) => {
+          track.contentHint = "motion";
+        });
         setLocalStream(stream);
         return stream;
       } catch (err) {
@@ -407,6 +486,9 @@ export function useWebRTC() {
     pc.addTransceiver("video", { direction: "sendrecv" });
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
+    // The encodings exist once a description is set; this is the earliest the
+    // bitrate ceilings can be applied.
+    await tuneConnection(pc);
     if (targetUserId) {
       const socket = getSocket();
       socket.emit("webrtc_offer", { targetUserId, signal: offer });
@@ -461,6 +543,7 @@ export function useWebRTC() {
     await drainPendingCandidates(pc);
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
+    await tuneConnection(pc);
     const socket = getSocket();
     socket.emit("webrtc_answer", { targetUserId: callerId, signal: answer });
   }, [callType, startLocalStream, createPeerConnection, drainPendingCandidates]);
@@ -550,14 +633,29 @@ export function useWebRTC() {
     }
 
     try {
-      const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const screenStream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          // Cap at 1080p30: a 4K share is unreadable text at the other end
+          // anyway once the encoder scales it down, and the uplink cannot
+          // sustain it. The detail hint below keeps what is sent crisp.
+          frameRate: { ideal: 30, max: 30 },
+          width: { max: 1920 },
+          height: { max: 1080 },
+        },
+        audio: false,
+      });
       const screenTrack = screenStream.getVideoTracks()[0];
       if (!screenTrack) return;
+      // "detail" tells the encoder to preserve sharpness for text over frame
+      // rate, and is also how `tuneConnection` recognises a screen sender.
+      screenTrack.contentHint = "detail";
 
       if (screenSender) {
         await screenSender.replaceTrack(screenTrack);
+        await tuneSender(screenSender, SCREEN_MAX_BITRATE);
       } else if (useCallStore.getState().localStream) {
-        pc.addTrack(screenTrack, screenStream);
+        const sender = pc.addTrack(screenTrack, screenStream);
+        await tuneSender(sender, SCREEN_MAX_BITRATE);
       }
       screenStreamRef.current = screenStream;
       setLocalScreenStream(screenStream);

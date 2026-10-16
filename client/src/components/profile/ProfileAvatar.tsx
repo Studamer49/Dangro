@@ -1,10 +1,16 @@
 import { useEffect, useState } from "react";
-import Media from "@/components/Media";
+import Media, { type MediaAnimation } from "@/components/Media";
 
 interface ProfileAvatarProps {
   username: string;
   avatar?: string | null;
   className?: string;
+  /**
+   * The profile identity avatar animates by default: opening a profile is
+   * exactly the moment the user asked to see the video/GIF move. Other callers
+   * can pass `"hover"` to fall back to the pointer-gated behaviour.
+   */
+  animation?: MediaAnimation;
 }
 
 /**
@@ -21,6 +27,7 @@ export default function ProfileAvatar({
   username,
   avatar,
   className = "h-20 w-20 text-3xl",
+  animation = "always",
 }: ProfileAvatarProps) {
   const [failed, setFailed] = useState(false);
 
@@ -36,6 +43,7 @@ export default function ProfileAvatar({
         <Media
           src={avatar}
           alt={username}
+          animation={animation}
           onError={() => setFailed(true)}
           className="h-full w-full object-cover"
         />

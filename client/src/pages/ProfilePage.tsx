@@ -228,6 +228,7 @@ export default function ProfilePage() {
               <Media
                 src={profileUser.cover}
                 alt=""
+                animation="always"
                 className="absolute inset-0 h-full w-full object-cover"
               />
             ) : (

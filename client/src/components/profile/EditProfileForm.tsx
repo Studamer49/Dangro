@@ -1,11 +1,13 @@
 import { useRef, useState } from "react";
 import api, { apiErrorMessage } from "@/lib/api";
 import { uploadErrorMessage, uploadMedia } from "@/lib/upload";
+import { isVideoFile } from "@/lib/videoTrim";
 import { useToast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import type { User } from "@/types";
 import ProfileAvatar from "@/components/profile/ProfileAvatar";
 import Media from "@/components/Media";
+import VideoTrimmer from "@/components/VideoTrimmer";
 
 interface EditProfileFormProps {
   user: User;
@@ -34,6 +36,11 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
   const [uploading, setUploading] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [saving, setSaving] = useState(false);
+  // A chosen video waits here until it has been cut to five seconds. Held with
+  // its destination so the same dialog serves the avatar and the banner.
+  const [trimTarget, setTrimTarget] = useState<{ file: File; target: "avatar" | "cover" } | null>(
+    null,
+  );
 
   const trimmedUsername = username.trim();
   const trimmedBio = bio.trim();
@@ -46,11 +53,7 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
           ? "Username cannot contain spaces."
           : null;
 
-  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-
+  const uploadAvatar = async (file: File) => {
     setUploading(true);
     try {
       // The URL is a Cloudinary delivery address once this returns; it is
@@ -64,11 +67,7 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
     }
   };
 
-  const handleCoverChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-
+  const uploadCover = async (file: File) => {
     setUploadingCover(true);
     try {
       const uploaded = await uploadMedia(file);
@@ -78,6 +77,32 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
     } finally {
       setUploadingCover(false);
     }
+  };
+
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    // A video has to fit the five-second cap first, so it goes through the
+    // trimmer; a still image uploads straight away.
+    if (isVideoFile(file)) {
+      setTrimTarget({ file, target: "avatar" });
+      return;
+    }
+    void uploadAvatar(file);
+  };
+
+  const handleCoverChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+
+    if (isVideoFile(file)) {
+      setTrimTarget({ file, target: "cover" });
+      return;
+    }
+    void uploadCover(file);
   };
 
   const handleSave = async () => {
@@ -165,7 +190,7 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
         <span className="field-label">Banner</span>
         <div className="relative mb-2 h-24 overflow-hidden rounded-xl border border-gray-700 bg-gradient-to-br from-accent-600/45 via-accent-500/20 to-accent-400/5">
           {cover && (
-            <Media src={cover} alt="" className="absolute inset-0 h-full w-full object-cover" />
+            <Media src={cover} alt="" animation="always" className="absolute inset-0 h-full w-full object-cover" />
           )}
         </div>
         <div className="flex flex-wrap gap-2">
@@ -288,6 +313,19 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
           {saving ? "Saving..." : "Save"}
         </button>
       </div>
+
+      {trimTarget && (
+        <VideoTrimmer
+          file={trimTarget.file}
+          label={trimTarget.target === "avatar" ? "Avatar" : "Banner"}
+          onCancel={() => setTrimTarget(null)}
+          onConfirm={(trimmed) => {
+            const target = trimTarget.target;
+            setTrimTarget(null);
+            void (target === "avatar" ? uploadAvatar(trimmed) : uploadCover(trimmed));
+          }}
+        />
+      )}
     </div>
   );
 }

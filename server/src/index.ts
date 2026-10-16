@@ -35,6 +35,7 @@ import storyRoutes from "./routes/stories.js";
 import followRoutes from "./routes/follows.js";
 import notificationRoutes from "./routes/notifications.js";
 import blockRoutes from "./routes/blocks.js";
+import turnRoutes from "./routes/turn.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -157,6 +158,7 @@ app.use("/api/stories", storyRoutes);
 app.use("/api/follows", followRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/blocks", blockRoutes);
+app.use("/api/turn", turnRoutes);
 
 // Anything under /api that no router matched is a 404, never the HTML shell.
 app.use("/api", (req, res) => {

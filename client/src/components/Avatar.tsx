@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import Media from "@/components/Media";
+import Media, { type MediaAnimation } from "@/components/Media";
 import type { User } from "@/types";
 
 interface AvatarProps {
@@ -12,6 +12,12 @@ interface AvatarProps {
   linkToProfile?: boolean;
   status?: User["status"];
   lit?: boolean;
+  /**
+   * How the avatar's video/GIF behaves. Lists, chats and member trays leave it
+   * at the default so a page full of avatars does not all animate at once;
+   * stories pass `"always"` because there the avatar is the content.
+   */
+  animation?: MediaAnimation;
 }
 
 /**
@@ -31,6 +37,7 @@ export default function Avatar({
   linkToProfile = true,
   status,
   lit = false,
+  animation = "hover",
 }: AvatarProps) {
   // Gradient from the accent hue keeps the placeholder initials from looking
   // like a flat grey block, while still tracking whatever accent is selected.
@@ -42,7 +49,7 @@ export default function Avatar({
         }`}
       >
         {user?.avatar ? (
-          <Media src={user.avatar} alt="" className="h-full w-full object-cover" />
+          <Media src={user.avatar} alt="" animation={animation} className="h-full w-full object-cover" />
         ) : (
           user?.username?.[0]?.toUpperCase() ?? "?"
         )}

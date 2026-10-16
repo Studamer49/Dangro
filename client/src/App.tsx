@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { useGlobalButtonBounce } from "@/hooks/useBounce";
+import { refreshIceServers } from "@/lib/iceServers";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
@@ -71,6 +72,13 @@ export default function App() {
   useEffect(() => {
     fetchUser();
   }, [fetchUser]);
+
+  // Pull the deployment's ICE servers (including a TURN relay, when one is
+  // configured) as soon as the app mounts, so the first call already has them.
+  // Fire-and-forget: the static fallback covers a slow or absent server.
+  useEffect(() => {
+    void refreshIceServers();
+  }, []);
 
   return (
     <ErrorBoundary>

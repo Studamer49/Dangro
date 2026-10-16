@@ -5,10 +5,12 @@ import Media from "@/components/Media";
 import RoleEditor from "@/components/server/RoleEditor";
 import api, { apiErrorMessage } from "@/lib/api";
 import { uploadErrorMessage, uploadMedia } from "@/lib/upload";
+import { isVideoFile } from "@/lib/videoTrim";
 import { useToast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import { useConfirm } from "@/hooks/useConfirm";
 import type { Ban, Member, Role, Server, ServerRole } from "@/types";
+import VideoTrimmer from "@/components/VideoTrimmer";
 
 interface Props {
   server: Server;
@@ -54,6 +56,7 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
   const [busy, setBusy] = useState(false);
   const [uploadingIcon, setUploadingIcon] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
+  const [bannerTrim, setBannerTrim] = useState<File | null>(null);
   const [confirmText, setConfirmText] = useState("");
   const iconInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
@@ -148,10 +151,7 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
     }
   };
 
-  const onBannerPicked = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
+  const uploadBanner = async (file: File) => {
     setUploadingBanner(true);
     try {
       const uploaded = await uploadMedia(file);
@@ -161,6 +161,19 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
     } finally {
       setUploadingBanner(false);
     }
+  };
+
+  const onBannerPicked = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    // Video banners must fit the five-second cap, so they detour through the
+    // trimmer before uploading.
+    if (isVideoFile(file)) {
+      setBannerTrim(file);
+      return;
+    }
+    void uploadBanner(file);
   };
 
   const banMember = async (member: Member) => {
@@ -290,7 +303,7 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
             <>
               <div className="flex items-center gap-4">
                 {icon ? (
-                  <Media src={icon} alt={server.name} className="h-16 w-16 rounded-2xl object-cover" />
+                  <Media src={icon} alt={server.name} animation="always" className="h-16 w-16 rounded-2xl object-cover" />
                 ) : (
                   <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-800 text-2xl font-bold text-white">
                     {server.name?.[0]?.toUpperCase() ?? "?"}
@@ -330,7 +343,7 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
                 <span className="field-label">Server banner</span>
                 <div className="aspect-[5/1] w-full overflow-hidden rounded-xl border border-gray-800/70 bg-gray-900/60">
                   {banner ? (
-                    <Media src={banner} alt={`${server.name} banner`} className="h-full w-full object-cover" />
+                    <Media src={banner} alt={`${server.name} banner`} animation="always" className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">
                       No banner
@@ -629,6 +642,18 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
             </button>
           </div>
         </div>
+      )}
+
+      {bannerTrim && (
+        <VideoTrimmer
+          file={bannerTrim}
+          label="Banner"
+          onCancel={() => setBannerTrim(null)}
+          onConfirm={(trimmed) => {
+            setBannerTrim(null);
+            void uploadBanner(trimmed);
+          }}
+        />
       )}
     </Modal>
   );
