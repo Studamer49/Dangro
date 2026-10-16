@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -76,18 +77,43 @@ export default function Media({
 }: MediaProps) {
   const settingAnimate = useSettingsStore((s) => s.animateAvatars);
   const [hovered, setHovered] = useState(false);
-  // A still image that fails once has almost always hit a transient network or
-  // CDN blip, not a missing file; the browser then keeps showing the broken
-  // result until the src changes. One retry with a cache-busting query param
-  // is enough to recover and is what stops a banner "just disappearing".
-  const [retry, setRetry] = useState(0);
-
   const hoverEnabled = animation === "hover";
 
   // Swap the stored 2560px Cloudinary transform for the size actually drawn.
   // Non-Cloudinary sources are unaffected, so this is a no-op for videos and
   // GridFS files.
   const resolvedSrc = width ? withWidth(src, width) : src;
+
+  /**
+   * The URLs to try, in order: the size-optimised copy, the untouched original,
+   * then the original again with a cache-busting query.
+   *
+   * A browser latches onto the first failure of a `src` and keeps painting the
+   * broken result until the URL changes, so a single wrong candidate — an asset
+   * stored before width transforms existed, a bad rewrite, a corrupted CDN
+   * cache entry — must never be the last word while a perfectly good URL sits
+   * behind it. The caller's `onError` (which hides the image, falls back to
+   * initials, ...) only runs once every candidate has been tried.
+   */
+  const sources = useMemo(() => {
+    const list = resolvedSrc === src ? [src] : [resolvedSrc, src];
+    const last = list[list.length - 1];
+    list.push(`${last}${last.includes("?") ? "&" : "?"}retry=1`);
+    return list;
+  }, [resolvedSrc, src]);
+
+  const [attempt, setAttempt] = useState(0);
+
+  // Restart the chain whenever the underlying source changes.
+  useEffect(() => {
+    setAttempt(0);
+  }, [sources]);
+
+  const currentSrc = sources[Math.min(attempt, sources.length - 1)];
+  const advance = useCallback(() => {
+    if (attempt < sources.length - 1) setAttempt(attempt + 1);
+    else onError?.();
+  }, [attempt, sources, onError]);
 
   /**
    * Points the hover listeners at the nearest containing surface rather than
@@ -128,11 +154,6 @@ export default function Media({
 
   const animate = settingAnimate && (animation === "always" || (hoverEnabled && hovered));
 
-  // Reset the retry counter whenever the underlying source changes.
-  useEffect(() => {
-    setRetry(0);
-  }, [resolvedSrc]);
-
   if (isVideoUrl(src)) {
     return (
       <VideoMedia
@@ -151,29 +172,19 @@ export default function Media({
   // drawn to a canvas and shown as a still, so the layout does not jump.
   if (isGifUrl(src) && !animate) {
     return (
-      <FrozenGif src={resolvedSrc} alt={alt} className={className} onError={onError} hoverRef={hoverRef} />
+      <FrozenGif sources={sources} alt={alt} className={className} onError={onError} hoverRef={hoverRef} />
     );
   }
 
-  // Append a one-shot cache-buster on retry so the browser does not just
-  // replay its cached failure.
-  const retrySrc =
-    retry > 0
-      ? `${resolvedSrc}${resolvedSrc.includes("?") ? "&" : "?"}retry=${retry}`
-      : resolvedSrc;
-
   return (
     <img
-      src={retrySrc}
+      src={currentSrc}
       alt={alt}
       draggable={false}
       loading="lazy"
       decoding="async"
       className={className}
-      onError={() => {
-        if (retry < 1) setRetry(retry + 1);
-        else onError?.();
-      }}
+      onError={advance}
       ref={hoverRef}
     />
   );
@@ -244,7 +255,11 @@ function VideoMedia({
       loop={animate && loop}
       muted
       playsInline
-      preload="metadata"
+      // `metadata` is enough for a frozen first frame, but media that is meant
+      // to be playing (a profile avatar, a story) asks for its data up front so
+      // the clip starts the moment the element mounts instead of after a second
+      // round-trip for the body.
+      preload={animate ? "auto" : "metadata"}
       className={className}
       onError={() => {
         setFailed(true);
@@ -259,25 +274,37 @@ function VideoMedia({
  * drawn to a canvas, which is the first one right after load. Cross-origin
  * images without CORS headers taint the canvas and throw; in that case we fall
  * back to the animated GIF rather than showing nothing.
+ *
+ * The source chain is the same one the plain still uses, and the fallback
+ * `<img>` — shown while the snapshot is still being taken and if it can never
+ * be taken — is what advances it, so a GIF is just as incapable of ending up
+ * permanently broken as any other picture.
  */
 function FrozenGif({
-  src,
+  sources,
   alt,
   className,
   onError,
   hoverRef,
 }: {
-  src: string;
+  sources: string[];
   alt: string;
   className: string;
   onError?: () => void;
   hoverRef: HoverRef;
 }) {
+  const [step, setStep] = useState(0);
   const [snapshot, setSnapshot] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
+  const src = sources[Math.min(step, sources.length - 1)];
+
+  const advance = useCallback(() => {
+    if (step < sources.length - 1) setStep(step + 1);
+    else onError?.();
+  }, [step, sources, onError]);
 
   useEffect(() => {
     let cancelled = false;
+    setSnapshot(null);
     const img = new Image();
     img.crossOrigin = "anonymous";
     img.onload = () => {
@@ -291,34 +318,28 @@ function FrozenGif({
         ctx.drawImage(img, 0, 0);
         setSnapshot(canvas.toDataURL("image/png"));
       } catch {
-        setFailed(true);
-      }
-    };
-    img.onerror = () => {
-      if (!cancelled) {
-        setFailed(true);
-        onError?.();
+        // Tainted canvas (no CORS on this host): keep the live image below.
       }
     };
     img.src = src;
     return () => {
       cancelled = true;
     };
-  }, [src, onError]);
+  }, [src]);
 
-  if (failed || !snapshot) {
-    return (
-      <img
-        src={src}
-        alt={alt}
-        draggable={false}
-        loading="lazy"
-        decoding="async"
-        className={className}
-        onError={onError}
-        ref={hoverRef}
-      />
-    );
+  if (snapshot) {
+    return <img src={snapshot} alt={alt} draggable={false} className={className} ref={hoverRef} />;
   }
-  return <img src={snapshot} alt={alt} draggable={false} className={className} ref={hoverRef} />;
+  return (
+    <img
+      src={src}
+      alt={alt}
+      draggable={false}
+      loading="lazy"
+      decoding="async"
+      className={className}
+      onError={advance}
+      ref={hoverRef}
+    />
+  );
 }

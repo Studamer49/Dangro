@@ -354,6 +354,7 @@ export default function ServerSidebar() {
             src={user.avatar}
             alt="Profile"
             animation="always"
+            width={96}
             className="h-full w-full rounded-xl object-cover"
           />
         ) : (

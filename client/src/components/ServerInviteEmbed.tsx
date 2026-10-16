@@ -80,7 +80,7 @@ export default function ServerInviteEmbed({ code }: { code: string }) {
       <div className="relative">
         <div className="h-20 w-full bg-gradient-to-br from-accent-600/60 via-accent-500/30 to-accent-400/10">
           {server.banner && (
-            <Media src={server.banner} alt="" className="h-full w-full object-cover" />
+            <Media src={server.banner} alt="" width={480} className="h-full w-full object-cover" />
           )}
           <div className="absolute inset-0 bg-gradient-to-t from-gray-900/90 via-gray-900/20 to-transparent" />
         </div>
@@ -89,6 +89,7 @@ export default function ServerInviteEmbed({ code }: { code: string }) {
             <Media
               src={server.icon}
               alt={server.name}
+              width={96}
               className="h-12 w-12 rounded-full border-2 border-gray-900 object-cover"
             />
           ) : (

@@ -9,18 +9,39 @@ import PostDetailModal from "@/components/feed/PostDetailModal";
 import ProfileAvatar from "@/components/profile/ProfileAvatar";
 import EditProfileModal from "@/components/profile/EditProfileModal";
 
+/**
+ * Last-known identity and follow state per profile, kept for the life of the
+ * tab.
+ *
+ * Every visit used to refetch the profile and swap the whole page for a
+ * spinner while it did, so stepping back and forth between two profiles felt
+ * like a cold load each time — worst on profiles whose avatar or cover is a
+ * video, which then had to load as well. Rendering the remembered snapshot
+ * immediately and refreshing it in the background makes a revisit paint its
+ * name and media instantly while still correcting anything that changed.
+ */
+const profileCache = new Map<string, User>();
+const followCache = new Map<
+  string,
+  { isFollowing: boolean; followerCount: number; followingCount: number }
+>();
+
 export default function ProfilePage() {
   const { userId } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
   const currentUser = useAuthStore((s) => s.user);
 
-  const [profileUser, setProfileUser] = useState<User | null>(null);
+  const rememberedUser = userId ? profileCache.get(userId) : undefined;
+  const rememberedFollow = userId ? followCache.get(userId) : undefined;
+
+  const [profileUser, setProfileUser] = useState<User | null>(rememberedUser ?? null);
   const [posts, setPosts] = useState<Post[]>([]);
-  const [isFollowing, setIsFollowing] = useState(false);
-  const [followerCount, setFollowerCount] = useState(0);
-  const [followingCount, setFollowingCount] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const [isFollowing, setIsFollowing] = useState(rememberedFollow?.isFollowing ?? false);
+  const [followerCount, setFollowerCount] = useState(rememberedFollow?.followerCount ?? 0);
+  const [followingCount, setFollowingCount] = useState(rememberedFollow?.followingCount ?? 0);
+  const [loading, setLoading] = useState(!rememberedUser);
+  const [postsLoading, setPostsLoading] = useState(true);
   const [showEditModal, setShowEditModal] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -44,12 +65,16 @@ export default function ProfilePage() {
   const fetchProfile = useCallback(async (seq: number) => {
     try {
       const { data } = await api.get(`/users/${userId}`);
-      if (seq !== seqRef.current) return;
-      setProfileUser(data.user as User);
+      if (seq !== seqRef.current || !userId) return;
+      const user = data.user as User;
+      setProfileUser(user);
+      profileCache.set(userId, user);
     } catch (err) {
       if (seq !== seqRef.current) return;
       toastRef.current.error(apiErrorMessage(err));
-      setProfileUser(null);
+      // A transient failure on a revisit must not blank a profile we already
+      // know about and just painted from cache.
+      if (!userId || !profileCache.has(userId)) setProfileUser(null);
     } finally {
       if (seq === seqRef.current) setLoading(false);
     }
@@ -63,16 +88,23 @@ export default function ProfilePage() {
     } catch (err) {
       if (seq !== seqRef.current) return;
       toastRef.current.error(apiErrorMessage(err));
+    } finally {
+      if (seq === seqRef.current) setPostsLoading(false);
     }
   }, [userId]);
 
   const fetchFollowStatus = useCallback(async (seq: number) => {
     try {
       const { data } = await api.get(`/follows/${userId}`);
-      if (seq !== seqRef.current) return;
+      if (seq !== seqRef.current || !userId) return;
       setIsFollowing(data.isFollowing);
       setFollowerCount(data.followerCount);
       setFollowingCount(data.followingCount);
+      followCache.set(userId, {
+        isFollowing: data.isFollowing,
+        followerCount: data.followerCount,
+        followingCount: data.followingCount,
+      });
     } catch (err) {
       if (seq !== seqRef.current) return;
       toastRef.current.error(apiErrorMessage(err));
@@ -82,7 +114,17 @@ export default function ProfilePage() {
   useEffect(() => {
     if (!userId) return;
     const seq = (seqRef.current += 1);
-    setLoading(true);
+    const cachedUser = profileCache.get(userId) ?? null;
+    const cachedFollow = followCache.get(userId);
+    // Paint whatever is remembered, clear the rest so the previous profile's
+    // posts or counts can never appear under this one, then refresh.
+    setProfileUser(cachedUser);
+    setIsFollowing(cachedFollow?.isFollowing ?? false);
+    setFollowerCount(cachedFollow?.followerCount ?? 0);
+    setFollowingCount(cachedFollow?.followingCount ?? 0);
+    setLoading(!cachedUser);
+    setPosts([]);
+    setPostsLoading(true);
     fetchProfile(seq);
     fetchPosts(seq);
     fetchFollowStatus(seq);
@@ -327,6 +369,10 @@ export default function ProfilePage() {
               </div>
               <p className="text-sm font-semibold text-gray-300">This account is private</p>
               <p className="text-xs text-gray-500">Follow this account to see their posts.</p>
+            </div>
+          ) : postsLoading && posts.length === 0 ? (
+            <div className="flex justify-center py-12">
+              <div className="h-7 w-7 animate-spin rounded-full border-2 border-accent-500/25 border-t-accent-400" />
             </div>
           ) : posts.length === 0 ? (
             <div className="glass-card animate-fade-up flex flex-col items-center gap-3 rounded-2xl px-6 py-14 text-center">

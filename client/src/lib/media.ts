@@ -28,18 +28,41 @@ export function isAnimatedUrl(url: string | null | undefined): boolean {
   return isGifUrl(url) || isVideoUrl(url);
 }
 
+/** The delivery path segment that separates a Cloudinary asset from its transform. */
+const CLOUDINARY_UPLOAD = "/upload/";
+
 /**
  * Ask Cloudinary for a smaller copy of an image.
  *
- * Uploads are stored one time at a generous 2560px so banners and covers stay
+ * Uploads are stored one time at a generous size so banners and covers stay
  * sharp, but that same URL is also used for a 40px avatar — downloading the
  * full-size asset for every avatar is the single biggest cause of a laggy
- * list. The delivery URL already carries a `w_2560` transform, so the cheapest
- * fix is to swap that number for the size actually being rendered. Non-
- * Cloudinary URLs (GridFS `/uploads/...`, remote hosts) are returned as-is.
+ * list. The delivery URL normally already carries a `w_2560` transform, so the
+ * cheapest fix is to swap that number for the size actually being rendered.
+ * Non-Cloudinary URLs (GridFS `/uploads/...`, remote hosts) are returned as-is.
+ *
+ * Only the transformation component (the one segment between `/upload/` and
+ * the asset path) is touched, so a folder or public id that happens to contain
+ * `w_123` is left alone. When the stored URL has no width yet — an asset
+ * uploaded before the transform existed — one is chained in front instead of
+ * being appended to an existing list: `/upload/w_160,/…` (a trailing comma) is
+ * a malformed transformation and Cloudinary answers 404, which is exactly how a
+ * resized avatar used to turn into a broken image.
  */
 export function withWidth(url: string, width: number): string {
   if (!width || !url.includes("res.cloudinary.com")) return url;
-  if (/\bw_\d+\b/.test(url)) return url.replace(/\bw_\d+\b/, `w_${width}`);
-  return url.replace(/(\/upload\/)/, `$1w_${width},`);
+
+  const at = url.indexOf(CLOUDINARY_UPLOAD);
+  if (at === -1) return url;
+
+  const start = at + CLOUDINARY_UPLOAD.length;
+  const nextSlash = url.indexOf("/", start);
+  const end = nextSlash === -1 ? url.length : nextSlash;
+  const segment = url.slice(start, end);
+
+  if (/\bw_\d+\b/.test(segment)) {
+    return url.slice(0, start) + segment.replace(/\bw_\d+\b/, `w_${width}`) + url.slice(end);
+  }
+
+  return url.slice(0, start) + `w_${width}/` + url.slice(start);
 }
