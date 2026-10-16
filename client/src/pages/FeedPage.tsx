@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api, { apiErrorMessage } from "@/lib/api";
+import { FEED_REFRESH_EVENT } from "@/lib/feedRefresh";
 import { useAuthStore } from "@/stores/authStore";
 import { useToast } from "@/stores/toastStore";
 import type { Post, PostLike, Story, StoryGroup } from "@/types";
@@ -8,24 +9,40 @@ import PostCard from "@/components/feed/PostCard";
 import PostDetailModal from "@/components/feed/PostDetailModal";
 import StoriesBar from "@/components/feed/StoriesBar";
 
+/**
+ * The last feed and stories this tab fetched, kept for the life of the tab.
+ *
+ * Leaving Home for Messages and coming back unmounted the page, so it opened on
+ * a stack of skeleton cards and rebuilt the stories strip — including the
+ * viewer's own always-animating avatar — from scratch. Painting the remembered
+ * data straight away and refreshing it in the background makes the return
+ * instant and keeps that avatar playing.
+ */
+let feedCache: Post[] | null = null;
+let storiesCache: StoryGroup[] | null = null;
+
 export default function FeedPage() {
   const user = useAuthStore((s) => s.user);
   const toast = useToast();
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [stories, setStories] = useState<StoryGroup[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [posts, setPosts] = useState<Post[]>(feedCache ?? []);
+  const [stories, setStories] = useState<StoryGroup[]>(storiesCache ?? []);
+  const [loading, setLoading] = useState(!feedCache);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const pendingLikes = useRef<Set<string>>(new Set());
 
   const fetchFeed = useCallback(async () => {
-    setLoading(true);
+    if (!feedCache) setLoading(true);
     setError(null);
     try {
       const { data } = await api.get("/posts/feed");
-      setPosts(data.posts ?? []);
+      const next: Post[] = data.posts ?? [];
+      feedCache = next;
+      setPosts(next);
     } catch (err) {
-      setError(apiErrorMessage(err));
+      // A failed background refresh must not blank a feed that is already on
+      // screen; only the first, empty load shows the error state.
+      if (!feedCache) setError(apiErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -34,7 +51,9 @@ export default function FeedPage() {
   const fetchStories = useCallback(async () => {
     try {
       const { data } = await api.get("/stories");
-      setStories(data.stories ?? []);
+      const next: StoryGroup[] = data.stories ?? [];
+      storiesCache = next;
+      setStories(next);
     } catch {
       // Stories are non-critical: the bar still renders the "add story" affordance.
     }
@@ -43,6 +62,17 @@ export default function FeedPage() {
   useEffect(() => {
     void fetchFeed();
     void fetchStories();
+  }, [fetchFeed, fetchStories]);
+
+  // Pressing Home while already here asks for a refresh instead of reloading
+  // the whole app (see lib/feedRefresh).
+  useEffect(() => {
+    const onRefresh = () => {
+      void fetchFeed();
+      void fetchStories();
+    };
+    window.addEventListener(FEED_REFRESH_EVENT, onRefresh);
+    return () => window.removeEventListener(FEED_REFRESH_EVENT, onRefresh);
   }, [fetchFeed, fetchStories]);
 
   const handleLike = async (post: Post) => {

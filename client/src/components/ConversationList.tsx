@@ -54,6 +54,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
   const blockedIds = useBlocksStore((s) => s.blockedIds);
   const loadBlocks = useBlocksStore((s) => s.load);
   const isMuted = useDmPrefsStore((s) => s.isMuted);
+  const mutedAll = useDmPrefsStore((s) => s.mutedAll);
   const toggleDmMute = useDmPrefsStore((s) => s.toggleMute);
   const dmMarkRead = useDmPrefsStore((s) => s.markRead);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -508,7 +509,9 @@ export default function ConversationList({ activeConversation, onSelectConversat
             {regular.map((conv) => {
               const isActive = activeConversation?.id === conv.id;
               const preview = messagePreview(conv, user?.id);
-              const muted = isMuted(conv.id);
+              // "Mute all messages" from the rail hides every badge, on top of
+              // any per-chat mute.
+              const muted = isMuted(conv.id) || mutedAll;
               const awaitingAccept =
                 conv.status === "pending" && conv.requestSenderId === user?.id;
 

@@ -10,12 +10,16 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { useToast } from "@/stores/toastStore";
 import { useServerPrefsStore } from "@/stores/serverPrefsStore";
+import { useDmPrefsStore } from "@/stores/dmPrefsStore";
 import { useBounce, type BounceVariant } from "@/hooks/useBounce";
 import { useConfirm } from "@/hooks/useConfirm";
+import { useDmUnread } from "@/hooks/useDmUnread";
 import ServerSettingsModal from "@/components/server/ServerSettingsModal";
 import InviteModal from "@/components/server/InviteModal";
+import ContextMenu, { ContextMenuItem } from "@/components/ContextMenu";
 import Media from "@/components/Media";
 import api, { apiErrorMessage } from "@/lib/api";
+import { requestFeedRefresh } from "@/lib/feedRefresh";
 import type { Server } from "@/types";
 
 /**
@@ -83,8 +87,14 @@ export default function ServerSidebar() {
   const toggleMute = useServerPrefsStore((s) => s.toggleMute);
   const markRead = useServerPrefsStore((s) => s.markRead);
 
+  const { total: dmUnread, markAllRead } = useDmUnread();
+  const dmMutedAll = useDmPrefsStore((s) => s.mutedAll);
+  const toggleDmMuteAll = useDmPrefsStore((s) => s.toggleMuteAll);
+
   // Which server the right-click menu belongs to, and where it was opened.
   const [menu, setMenu] = useState<{ server: Server; x: number; y: number } | null>(null);
+  // The Messages icon's own context menu (mark all read / mute all).
+  const [dmMenu, setDmMenu] = useState<{ x: number; y: number } | null>(null);
   const [settingsServer, setSettingsServer] = useState<Server | null>(null);
   const [inviteServer, setInviteServer] = useState<Server | null>(null);
 
@@ -247,14 +257,32 @@ export default function ServerSidebar() {
     toast.success(wasMuted ? `Unmuted ${server.name}` : `Muted ${server.name}`);
   };
 
+  const openDmMenu = (event: MouseEvent) => {
+    event.preventDefault();
+    setDmMenu({ x: event.clientX, y: event.clientY });
+  };
+
+  const handleMarkAllDmsRead = async () => {
+    setDmMenu(null);
+    await markAllRead();
+    toast.success("Marked all messages as read");
+  };
+
+  const handleToggleDmMuteAll = () => {
+    setDmMenu(null);
+    toggleDmMuteAll();
+    toast.success(dmMutedAll ? "Unmuted messages" : "Muted messages");
+  };
+
   return (
     <div className="glass relative layer-popup flex w-[72px] flex-col items-center gap-2 border-r py-3">
       <BouncyButton
         onClick={() => {
-          // Clicking Home while already on Home reloads the feed instead of
-          // doing nothing.
+          // Clicking Home while already on Home refreshes the feed in place.
+          // (Reloading the page here rebuilt the whole app and visibly reloaded
+          // every animated avatar.)
           if (location.pathname === "/" || location.pathname === "/feed") {
-            window.location.reload();
+            requestFeedRefresh();
           } else {
             navigate("/feed");
           }
@@ -269,12 +297,18 @@ export default function ServerSidebar() {
 
       <BouncyButton
         onClick={() => navigate("/dms")}
+        onContextMenu={openDmMenu}
         className="glass-card glass-card-hover group flex h-12 w-12 items-center justify-center rounded-2xl text-gray-400 transition-all duration-200 ease-out hover:rounded-xl hover:bg-green-500/15 hover:text-green-300"
         tooltip="Messages"
       >
         <svg className="h-6 w-6" fill="currentColor" viewBox="0 0 24 24">
           <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 12H6v-2h12v2zm0-3H6V9h12v2zm0-3H6V6h12v2z" />
         </svg>
+        {dmUnread > 0 && (
+          <span className="tabular absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-green-500 px-1.5 text-[10px] font-bold leading-none text-white ring-2 ring-gray-950">
+            {dmUnread > 99 ? "99+" : dmUnread}
+          </span>
+        )}
       </BouncyButton>
 
       <BouncyButton
@@ -508,6 +542,32 @@ export default function ServerSidebar() {
           </div>,
           document.body,
         )}
+
+      {dmMenu && (
+        <ContextMenu x={dmMenu.x} y={dmMenu.y} onClose={() => setDmMenu(null)} width={224}>
+          <p className="truncate px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+            Messages
+          </p>
+          <ContextMenuItem
+            label="Mark all as read"
+            icon={
+              <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            }
+            onClick={() => void handleMarkAllDmsRead()}
+          />
+          <ContextMenuItem
+            label={dmMutedAll ? "Unmute messages" : "Mute messages"}
+            icon={
+              <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M16.5 12A4.5 4.5 0 0014 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0021 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 003.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
+              </svg>
+            }
+            onClick={handleToggleDmMuteAll}
+          />
+        </ContextMenu>
+      )}
 
       {settingsServer && (
         <ServerSettingsModal

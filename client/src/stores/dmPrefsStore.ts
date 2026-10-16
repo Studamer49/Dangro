@@ -11,8 +11,12 @@ interface DmPrefs {
 
 interface DmPrefsState {
   prefs: Record<string, DmPrefs>;
+  /** One switch that silences every DM badge, set from the rail's context menu. */
+  mutedAll: boolean;
   isMuted: (conversationId: string) => boolean;
   toggleMute: (conversationId: string) => void;
+  /** Inverts `mutedAll`. Read the flag itself (`mutedAll`), not this, to label a menu. */
+  toggleMuteAll: () => void;
   markRead: (conversationId: string) => void;
 }
 
@@ -41,6 +45,7 @@ export const useDmPrefsStore = create<DmPrefsState>()(
   persist(
     (set, get) => ({
       prefs: {},
+      mutedAll: false,
 
       isMuted: (conversationId) => get().prefs[conversationId]?.muted ?? EMPTY.muted,
 
@@ -51,6 +56,8 @@ export const useDmPrefsStore = create<DmPrefsState>()(
             prefs: { ...state.prefs, [conversationId]: { ...current, muted: !current.muted } },
           };
         }),
+
+      toggleMuteAll: () => set((state) => ({ mutedAll: !state.mutedAll })),
 
       markRead: (conversationId) =>
         set((state) => {
@@ -66,10 +73,11 @@ export const useDmPrefsStore = create<DmPrefsState>()(
     {
       name: "dangro-dm-prefs",
       version: 1,
-      partialize: (state) => ({ prefs: state.prefs }),
+      partialize: (state) => ({ prefs: state.prefs, mutedAll: state.mutedAll }),
       merge: (persisted, current) => ({
         ...current,
         prefs: sanitize((persisted as { prefs?: unknown })?.prefs),
+        mutedAll: (persisted as { mutedAll?: unknown })?.mutedAll === true,
       }),
     }
   )
