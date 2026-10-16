@@ -90,10 +90,17 @@ const jsonResponse = (code: "RATE_LIMITED", message: string) =>
 
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 300,
+  // The chat views poll for new messages every 15-20s, so a single busy tab
+  // can burn a couple hundred requests in the window on its own. 300 was too
+  // tight and users hit 429s on unrelated calls (uploads among them) just from
+  // having the app open. 1000/15min/IP still caps abuse but leaves room for
+  // polling.
+  limit: 1000,
   standardHeaders: "draft-7",
   legacyHeaders: false,
-  skip: (req) => config.isTest || req.path === "/health",
+  // Uploads carry their own per-user limiter (uploads.ts); counting them here
+  // too just made an image upload fail because a chat tab had been polling.
+  skip: (req) => config.isTest || req.path === "/health" || req.path.startsWith("/uploads"),
   handler: (_req, res) => {
     res.status(429).json(jsonResponse("RATE_LIMITED", "Too many requests. Please try again later."));
   },

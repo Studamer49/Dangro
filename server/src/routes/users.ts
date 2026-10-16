@@ -5,7 +5,7 @@ import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { paramId } from "../lib/access.js";
 import { nullableMediaUrl } from "../lib/urls.js";
-import { destroyImageForUrl } from "../lib/cloudinary.js";
+import { destroyUnreferencedImage } from "../lib/mediaRefs.js";
 
 const router = Router();
 
@@ -165,12 +165,13 @@ router.patch(
     });
 
     // After the save, and only if it really changed. Never throws: the
-    // profile update has already succeeded.
+    // profile update has already succeeded. The reference check inside means a
+    // URL reused as a banner, a post or a server icon is left alone.
     if (replacedAvatar && replacedAvatar !== user.avatar) {
-      await destroyImageForUrl(replacedAvatar, `the avatar of ${userId}`);
+      await destroyUnreferencedImage(replacedAvatar, `the avatar of ${userId}`);
     }
     if (replacedCover && replacedCover !== user.cover) {
-      await destroyImageForUrl(replacedCover, `the cover of ${userId}`);
+      await destroyUnreferencedImage(replacedCover, `the cover of ${userId}`);
     }
 
     ok(res, { user });

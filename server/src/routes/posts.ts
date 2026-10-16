@@ -5,7 +5,7 @@ import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { paramId } from "../lib/access.js";
 import { mediaUrl } from "../lib/urls.js";
-import { destroyImageForUrl } from "../lib/cloudinary.js";
+import { destroyUnreferencedImage } from "../lib/mediaRefs.js";
 
 const router = Router();
 
@@ -203,9 +203,10 @@ router.delete(
     await prisma.post.delete({ where: { id } });
 
     // Each image is addressed by its own public ID, so these are unrelated
-    // assets even when a post reuses one. Best effort, after the delete.
+    // assets even when a post reuses one. Best effort, after the delete — and
+    // only when no other post/profile/banner still points at the same URL.
     for (const item of post.media ?? []) {
-      await destroyImageForUrl(item.url, `post ${id}`);
+      await destroyUnreferencedImage(item.url, `post ${id}`);
     }
 
     ok(res, { message: "Post deleted" });

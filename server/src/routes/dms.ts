@@ -8,6 +8,7 @@ import { assertConversationMember, assertDirectMessageReply, paramId } from "../
 import { mediaUrl } from "../lib/urls.js";
 import { createNotification } from "../lib/notifications.js";
 import { destroyImage, isCloudinaryConfigured } from "../lib/cloudinary.js";
+import { isMediaUrlReferenced } from "../lib/mediaRefs.js";
 
 const router = Router();
 
@@ -18,23 +19,19 @@ const router = Router();
  *   1. Never throw. The message row is already deleted by the time this runs,
  *      so surfacing an error would tell the caller their delete failed when it
  *      succeeded. The orphan is logged instead.
- *   2. Never delete an asset another message still points at. Every upload
- *      gets a fresh public ID, so this is a cheap safety net rather than the
- *      main defence.
+ *   2. Never delete an asset something else still points at. Every upload gets
+ *      a fresh public ID, so this is a cheap safety net rather than the main
+ *      defence — but a URL reused as a profile picture or banner must survive.
  *   3. Never log credentials — only the public ID, which is not a secret.
  */
-async function removeAttachmentAsset(publicId: string): Promise<void> {
+async function removeAttachmentAsset(url: string | null, publicId: string): Promise<void> {
   try {
     if (!isCloudinaryConfigured()) {
       console.warn("[media] Skipping asset removal: Cloudinary is not configured.");
       return;
     }
 
-    const stillReferenced = await prisma.directMessage.findFirst({
-      where: { attachmentPublicId: publicId },
-      select: { id: true },
-    });
-    if (stillReferenced) return;
+    if (await isMediaUrlReferenced(url, publicId)) return;
 
     await destroyImage(publicId);
   } catch (err) {
@@ -253,6 +250,48 @@ router.post(
   })
 );
 
+// Full-text-ish search across a conversation. The thread itself only ever
+// loads the newest 50 messages, so this looks at the whole history and returns
+// just enough for a result list; the client jumps with `?around=` below.
+router.get(
+  "/:conversationId/search",
+  authenticate,
+  asyncHandler(async (req: AuthRequest, res) => {
+    const userId = requireUser(req);
+    const conversationId = paramId(req.params.conversationId, "conversation id");
+
+    await assertConversationMember(conversationId, userId);
+
+    const q = typeof req.query.q === "string" ? req.query.q.trim().slice(0, 100) : "";
+    if (q.length < 2) {
+      ok(res, { results: [] });
+      return;
+    }
+
+    const results = await prisma.directMessage.findMany({
+      where: {
+        conversationId,
+        OR: [
+          { content: { contains: q, mode: "insensitive" } },
+          { attachmentType: { contains: q, mode: "insensitive" } },
+        ],
+      },
+      select: {
+        id: true,
+        content: true,
+        senderId: true,
+        attachmentUrl: true,
+        attachmentType: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: "desc" },
+      take: 40,
+    });
+
+    ok(res, { results });
+  })
+);
+
 router.get(
   "/:conversationId",
   authenticate,
@@ -261,6 +300,35 @@ router.get(
     const conversationId = paramId(req.params.conversationId, "conversation id");
 
     await assertConversationMember(conversationId, userId);
+
+    // Jump-to-message: the client searches the full history, then asks for a
+    // window centred on the match it wants to reveal. Without this, a result
+    // older than the newest 50 could be highlighted but never scrolled to.
+    const around = typeof req.query.around === "string" ? req.query.around : null;
+    if (around) {
+      const anchor = await prisma.directMessage.findFirst({
+        where: { id: around, conversationId },
+        select: { createdAt: true },
+      });
+      if (anchor) {
+        const [before, after] = await Promise.all([
+          prisma.directMessage.findMany({
+            where: { conversationId, createdAt: { lte: anchor.createdAt } },
+            include: dmInclude,
+            orderBy: { createdAt: "desc" },
+            take: 25,
+          }),
+          prisma.directMessage.findMany({
+            where: { conversationId, createdAt: { gt: anchor.createdAt } },
+            include: dmInclude,
+            orderBy: { createdAt: "asc" },
+            take: 25,
+          }),
+        ]);
+        ok(res, { messages: [...before.reverse(), ...after] });
+        return;
+      }
+    }
 
     const messages = await prisma.directMessage.findMany({
       where: { conversationId },
@@ -442,7 +510,7 @@ router.delete(
     // leave the caller thinking their message survived. The orphan is logged
     // and can be swept later from the media library.
     if (message.attachmentPublicId) {
-      await removeAttachmentAsset(message.attachmentPublicId);
+      await removeAttachmentAsset(message.attachmentUrl, message.attachmentPublicId);
     }
 
     const io = getIO();

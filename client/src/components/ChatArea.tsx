@@ -12,7 +12,9 @@ import ContextMenu, { ContextMenuItem, ContextMenuSeparator } from "@/components
 import EmojiPicker from "@/components/EmojiPicker";
 import Emoji from "@/components/Emoji";
 import ChatDayDivider from "@/components/ChatDayDivider";
+import ServerInviteEmbed from "@/components/ServerInviteEmbed";
 import { replaceEmojiShortcodes } from "@/lib/emojiData";
+import { extractInviteCodes } from "@/lib/invites";
 import type { Message, Reaction } from "@/types";
 
 export default function ChatArea() {
@@ -539,6 +541,7 @@ export default function ChatArea() {
               <div
                 id={message.id.startsWith("temp-") ? undefined : `message-${message.id}`}
                 onContextMenu={(event) => openMessageMenu(event, message)}
+                data-media-hover
                 className={`group relative flex gap-3 rounded-xl px-3 py-1.5 transition-colors duration-150 hover:bg-gray-800/40 ${
                   flashId === message.id ? "ring-1 ring-accent-400" : ""
                 }`}
@@ -606,6 +609,9 @@ export default function ChatArea() {
                       {message.content && (
                         <p className="break-words leading-relaxed text-gray-200">{message.content}</p>
                       )}
+                      {extractInviteCodes(message.content).map((code) => (
+                        <ServerInviteEmbed key={code} code={code} />
+                      ))}
                       {renderAttachments(message)}
                     </>
                   )}

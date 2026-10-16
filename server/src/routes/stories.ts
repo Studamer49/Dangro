@@ -5,7 +5,7 @@ import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
 import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
 import { paramId } from "../lib/access.js";
 import { mediaUrl } from "../lib/urls.js";
-import { destroyImageForUrl } from "../lib/cloudinary.js";
+import { destroyUnreferencedImage } from "../lib/mediaRefs.js";
 
 const router = Router();
 
@@ -180,10 +180,11 @@ router.patch(
     });
 
     // The image the story used to show is now unreachable, so remove it from
-    // the media library rather than leaving it there for ever. Best effort:
+    // the media library rather than leaving it there for ever — unless another
+    // row (a profile, banner or post) still shares the same URL. Best effort:
     // the edit itself has already succeeded.
     if (story.mediaUrl && story.mediaUrl !== mediaUrl) {
-      await destroyImageForUrl(story.mediaUrl, `story ${id}`);
+      await destroyUnreferencedImage(story.mediaUrl, `story ${id}`);
     }
 
     ok(res, { story: updated });
@@ -203,7 +204,7 @@ router.delete(
     await prisma.story.delete({ where: { id } });
 
     // Nobody can reach this image any more.
-    await destroyImageForUrl(story.mediaUrl, `story ${id}`);
+    await destroyUnreferencedImage(story.mediaUrl, `story ${id}`);
 
     ok(res, { message: "Story deleted" });
   })

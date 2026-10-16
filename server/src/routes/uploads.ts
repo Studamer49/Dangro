@@ -113,13 +113,15 @@ const IMAGE_MIME = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"
 const imageMaxBytes = config.cloudinary.imageMaxBytes;
 
 /**
- * Per-route upload budget. The global limiter allows 300 requests per 15
- * minutes across the whole API, which for uploads alone is 300 x 50 MB.
- * Skipped under NODE_ENV=test so the suite is not rate limited.
+ * Per-route upload budget. Uploads are exempted from the global limiter, so
+ * this is the only thing standing between a client and 120 x 50 MB in the
+ * window. It is deliberately per-user (see `keyGenerator`) so one person
+ * cannot exhaust the budget for everyone behind the same NAT. Skipped under
+ * NODE_ENV=test so the suite is not rate limited.
  */
 const uploadLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 60,
+  limit: 120,
   standardHeaders: "draft-7",
   legacyHeaders: false,
   // Identified by user when authenticated, by IP otherwise, so one user

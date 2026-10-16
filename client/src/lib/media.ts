@@ -27,3 +27,19 @@ export function isGifUrl(url: string | null | undefined): boolean {
 export function isAnimatedUrl(url: string | null | undefined): boolean {
   return isGifUrl(url) || isVideoUrl(url);
 }
+
+/**
+ * Ask Cloudinary for a smaller copy of an image.
+ *
+ * Uploads are stored one time at a generous 2560px so banners and covers stay
+ * sharp, but that same URL is also used for a 40px avatar — downloading the
+ * full-size asset for every avatar is the single biggest cause of a laggy
+ * list. The delivery URL already carries a `w_2560` transform, so the cheapest
+ * fix is to swap that number for the size actually being rendered. Non-
+ * Cloudinary URLs (GridFS `/uploads/...`, remote hosts) are returned as-is.
+ */
+export function withWidth(url: string, width: number): string {
+  if (!width || !url.includes("res.cloudinary.com")) return url;
+  if (/\bw_\d+\b/.test(url)) return url.replace(/\bw_\d+\b/, `w_${width}`);
+  return url.replace(/(\/upload\/)/, `$1w_${width},`);
+}

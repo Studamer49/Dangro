@@ -178,29 +178,65 @@ router.get(
       where: { code },
       include: {
         server: {
-          select: { id: true, name: true, icon: true, description: true, _count: { select: { members: true } } },
+          select: {
+            id: true,
+            name: true,
+            icon: true,
+            banner: true,
+            description: true,
+            _count: { select: { members: true } },
+          },
         },
         channel: { select: { id: true, name: true } },
         inviter: { select: { id: true, username: true, avatar: true } },
       },
     });
 
-    // A dead invite is reported exactly like a missing one, so the endpoint
-    // cannot be used to test whether a code ever existed.
-    if (!invite) throw AppError.of("NOT_FOUND", "Invite not found or expired");
+    if (invite) {
+      const { expired, exhausted } = inviteState(invite);
+      // A dead invite is reported exactly like a missing one, so the endpoint
+      // cannot be used to test whether a code ever existed.
+      if (expired || exhausted) throw AppError.of("NOT_FOUND", "Invite not found or expired");
 
-    const { expired, exhausted } = inviteState(invite);
-    if (expired || exhausted) throw AppError.of("NOT_FOUND", "Invite not found or expired");
+      ok(res, {
+        invite: {
+          code: invite.code,
+          server: invite.server,
+          channel: invite.channel,
+          inviter: invite.inviter,
+          expiresAt: invite.expiresAt,
+          uses: invite.uses,
+          maxUses: invite.maxUses,
+        },
+      });
+      return;
+    }
+
+    // Fall back to the server's permanent invite code. Managed invites live in
+    // their own table, but a link can just as easily carry the permanent code,
+    // and both must preview the same way.
+    const server = await prisma.server.findUnique({
+      where: { inviteCode: code },
+      select: {
+        id: true,
+        name: true,
+        icon: true,
+        banner: true,
+        description: true,
+        _count: { select: { members: true } },
+      },
+    });
+    if (!server) throw AppError.of("NOT_FOUND", "Invite not found or expired");
 
     ok(res, {
       invite: {
-        code: invite.code,
-        server: invite.server,
-        channel: invite.channel,
-        inviter: invite.inviter,
-        expiresAt: invite.expiresAt,
-        uses: invite.uses,
-        maxUses: invite.maxUses,
+        code,
+        server,
+        channel: null,
+        inviter: null,
+        expiresAt: null,
+        uses: null,
+        maxUses: null,
       },
     });
   })
