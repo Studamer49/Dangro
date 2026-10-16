@@ -229,7 +229,6 @@ export default function ProfilePage() {
                 src={profileUser.cover}
                 alt=""
                 animation="always"
-                width={1600}
                 className="absolute inset-0 h-full w-full object-cover"
               />
             ) : (

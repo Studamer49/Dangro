@@ -18,12 +18,6 @@ interface AvatarProps {
    * stories pass `"always"` because there the avatar is the content.
    */
   animation?: MediaAnimation;
-  /**
-   * Approximate rendered size in CSS pixels. Only used to request a correctly
-   * sized copy from Cloudinary (at 2x for retina); it does not set layout, so
-   * `className` still controls the actual box.
-   */
-  size?: number;
 }
 
 /**
@@ -44,7 +38,6 @@ export default function Avatar({
   status,
   lit = false,
   animation = "hover",
-  size = 80,
 }: AvatarProps) {
   // Gradient from the accent hue keeps the placeholder initials from looking
   // like a flat grey block, while still tracking whatever accent is selected.
@@ -56,13 +49,7 @@ export default function Avatar({
         }`}
       >
         {user?.avatar ? (
-          <Media
-            src={user.avatar}
-            alt=""
-            animation={animation}
-            width={Math.round(size * 2)}
-            className="h-full w-full object-cover"
-          />
+          <Media src={user.avatar} alt="" animation={animation} className="h-full w-full object-cover" />
         ) : (
           user?.username?.[0]?.toUpperCase() ?? "?"
         )}

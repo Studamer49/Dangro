@@ -11,11 +11,6 @@ interface ProfileAvatarProps {
    * can pass `"hover"` to fall back to the pointer-gated behaviour.
    */
   animation?: MediaAnimation;
-  /**
-   * Approximate rendered size in CSS pixels; only used to request a right-sized
-   * copy from Cloudinary at 2x. Layout is still driven by `className`.
-   */
-  size?: number;
 }
 
 /**
@@ -33,7 +28,6 @@ export default function ProfileAvatar({
   avatar,
   className = "h-20 w-20 text-3xl",
   animation = "always",
-  size = 80,
 }: ProfileAvatarProps) {
   const [failed, setFailed] = useState(false);
 
@@ -50,7 +44,6 @@ export default function ProfileAvatar({
           src={avatar}
           alt={username}
           animation={animation}
-          width={Math.round(size * 2)}
           onError={() => setFailed(true)}
           className="h-full w-full object-cover"
         />
