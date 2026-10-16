@@ -1,10 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { createPortal } from "react-dom";
 import { useCallStore } from "@/stores/callStore";
 import { useWebRTC } from "@/hooks/useWebRTC";
 import { useToast } from "@/stores/toastStore";
 import { startRingtone } from "@/lib/ringtone";
 import Avatar from "@/components/Avatar";
+
+/** Keeps a value inside a range, used to pin the floating call on-screen. */
+const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 /**
  * A video element bound to a stream.
@@ -70,6 +73,14 @@ export default function VideoCallModal() {
   // Which of the two sharing tiles is shown large. Reset whenever a share
   // starts or stops so the screen is always the default focus.
   const [swapped, setSwapped] = useState(false);
+  // Collapsed into the small floating panel the user can drag around.
+  const [minimized, setMinimized] = useState(false);
+  const [pipPos, setPipPos] = useState(() => ({
+    x: Math.max(12, window.innerWidth - 236),
+    y: Math.max(12, window.innerHeight - 212),
+  }));
+  const pipRef = useRef<HTMLDivElement>(null);
+  const pipDragRef = useRef<{ dx: number; dy: number } | null>(null);
 
   // useToast() returns a new wrapper object every render. Depending on it
   // here would re-run this effect on every render and, with a persistent
@@ -118,6 +129,58 @@ export default function VideoCallModal() {
     return () => stop();
   }, [isInCall, isCaller, remoteStream]);
 
+  // A fresh call always opens full-screen, never as the leftover floating tile
+  // from the previous one.
+  useEffect(() => {
+    if (!isInCall) {
+      setMinimized(false);
+      setNeedsAudioTap(false);
+    }
+  }, [isInCall]);
+
+  // If the window shrinks, pull the floating panel back into view.
+  useEffect(() => {
+    if (!minimized) return;
+    const onResize = () => {
+      const el = pipRef.current;
+      const width = el?.offsetWidth ?? 224;
+      const height = el?.offsetHeight ?? 200;
+      setPipPos((p) => ({
+        x: clamp(p.x, 8, Math.max(8, window.innerWidth - width - 8)),
+        y: clamp(p.y, 8, Math.max(8, window.innerHeight - height - 8)),
+      }));
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [minimized]);
+
+  const onPipPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const el = pipRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    pipDragRef.current = { dx: event.clientX - rect.left, dy: event.clientY - rect.top };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
+
+  const onPipPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = pipDragRef.current;
+    if (!drag) return;
+    const el = pipRef.current;
+    const width = el?.offsetWidth ?? 224;
+    const height = el?.offsetHeight ?? 200;
+    setPipPos({
+      x: clamp(event.clientX - drag.dx, 8, Math.max(8, window.innerWidth - width - 8)),
+      y: clamp(event.clientY - drag.dy, 8, Math.max(8, window.innerHeight - height - 8)),
+    });
+  };
+
+  const onPipPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    pipDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  };
+
   const remoteSharing = !!remoteScreenStream;
   const localSharing = isScreenSharing && !!localScreenStream;
   useEffect(() => {
@@ -159,9 +222,154 @@ export default function VideoCallModal() {
   const stageHasVideo = !!stageStream?.getVideoTracks().length;
   const cornerHasVideo = !!cornerStream?.getVideoTracks().length;
 
-  return createPortal(
+  // What the small floating panel previews: the screen if anything is being
+  // shared, otherwise the other person's camera.
+  const pipStream = remoteSharing ? remoteScreenStream : remoteStream ?? localScreenStream;
+  const pipHasVideo = !!pipStream?.getVideoTracks().length;
+
+  const callTitle = targetUser?.username ?? (isVideoCall ? "Video call" : "Voice call");
+
+  /**
+   * The collapsed call: a small draggable tile that keeps the call's essential
+   * controls — mute, screen share and end — reachable while the user browses
+   * the rest of the app.
+   */
+  const miniPanel = (
+    <div
+      ref={pipRef}
+      style={{ left: pipPos.x, top: pipPos.y }}
+      className="layer-call fixed w-56 overflow-hidden rounded-2xl border border-white/15 bg-gray-950/90 shadow-elev3 backdrop-blur-sm"
+    >
+      <div
+        onPointerDown={onPipPointerDown}
+        onPointerMove={onPipPointerMove}
+        onPointerUp={onPipPointerUp}
+        onPointerCancel={onPipPointerUp}
+        title="Drag to move"
+        className="flex cursor-grab touch-none select-none items-center gap-1.5 bg-white/[0.06] px-2.5 py-1.5 active:cursor-grabbing"
+      >
+        <svg className="h-3.5 w-3.5 shrink-0 text-gray-400" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M7 6h2v2H7V6zm0 5h2v2H7v-2zm0 5h2v2H7v-2zm5-10h2v2h-2V6zm0 5h2v2h-2v-2zm0 5h2v2h-2v-2zm5-10h2v2h-2V6zm0 5h2v2h-2v-2zm0 5h2v2h-2v-2z" />
+        </svg>
+        <span className="min-w-0 flex-1 truncate text-xs font-semibold tracking-tight text-white">
+          {callTitle}
+        </span>
+        <button
+          type="button"
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={() => setMinimized(false)}
+          aria-label="Expand call"
+          title="Expand"
+          className="icon-btn !h-6 !w-6 !rounded-full text-gray-300 hover:text-white"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4h4M20 16v4h-4M4 4l6 6M20 20l-6-6" />
+          </svg>
+        </button>
+      </div>
+
+      <div className="relative aspect-video bg-black">
+        {pipHasVideo ? (
+          <StreamVideo
+            stream={pipStream}
+            fit={anySharing ? "contain" : "cover"}
+            className="h-full w-full"
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center">
+            <Avatar user={targetUser} className="h-12 w-12 text-lg" linkToProfile={false} />
+          </div>
+        )}
+        {anySharing && (
+          <span className="absolute bottom-1.5 left-1.5 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent-200">
+            {remoteSharing ? (swapped ? "Camera" : "Screen") : "Sharing"}
+          </span>
+        )}
+        {isMuted && (
+          <span className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-white">
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0v3m-3-3h6M5 11V5a3 3 0 016 0" />
+            </svg>
+          </span>
+        )}
+      </div>
+
+      {needsAudioTap && (
+        <button
+          type="button"
+          onClick={() => {
+            remoteAudioRef.current
+              ?.play()
+              .then(() => setNeedsAudioTap(false))
+              .catch(() => undefined);
+          }}
+          className="w-full bg-accent-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-accent-500"
+        >
+          Tap to hear the call
+        </button>
+      )}
+
+      <div className="flex items-center justify-center gap-2 px-2.5 py-2">
+        <button
+          type="button"
+          onClick={toggleMute}
+          aria-label={isMuted ? "Unmute microphone" : "Mute microphone"}
+          title={isMuted ? "Unmute" : "Mute"}
+          className={`icon-btn !h-9 !w-9 !rounded-full border ${
+            isMuted
+              ? "border-red-500/50 bg-red-600 text-white hover:bg-red-500"
+              : "border-gray-700/70 bg-gray-800/60 text-gray-200 hover:bg-gray-800 hover:text-white"
+          }`}
+        >
+          {isMuted ? (
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+            </svg>
+          ) : (
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+            </svg>
+          )}
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            void toggleScreenShare();
+          }}
+          aria-label={isScreenSharing ? "Stop sharing screen" : "Share screen"}
+          title={isScreenSharing ? "Stop sharing screen" : "Share screen"}
+          className={`icon-btn !h-9 !w-9 !rounded-full border ${
+            isScreenSharing
+              ? "border-accent-400/60 bg-accent-600 text-white hover:bg-accent-500"
+              : "border-gray-700/70 bg-gray-800/60 text-gray-200 hover:bg-gray-800 hover:text-white"
+          }`}
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            endCall();
+          }}
+          aria-label="End call"
+          title="End call"
+          className="flex h-9 w-9 items-center justify-center rounded-full bg-red-600 text-white ring-1 ring-red-400/40 transition-colors duration-200 ease-out hover:bg-red-500"
+        >
+          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 8l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2M5 3a2 2 0 00-2 2v1c0 8.284 6.716 15 15 15h1a2 2 0 002-2v-3.28a1 1 0 00-.684-.948l-4.493-1.498a1 1 0 00-1.21.502l-1.13 2.257a11.042 11.042 0 01-5.516-5.517l2.257-1.128a1 1 0 00.502-1.21L9.228 3.683A1 1 0 008.279 3H5z" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+
+  const fullPanel = (
     <div className="fixed inset-0 layer-call flex items-center justify-center bg-gray-950/80 p-4 backdrop-blur-sm animate-overlay-in">
-      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
       {/*
         The stage is the one deliberate exception to "never paint a dark
         surface": while a call is up it is the focus of the app, so it stays the
@@ -256,6 +464,20 @@ export default function VideoCallModal() {
               Tap to hear the call
             </button>
           )}
+
+          {/* Collapse into the draggable corner tile so the call keeps running
+              while the rest of the app is used. */}
+          <button
+            type="button"
+            onClick={() => setMinimized(true)}
+            aria-label="Minimize call"
+            title="Minimize call"
+            className="icon-btn absolute left-4 top-4 !h-10 !w-10 !rounded-full border border-white/15 bg-gray-950/60 text-white hover:bg-gray-900/80"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+            </svg>
+          </button>
         </div>
 
         {/* Controls ride a frosted strip under the stage rather than a solid
@@ -367,7 +589,14 @@ export default function VideoCallModal() {
         </button>
         </div>
       </div>
-    </div>,
+    </div>
+  );
+
+  return createPortal(
+    <>
+      <audio ref={remoteAudioRef} autoPlay playsInline className="hidden" />
+      {minimized ? miniPanel : fullPanel}
+    </>,
     document.body
   );
 }

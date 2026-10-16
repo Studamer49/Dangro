@@ -69,6 +69,20 @@ export async function ensureIndexes(db: Db): Promise<void> {
     if (model.name === "message") {
       await collection.createIndex({ channelId: 1, createdAt: -1 }, { name: "channel_timeline" });
     }
+    // A DM thread is read by conversation and ordered by time, and the unread
+    // count filters the same rows by readAt. The plain `fk_conversationId`
+    // index above satisfies the equality but not the sort, so Mongo would
+    // fetch every message in the thread and sort in memory.
+    if (model.name === "directMessage") {
+      await collection.createIndex(
+        { conversationId: 1, createdAt: -1 },
+        { name: "conversation_timeline" }
+      );
+      await collection.createIndex(
+        { conversationId: 1, readAt: 1 },
+        { name: "conversation_unread" }
+      );
+    }
     // The sidebar loads a server's channels and categories in order on every
     // channel switch.
     if (model.name === "channel") {

@@ -30,6 +30,29 @@ export function isVideoFile(file: File): boolean {
   return file.type.startsWith("video/");
 }
 
+/**
+ * Fetches a stored media URL back into a File, so an already-uploaded clip can
+ * be re-opened in the trimmer.
+ *
+ * Avatars and banners keep only a URL, and re-trimming needs the bytes. Uploaded
+ * clips are served same-origin (GridFS or `/uploads`), so no CORS dance is
+ * needed. A remote URL a user pasted still works when its host allows a plain
+ * cross-origin read; the default same-origin credentials mode keeps the request
+ * from being rejected by a `*` CORS policy the way an `include` would.
+ */
+export async function fileFromUrl(url: string): Promise<File> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Could not load the current video (HTTP ${response.status})`);
+  }
+  const blob = await response.blob();
+  const clean = url.split(/[?#]/, 1)[0];
+  const ext = clean.match(/\.([a-z0-9]+)$/i)?.[1]?.toLowerCase() ?? "mp4";
+  const name = clean.split("/").pop() || `clip.${ext}`;
+  const type = blob.type || `video/${ext === "mov" ? "quicktime" : ext}`;
+  return new File([blob], name, { type });
+}
+
 function once(target: EventTarget, event: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const cleanup = () => {

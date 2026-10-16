@@ -1,7 +1,8 @@
 import { useRef, useState } from "react";
 import api, { apiErrorMessage } from "@/lib/api";
 import { uploadErrorMessage, uploadMedia } from "@/lib/upload";
-import { isVideoFile } from "@/lib/videoTrim";
+import { fileFromUrl, isVideoFile } from "@/lib/videoTrim";
+import { isVideoUrl } from "@/lib/media";
 import { useToast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import type { User } from "@/types";
@@ -41,6 +42,8 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
   const [trimTarget, setTrimTarget] = useState<{ file: File; target: "avatar" | "cover" } | null>(
     null,
   );
+  // Which stored clip is being fetched back for re-trimming, if any.
+  const [fetchingTrim, setFetchingTrim] = useState<"avatar" | "cover" | null>(null);
 
   const trimmedUsername = username.trim();
   const trimmedBio = bio.trim();
@@ -105,6 +108,28 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
     void uploadCover(file);
   };
 
+  /**
+   * Re-opens an already-uploaded clip in the trimmer.
+   *
+   * A stored avatar/cover is only a URL, so the bytes are fetched back first.
+   * Re-trimming is the only way to shorten a video that was uploaded before the
+   * five-second cap existed, or to pick a different window without re-uploading
+   * by hand.
+   */
+  const trimExisting = async (target: "avatar" | "cover") => {
+    const url = target === "avatar" ? avatar : cover;
+    if (!url || fetchingTrim || uploading || uploadingCover) return;
+    setFetchingTrim(target);
+    try {
+      const file = await fileFromUrl(url);
+      setTrimTarget({ file, target });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not open the current video");
+    } finally {
+      setFetchingTrim(null);
+    }
+  };
+
   const handleSave = async () => {
     if (saving || uploading || uploadingCover || usernameError) return;
 
@@ -161,6 +186,16 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
           >
             {uploading ? "Uploading..." : "Upload photo"}
           </button>
+          {avatar && isVideoUrl(avatar) && (
+            <button
+              type="button"
+              onClick={() => void trimExisting("avatar")}
+              disabled={uploading || fetchingTrim !== null}
+              className="btn-ghost"
+            >
+              {fetchingTrim === "avatar" ? "Loading..." : "Trim"}
+            </button>
+          )}
           {avatar && (
             <button
               type="button"
@@ -202,6 +237,16 @@ export default function EditProfileForm({ user, onSaved, onCancel }: EditProfile
           >
             {uploadingCover ? "Uploading..." : "Upload banner"}
           </button>
+          {cover && isVideoUrl(cover) && (
+            <button
+              type="button"
+              onClick={() => void trimExisting("cover")}
+              disabled={uploadingCover || fetchingTrim !== null}
+              className="btn-ghost"
+            >
+              {fetchingTrim === "cover" ? "Loading..." : "Trim"}
+            </button>
+          )}
           {cover && (
             <button
               type="button"

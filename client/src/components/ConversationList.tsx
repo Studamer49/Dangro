@@ -57,6 +57,9 @@ export default function ConversationList({ activeConversation, onSelectConversat
   const toggleDmMute = useDmPrefsStore((s) => s.toggleMute);
   const dmMarkRead = useDmPrefsStore((s) => s.markRead);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  // True until the first `/dms` response lands, so an empty-looking panel
+  // never claims "No conversations yet" while the request is still in flight.
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<User[]>([]);
   const [showSearch, setShowSearch] = useState(false);
@@ -71,6 +74,21 @@ export default function ConversationList({ activeConversation, onSelectConversat
   useEffect(() => {
     knownIdsRef.current = new Set(conversations.map((c) => c.id));
   }, [conversations]);
+
+  /**
+   * The thread on screen, read by the socket handlers below.
+   *
+   * They need it only to decide whether an arriving message should bump the
+   * unread badge. Reading `activeConversation?.id` from the effect's
+   * dependency array instead re-ran that whole effect on every click: it
+   * re-subscribed all nine listeners, restarted the 20s poll, and — worst —
+   * issued another `GET /dms`, so selecting a conversation fetched the entire
+   * list again. A ref keeps the handlers current without any of that.
+   */
+  const activeConversationIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    activeConversationIdRef.current = activeConversation?.id ?? null;
+  }, [activeConversation?.id]);
 
   /**
    * Moves one conversation to the top of the list.
@@ -96,6 +114,8 @@ export default function ConversationList({ activeConversation, onSelectConversat
       setConversations(data.conversations);
     } catch {
       // silent
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -108,7 +128,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
     const socket = getSocket();
 
     const handleNewDM = (message: DirectMessage) => {
-      const isActive = activeConversation?.id === message.conversationId;
+      const isActive = activeConversationIdRef.current === message.conversationId;
       const isSelf = message.senderId === user?.id;
 
       // A conversation this client has never loaded: refresh rather than
@@ -140,7 +160,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
       lastMessageAt: string;
       unreadCount: number;
     }) => {
-      const isActive = activeConversation?.id === data.conversationId;
+      const isActive = activeConversationIdRef.current === data.conversationId;
 
       if (!knownIdsRef.current.has(data.conversationId)) {
         void fetchConversations();
@@ -217,7 +237,7 @@ export default function ConversationList({ activeConversation, onSelectConversat
       socket.off("connect", handleConnect);
       clearInterval(pollId);
     };
-  }, [activeConversation?.id, user?.id, fetchConversations, moveToTop]);
+  }, [user?.id, fetchConversations, moveToTop]);
 
   useEffect(() => {
     if (!activeConversation?.id) return;
@@ -406,7 +426,22 @@ export default function ConversationList({ activeConversation, onSelectConversat
       )}
 
       <div className="flex-1 overflow-y-auto px-2 py-2">
-        {conversations.length === 0 ? (
+        {loading && conversations.length === 0 ? (
+          // Placeholder rows for the first paint. Without this the panel read
+          // "No conversations yet" for however long `GET /dms` took, which
+          // looked like an empty inbox rather than a list still loading.
+          <div aria-hidden="true">
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 rounded-xl px-2.5 py-2.5">
+                <div className="h-10 w-10 shrink-0 animate-pulse rounded-full bg-white/5" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="h-3 w-2/5 animate-pulse rounded bg-white/5" />
+                  <div className="h-2.5 w-4/5 animate-pulse rounded bg-white/5" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : conversations.length === 0 ? (
           <div className="px-4 py-12 text-center text-sm text-gray-500">
             No conversations yet
           </div>

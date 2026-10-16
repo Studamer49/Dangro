@@ -329,6 +329,11 @@ model Conversation {
   messages DirectMessage[]
 
   @@unique([user1Id, user2Id])
+  /// The list is built with `WHERE user1Id = ? OR user2Id = ?` and ordered by
+  /// recency. The unique above only serves the `user1Id` half, so `user2Id`
+  /// needs its own index, and `lastMessageAt` its own for the sort.
+  @@index([user2Id])
+  @@index([lastMessageAt])
   @@map("conversations")
 }
 
@@ -355,6 +360,11 @@ model DirectMessage {
   replies      DirectMessage[] @relation("DMReplies")
   reactions    DirectReaction[]
 
+  /// The conversation page loads by `conversationId` ordered by `createdAt`, and
+  /// the unread count filters the same rows by `readAt`. Both are per-conversation
+  /// scans today; these two composite indexes make them index lookups.
+  @@index([conversationId, createdAt])
+  @@index([conversationId, readAt])
   @@map("direct_messages")
 }
 

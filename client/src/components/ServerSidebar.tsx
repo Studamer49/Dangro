@@ -14,6 +14,7 @@ import { useBounce, type BounceVariant } from "@/hooks/useBounce";
 import { useConfirm } from "@/hooks/useConfirm";
 import ServerSettingsModal from "@/components/server/ServerSettingsModal";
 import InviteModal from "@/components/server/InviteModal";
+import Media from "@/components/Media";
 import api, { apiErrorMessage } from "@/lib/api";
 import type { Server } from "@/types";
 
@@ -349,7 +350,12 @@ export default function ServerSidebar() {
         tooltip="Profile"
       >
         {user?.avatar ? (
-          <img src={user.avatar} alt="Profile" className="h-full w-full rounded-xl object-cover" />
+          <Media
+            src={user.avatar}
+            alt="Profile"
+            animation="always"
+            className="h-full w-full rounded-xl object-cover"
+          />
         ) : (
           <span className="text-lg font-bold">{user?.username?.[0]?.toUpperCase() ?? "?"}</span>
         )}

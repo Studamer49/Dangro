@@ -5,7 +5,8 @@ import Media from "@/components/Media";
 import RoleEditor from "@/components/server/RoleEditor";
 import api, { apiErrorMessage } from "@/lib/api";
 import { uploadErrorMessage, uploadMedia } from "@/lib/upload";
-import { isVideoFile } from "@/lib/videoTrim";
+import { fileFromUrl, isVideoFile } from "@/lib/videoTrim";
+import { isVideoUrl } from "@/lib/media";
 import { useToast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import { useConfirm } from "@/hooks/useConfirm";
@@ -57,6 +58,8 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
   const [uploadingIcon, setUploadingIcon] = useState(false);
   const [uploadingBanner, setUploadingBanner] = useState(false);
   const [bannerTrim, setBannerTrim] = useState<File | null>(null);
+  // True while the stored banner is being fetched back for re-trimming.
+  const [fetchingBannerTrim, setFetchingBannerTrim] = useState(false);
   const [confirmText, setConfirmText] = useState("");
   const iconInputRef = useRef<HTMLInputElement>(null);
   const bannerInputRef = useRef<HTMLInputElement>(null);
@@ -174,6 +177,24 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
       return;
     }
     void uploadBanner(file);
+  };
+
+  /**
+   * Re-opens the already-uploaded banner clip in the trimmer.
+   *
+   * The stored banner is only a URL, so the bytes are fetched back first. This
+   * is how a banner uploaded before the five-second cap existed gets shortened.
+   */
+  const trimExistingBanner = async () => {
+    if (!banner || fetchingBannerTrim || uploadingBanner) return;
+    setFetchingBannerTrim(true);
+    try {
+      setBannerTrim(await fileFromUrl(banner));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not open the current banner");
+    } finally {
+      setFetchingBannerTrim(false);
+    }
   };
 
   const banMember = async (member: Member) => {
@@ -359,6 +380,16 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
                   >
                     {uploadingBanner ? "Uploading…" : "Upload banner"}
                   </button>
+                  {banner && isVideoUrl(banner) && (
+                    <button
+                      type="button"
+                      onClick={() => void trimExistingBanner()}
+                      disabled={uploadingBanner || fetchingBannerTrim}
+                      className="btn-ghost px-3 py-1.5 text-xs"
+                    >
+                      {fetchingBannerTrim ? "Loading…" : "Trim"}
+                    </button>
+                  )}
                   {banner && (
                     <button
                       type="button"
