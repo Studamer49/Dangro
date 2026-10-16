@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { getSocket } from "@/lib/socket";
-import { ICE_SERVERS } from "@/lib/iceServers";
+import { ICE_SERVERS, refreshIceServers } from "@/lib/iceServers";
 import { useCallStore } from "@/stores/callStore";
 
 type OfferHandler = (offer: RTCSessionDescriptionInit, userId: string) => void;
@@ -272,6 +272,16 @@ export function useWebRTC() {
     endCall,
   } = useCallStore();
 
+  /**
+   * Whether a peer connection currently exists.
+   *
+   * Screen sharing is a `replaceTrack` on the connection, so it silently does
+   * nothing before one is built (the caller only builds one after the callee
+   * accepts). Reactive so the call controls can disable the share button while
+   * it would be a no-op, instead of swallowing the tap.
+   */
+  const [pcReady, setPcReady] = useState(false);
+
   const createPeerConnection = useCallback(() => {
     // Replacing the connection without closing the old one left its ICE agent,
     // its event handlers and (if it had tracks) its senders alive, with nothing
@@ -389,6 +399,7 @@ export function useWebRTC() {
     };
 
     peerConnectionRef.current = pc;
+    setPcReady(true);
     return pc;
   }, [targetUserId, setRemoteStream, setRemoteScreenStream, setConnectionStatus, endCall]);
 
@@ -478,6 +489,10 @@ export function useWebRTC() {
   const createOffer = useCallback(async () => {
     const stream = await startLocalStream(callType === "video");
     if (!stillInCall()) return;
+    // Pick up the deployment's relay (and fresh short-lived credentials) before
+    // building the connection. Cheap when the cache is still valid.
+    await refreshIceServers();
+    if (!stillInCall()) return;
     const pc = createPeerConnection();
     stream.getTracks().forEach((track) => pc.addTrack(track, stream));
     // Reserve a video m-line for the screen share. It exists on every call — a
@@ -497,6 +512,8 @@ export function useWebRTC() {
 
   const handleOffer = useCallback(async (offer: RTCSessionDescriptionInit, callerId: string) => {
     const stream = await startLocalStream(callType === "video");
+    if (!stillInCall()) return;
+    await refreshIceServers();
     if (!stillInCall()) return;
     const pc = createPeerConnection();
 
@@ -605,6 +622,7 @@ export function useWebRTC() {
     setRemoteScreenStream(null);
     setConnectionStatus(null);
     setScreenSharing(false);
+    setPcReady(false);
   }, [setLocalStream, setRemoteStream, setLocalScreenStream, setRemoteScreenStream, setConnectionStatus, setScreenSharing]);
 
   const [callError, setCallError] = useState<string | null>(null);
@@ -694,6 +712,10 @@ export function useWebRTC() {
   useEffect(() => {
     if (!isInCall) return;
 
+    // A failed setup leaves its message behind; clear it so a fresh call does
+    // not open with the previous call's error already on screen.
+    setCallError(null);
+
     /** Backstop for the caller when the signalling server itself is gone. */
     let ringTimer: number | undefined;
 
@@ -708,6 +730,12 @@ export function useWebRTC() {
       ringTimer = window.setTimeout(() => {
         const state = useCallStore.getState();
         if (!state.isInCall || !state.isCaller || state.remoteStream) return;
+        // Tell the other side too: the server's own 40s timer only fires while
+        // the server is reachable, so a callee whose room outlived the caller's
+        // patience would otherwise keep ringing.
+        if (state.targetUserId) {
+          getSocket().emit("call_end", { targetUserId: state.targetUserId });
+        }
         cleanup();
         state.resetCall();
         state.setCallNotice("No answer.");
@@ -745,8 +773,11 @@ export function useWebRTC() {
     };
 
     const handleCallReject = () => {
+      const wasCaller = useCallStore.getState().isCaller;
       cleanup();
       useCallStore.getState().resetCall();
+      // The caller used to see the ring simply vanish with no explanation.
+      if (wasCaller) useCallStore.getState().setCallNotice("Call declined.");
     };
 
     /**
@@ -797,5 +828,5 @@ export function useWebRTC() {
     };
   }, [isInCall, isCaller, callType, createOffer, handleOffer, handleAnswer, handleIceCandidate, cleanup, startLocalStream, failCall]);
 
-  return { createOffer, callError, toggleScreenShare };
+  return { createOffer, callError, toggleScreenShare, pcReady };
 }

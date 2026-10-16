@@ -139,19 +139,26 @@ router.post(
 
     const roles = await loadServerRoles(serverId);
     // New roles land at the bottom of the actor's reach, never above it.
-    const position = Math.min(
-      ...roles.filter((role) => role.position <= actor.position).map((role) => role.position),
-      actor.position
-    );
-    await assertCanPlaceAt(actor, "", position - 1);
+    // @everyone is excluded from the search: it sits at position 0, and
+    // including it made the computed position 0, so every new role was created
+    // on top of @everyone instead of above it.
+    const managed = roles.filter((role) => !role.isEveryone && role.position <= actor.position);
+    const lowest = managed.length ? Math.min(...managed.map((role) => role.position)) : 1;
+    // Strictly below the actor so an admin cannot mint a superior role, and
+    // never 0 (that floor belongs to @everyone).
+    const ceiling = actor.isOwner ? OWNER_POSITION - 1 : actor.position - 1;
+    if (ceiling < 1) {
+      throw AppError.of("FORBIDDEN", "Your highest role is too low to create roles beneath it");
+    }
+    const position = Math.max(1, Math.min(ceiling, lowest - 1));
+    await assertCanPlaceAt(actor, "", position);
 
     const role = await prisma.role.create({
       data: {
         serverId,
         name: input.name,
         color: input.color ?? null,
-        // Strictly below the actor so an admin cannot mint a superior role.
-        position: actor.isOwner ? position : Math.max(0, position - 1),
+        position,
         permissions: input.permissions,
         isEveryone: false,
         hoist: false,

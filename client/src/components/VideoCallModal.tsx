@@ -66,7 +66,7 @@ export default function VideoCallModal() {
   } = useCallStore();
 
   const toast = useToast();
-  const { callError, toggleScreenShare } = useWebRTC();
+  const { callError, toggleScreenShare, pcReady } = useWebRTC();
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const [volume, setVolume] = useState(1);
   const [needsAudioTap, setNeedsAudioTap] = useState(false);
@@ -338,9 +338,10 @@ export default function VideoCallModal() {
           onClick={() => {
             void toggleScreenShare();
           }}
+          disabled={!pcReady}
           aria-label={isScreenSharing ? "Stop sharing screen" : "Share screen"}
-          title={isScreenSharing ? "Stop sharing screen" : "Share screen"}
-          className={`icon-btn !h-9 !w-9 !rounded-full border ${
+          title={pcReady ? (isScreenSharing ? "Stop sharing screen" : "Share screen") : "Available once the call connects"}
+          className={`icon-btn !h-9 !w-9 !rounded-full border disabled:cursor-not-allowed disabled:opacity-40 ${
             isScreenSharing
               ? "border-accent-400/60 bg-accent-600 text-white hover:bg-accent-500"
               : "border-gray-700/70 bg-gray-800/60 text-gray-200 hover:bg-gray-800 hover:text-white"
@@ -510,8 +511,9 @@ export default function VideoCallModal() {
           onClick={() => {
             void toggleScreenShare();
           }}
-          title={isScreenSharing ? "Stop sharing screen" : "Share screen"}
-          className={`icon-btn !h-12 !w-12 !rounded-full border transition-all duration-200 ease-out ${
+          disabled={!pcReady}
+          title={pcReady ? (isScreenSharing ? "Stop sharing screen" : "Share screen") : "Available once the call connects"}
+          className={`icon-btn !h-12 !w-12 !rounded-full border transition-all duration-200 ease-out disabled:cursor-not-allowed disabled:opacity-40 ${
             isScreenSharing
               ? "border-accent-400/60 bg-accent-600 text-white shadow-elev2 hover:bg-accent-500"
               : "border-gray-700/70 bg-gray-800/50 text-gray-200 hover:border-gray-600 hover:bg-gray-800 hover:text-white"

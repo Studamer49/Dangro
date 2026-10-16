@@ -94,6 +94,10 @@ export const useCallStore = create<CallState>((set, get) => ({
   connectionStatus: null,
 
   initiateCall: (targetUserId, targetUser, callType) => {
+    // Never clobber a live call. Starting a second call overwrote the state
+    // outright, orphaning the peer of the call already in progress — they were
+    // left in a connection nobody would ever signal or hang up.
+    if (get().isInCall) return;
     const roomId = `call_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     set({
       isInCall: true,

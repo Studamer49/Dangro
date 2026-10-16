@@ -23,6 +23,7 @@ const callInvite = targetRef.extend({
 });
 const roomTarget = targetRef.extend({ roomId: z.string().min(1).max(64) });
 const signalTarget = targetRef.extend({ signal: z.unknown() });
+const voiceSignal = channelRef.extend({ targetUserId: z.string().uuid(), signal: z.unknown() });
 
 /** Returns true when the socket's user belongs to the channel's server. */
 async function isChannelMember(channelId: string, userId: string): Promise<boolean> {
@@ -348,18 +349,18 @@ export function setupSocketHandlers(io: SocketServer): void {
     });
 
     safe(socket, "voice_signal", async (payload: unknown) => {
-      const data = parse(signalTarget, payload);
+      const data = parse(voiceSignal, payload);
       if (!data) return;
-      // Voice-channel signalling is only meaningful between two people in
-      // the same voice room, and `voice_join` already verified channel
-      // membership before anyone could enter one.
+      // Voice-channel signalling is only meaningful between two people in the
+      // same voice room. Checking the specific room — not merely "shares any
+      // voice room" — keeps one member of a channel from signalling into a
+      // different channel they happen to also be part of.
       if (data.targetUserId === userId) return;
-      const voiceRooms = [...socket.rooms].filter((room) => room.startsWith("voice:"));
-      if (voiceRooms.length === 0) return;
+      if (!socket.rooms.has(`voice:${data.channelId}`)) return;
 
       const targets = await io.in(`user:${data.targetUserId}`).fetchSockets();
-      const sharesVoiceRoom = targets.some((peer) => voiceRooms.some((room) => peer.rooms.has(room)));
-      if (!sharesVoiceRoom) return;
+      const inRoom = targets.some((peer) => peer.rooms.has(`voice:${data.channelId}`));
+      if (!inRoom) return;
 
       io.to(`user:${data.targetUserId}`).emit("voice_signal", { userId, signal: data.signal });
     });

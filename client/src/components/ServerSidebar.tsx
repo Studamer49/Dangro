@@ -16,6 +16,7 @@ import { useConfirm } from "@/hooks/useConfirm";
 import { useDmUnread } from "@/hooks/useDmUnread";
 import ServerSettingsModal from "@/components/server/ServerSettingsModal";
 import InviteModal from "@/components/server/InviteModal";
+import ServerSurfaceCard from "@/components/server/ServerSurfaceCard";
 import ContextMenu, { ContextMenuItem } from "@/components/ContextMenu";
 import Media from "@/components/Media";
 import api, { apiErrorMessage } from "@/lib/api";
@@ -180,8 +181,10 @@ export default function ServerSidebar() {
   const openMenu = (event: MouseEvent, server: Server) => {
     event.preventDefault();
     // Keep the panel fully on screen instead of letting it clip off an edge.
-    const width = 208;
-    const height = 248;
+    // The width/height are generous upper bounds; the surface card is what
+    // makes the panel tall.
+    const width = 272;
+    const height = 520;
     setMenu({
       server,
       x: Math.max(8, Math.min(event.clientX, window.innerWidth - width - 8)),
@@ -471,73 +474,81 @@ export default function ServerSidebar() {
             }}
           >
             <div
-              className="glass-panel anim-pop-in fixed w-52 rounded-xl border border-gray-700/60 p-1.5 shadow-elev2"
+              className="glass-panel anim-pop-in fixed w-64 overflow-hidden rounded-2xl border border-gray-700/60 shadow-elev2"
               style={{ left: menu.x, top: menu.y }}
               onMouseDown={(event) => event.stopPropagation()}
             >
-              <p className="truncate px-2.5 pb-1 pt-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-                {menu.server.name}
-              </p>
+              <ServerSurfaceCard
+                server={menu.server}
+                onOpen={() => {
+                  setMenu(null);
+                  openChannel(menu.server);
+                }}
+              />
 
-              <button
-                type="button"
-                onClick={() => handleMarkRead(menu.server)}
-                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
-              >
-                <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-                Mark as read
-              </button>
+              <div className="h-px bg-gray-700/50" />
 
-              <button
-                type="button"
-                onClick={() => handleToggleMute(menu.server)}
-                className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
-              >
-                <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M16.5 12A4.5 4.5 0 0014 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0021 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 003.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
-                </svg>
-                {isMuted(menu.server.id) ? "Unmute server" : "Mute server"}
-              </button>
-
-              <div className="my-1 h-px bg-gray-700/50" />
-
-              {menu.server.ownerId === user?.id ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => openServerSettings(menu.server)}
-                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
-                  >
-                    <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.49 1a7.3 7.3 0 00-1.69-.98l-.38-2.65A.49.49 0 0014 2h-4a.49.49 0 00-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1a.49.49 0 00-.61.22l-2 3.46a.49.49 0 00.12.64l2.11 1.65c-.04.32-.08.66-.08.98s.03.66.07.98l-2.11 1.65a.5.5 0 00-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.04.24.25.42.49.42h4c.24 0 .45-.18.49-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46a.5.5 0 00-.12-.64l-2.11-1.65zM12 15.5A3.5 3.5 0 1115.5 12 3.5 3.5 0 0112 15.5z" />
-                    </svg>
-                    Server settings
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void deleteServer(menu.server)}
-                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
-                  >
-                    <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M6 7h12l-1 13a1 1 0 01-1 1H8a1 1 0 01-1-1L6 7zm3-3h6l1 2h4v2H4V6h4l1-2z" />
-                    </svg>
-                    Delete server
-                  </button>
-                </>
-              ) : (
+              <div className="p-1.5">
                 <button
                   type="button"
-                  onClick={() => void leaveServer(menu.server)}
-                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
+                  onClick={() => handleMarkRead(menu.server)}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
                 >
                   <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4-4 4M21 12H9M13 4H6a2 2 0 00-2 2v12a2 2 0 002 2h7" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                   </svg>
-                  Leave server
+                  Mark as read
                 </button>
-              )}
+
+                <button
+                  type="button"
+                  onClick={() => handleToggleMute(menu.server)}
+                  className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
+                >
+                  <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M16.5 12A4.5 4.5 0 0014 7.97v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51A8.8 8.8 0 0021 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06a8.99 8.99 0 003.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z" />
+                  </svg>
+                  {isMuted(menu.server.id) ? "Unmute server" : "Mute server"}
+                </button>
+
+                <div className="my-1 h-px bg-gray-700/50" />
+
+                {menu.server.ownerId === user?.id ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => openServerSettings(menu.server)}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-gray-300 transition-colors hover:bg-white/5 hover:text-white"
+                    >
+                      <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 00.12-.61l-1.92-3.32a.49.49 0 00-.59-.22l-2.49 1a7.3 7.3 0 00-1.69-.98l-.38-2.65A.49.49 0 0014 2h-4a.49.49 0 00-.49.42l-.38 2.65c-.61.25-1.17.59-1.69.98l-2.49-1a.49.49 0 00-.61.22l-2 3.46a.49.49 0 00.12.64l2.11 1.65c-.04.32-.08.66-.08.98s.03.66.07.98l-2.11 1.65a.5.5 0 00-.12.64l2 3.46c.12.22.39.3.61.22l2.49-1c.52.4 1.08.73 1.69.98l.38 2.65c.04.24.25.42.49.42h4c.24 0 .45-.18.49-.42l.38-2.65c.61-.25 1.17-.58 1.69-.98l2.49 1c.23.09.49 0 .61-.22l2-3.46a.5.5 0 00-.12-.64l-2.11-1.65zM12 15.5A3.5 3.5 0 1115.5 12 3.5 3.5 0 0112 15.5z" />
+                      </svg>
+                      Server settings
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void deleteServer(menu.server)}
+                      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
+                    >
+                      <svg className="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M6 7h12l-1 13a1 1 0 01-1 1H8a1 1 0 01-1-1L6 7zm3-3h6l1 2h4v2H4V6h4l1-2z" />
+                      </svg>
+                      Delete server
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void leaveServer(menu.server)}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10 hover:text-red-300"
+                  >
+                    <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4-4 4M21 12H9M13 4H6a2 2 0 00-2 2v12a2 2 0 002 2h7" />
+                    </svg>
+                    Leave server
+                  </button>
+                )}
+              </div>
             </div>
           </div>,
           document.body,
