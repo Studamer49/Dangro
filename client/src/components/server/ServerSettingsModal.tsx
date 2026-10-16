@@ -324,7 +324,7 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
             <>
               <div className="flex items-center gap-4">
                 {icon ? (
-                  <Media src={icon} alt={server.name} animation="always" className="h-16 w-16 rounded-2xl object-cover" />
+                  <Media src={icon} alt={server.name} animation="always" width={128} className="h-16 w-16 rounded-2xl object-cover" />
                 ) : (
                   <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gray-800 text-2xl font-bold text-white">
                     {server.name?.[0]?.toUpperCase() ?? "?"}
@@ -364,7 +364,7 @@ export default function ServerSettingsModal({ server, myRole, onClose, onOpenInv
                 <span className="field-label">Server banner</span>
                 <div className="aspect-[5/1] w-full overflow-hidden rounded-xl border border-gray-800/70 bg-gray-900/60">
                   {banner ? (
-                    <Media src={banner} alt={`${server.name} banner`} animation="always" className="h-full w-full object-cover" />
+                    <Media src={banner} alt={`${server.name} banner`} animation="always" width={1200} className="h-full w-full object-cover" />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">
                       No banner

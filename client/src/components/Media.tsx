@@ -5,7 +5,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { isGifUrl, isVideoUrl } from "@/lib/media";
+import { isGifUrl, isVideoUrl, withWidth } from "@/lib/media";
 import { useSettingsStore } from "@/stores/settingsStore";
 
 /**
@@ -27,11 +27,12 @@ export type MediaAnimation = "hover" | "always" | "never";
  * first matching ancestor wins, so the closest surrounding surface is the one
  * that lights it up; a lone avatar with no such ancestor falls back to itself.
  *
- * `[data-media-hover]` lets a component opt a specific container in even when
- * none of the generic patterns fit.
+ * `[data-media-hover]` is checked first (see `setHoverRef`): a component can
+ * mark the exact container that should light the media up — for instance a
+ * whole chat message row — even when a closer ancestor (the avatar's own
+ * profile <a>) would otherwise win.
  */
-const HOVER_TARGET_SELECTOR =
-  '[data-media-hover], a, button, [role="button"], li, .group';
+const HOVER_TARGET_SELECTOR = 'a, button, [role="button"], li, .group';
 
 /** A ref callback shared with the rendered media element. */
 type HoverRef = ((el: HTMLElement | null) => void) | undefined;
@@ -44,6 +45,12 @@ interface MediaProps {
   loop?: boolean;
   fallback?: ReactNode;
   onError?: () => void;
+  /**
+   * Render at this CSS pixel width. Only used to request a right-sized copy
+   * from Cloudinary; it does not set any layout style (callers keep sizing the
+   * element through `className`).
+   */
+  width?: number;
 }
 
 /**
@@ -65,11 +72,22 @@ export default function Media({
   loop = true,
   fallback = null,
   onError,
+  width,
 }: MediaProps) {
   const settingAnimate = useSettingsStore((s) => s.animateAvatars);
   const [hovered, setHovered] = useState(false);
+  // A still image that fails once has almost always hit a transient network or
+  // CDN blip, not a missing file; the browser then keeps showing the broken
+  // result until the src changes. One retry with a cache-busting query param
+  // is enough to recover and is what stops a banner "just disappearing".
+  const [retry, setRetry] = useState(0);
 
   const hoverEnabled = animation === "hover";
+
+  // Swap the stored 2560px Cloudinary transform for the size actually drawn.
+  // Non-Cloudinary sources are unaffected, so this is a no-op for videos and
+  // GridFS files.
+  const resolvedSrc = width ? withWidth(src, width) : src;
 
   /**
    * Points the hover listeners at the nearest containing surface rather than
@@ -77,6 +95,10 @@ export default function Media({
    * listeners are re-bound whenever the rendered element changes — the GIF
    * snapshots swap their underlying node, and an effect keyed on `[enabled]`
    * alone would leave the leave-listener on a node that no longer exists.
+   *
+   * An explicit `[data-media-hover]` container wins over the generic patterns,
+   * so a whole message row can light the avatar up even though the avatar sits
+   * inside its own profile <a>.
    */
   const cleanupRef = useRef<(() => void) | null>(null);
   const setHoverRef = useCallback<NonNullable<HoverRef>>(
@@ -85,7 +107,10 @@ export default function Media({
       cleanupRef.current = null;
       if (!el || !hoverEnabled) return;
 
-      const target = (el.closest(HOVER_TARGET_SELECTOR) as HTMLElement | null) ?? el;
+      const target =
+        (el.closest("[data-media-hover]") as HTMLElement | null) ??
+        (el.closest(HOVER_TARGET_SELECTOR) as HTMLElement | null) ??
+        el;
       const enter = () => setHovered(true);
       const leave = () => setHovered(false);
       target.addEventListener("pointerenter", enter);
@@ -102,6 +127,11 @@ export default function Media({
   const hoverRef: HoverRef = hoverEnabled ? setHoverRef : undefined;
 
   const animate = settingAnimate && (animation === "always" || (hoverEnabled && hovered));
+
+  // Reset the retry counter whenever the underlying source changes.
+  useEffect(() => {
+    setRetry(0);
+  }, [resolvedSrc]);
 
   if (isVideoUrl(src)) {
     return (
@@ -120,10 +150,33 @@ export default function Media({
   // A GIF animates only once it is allowed to; otherwise the first frame is
   // drawn to a canvas and shown as a still, so the layout does not jump.
   if (isGifUrl(src) && !animate) {
-    return <FrozenGif src={src} alt={alt} className={className} onError={onError} hoverRef={hoverRef} />;
+    return (
+      <FrozenGif src={resolvedSrc} alt={alt} className={className} onError={onError} hoverRef={hoverRef} />
+    );
   }
 
-  return <img src={src} alt={alt} draggable={false} className={className} onError={onError} ref={hoverRef} />;
+  // Append a one-shot cache-buster on retry so the browser does not just
+  // replay its cached failure.
+  const retrySrc =
+    retry > 0
+      ? `${resolvedSrc}${resolvedSrc.includes("?") ? "&" : "?"}retry=${retry}`
+      : resolvedSrc;
+
+  return (
+    <img
+      src={retrySrc}
+      alt={alt}
+      draggable={false}
+      loading="lazy"
+      decoding="async"
+      className={className}
+      onError={() => {
+        if (retry < 1) setRetry(retry + 1);
+        else onError?.();
+      }}
+      ref={hoverRef}
+    />
+  );
 }
 
 function VideoMedia({
@@ -254,7 +307,18 @@ function FrozenGif({
   }, [src, onError]);
 
   if (failed || !snapshot) {
-    return <img src={src} alt={alt} draggable={false} className={className} onError={onError} ref={hoverRef} />;
+    return (
+      <img
+        src={src}
+        alt={alt}
+        draggable={false}
+        loading="lazy"
+        decoding="async"
+        className={className}
+        onError={onError}
+        ref={hoverRef}
+      />
+    );
   }
   return <img src={snapshot} alt={alt} draggable={false} className={className} ref={hoverRef} />;
 }
