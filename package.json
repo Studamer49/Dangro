@@ -11,6 +11,7 @@
     "build": "npm run build:client && npm run build:server",
     "build:client": "npm --prefix client run build",
     "build:server": "npm --prefix server run db:generate && npm --prefix server run build",
+    "build:pages": "npm ci --prefix client && npm --prefix client run build",
     "start": "npm --prefix server run start",
     "lint": "npm --prefix server run lint && npm --prefix client run lint",
     "typecheck": "npm --prefix server run typecheck && npm --prefix client run typecheck",
