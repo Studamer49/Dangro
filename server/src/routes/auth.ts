@@ -40,13 +40,15 @@ function generateTokens(userId: string) {
   return { accessToken, refreshToken };
 }
 
+// The frontend may live on another site (Cloudflare Pages), so production needs SameSite=None.
+const REFRESH_COOKIE = {
+  httpOnly: true,
+  secure: config.isProduction,
+  sameSite: config.isProduction ? "none" : "lax",
+} as const;
+
 function setRefreshCookie(res: Response, refreshToken: string): void {
-  res.cookie("refreshToken", refreshToken, {
-    httpOnly: true,
-    secure: config.isProduction,
-    sameSite: "lax",
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-  });
+  res.cookie("refreshToken", refreshToken, { ...REFRESH_COOKIE, maxAge: 7 * 24 * 60 * 60 * 1000 });
 }
 
 router.post(
@@ -148,7 +150,7 @@ router.get(
 );
 
 router.post("/logout", (_req, res) => {
-  res.clearCookie("refreshToken");
+  res.clearCookie("refreshToken", REFRESH_COOKIE);
   ok(res, { message: "Logged out" });
 });
 

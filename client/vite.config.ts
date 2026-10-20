@@ -1,4 +1,5 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv, type Plugin } from "vite";
+import { writeFileSync } from "fs";
 import react from "@vitejs/plugin-react";
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
@@ -6,8 +7,22 @@ import { dirname, resolve } from "path";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-export default defineConfig({
-  plugins: [react()],
+// When the API lives on another origin (frontend on Cloudflare Pages), stored
+// `/uploads/...` media URLs are redirected there by a Pages `_redirects` file.
+function pagesRedirects(apiUrl: string | undefined): Plugin {
+  return {
+    name: "pages-redirects",
+    apply: "build",
+    writeBundle(options) {
+      if (!apiUrl || !/^https?:\/\//.test(apiUrl) || !options.dir) return;
+      const origin = new URL(apiUrl).origin;
+      writeFileSync(resolve(options.dir, "_redirects"), `/uploads/* ${origin}/uploads/:splat 302\n`);
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => ({
+  plugins: [react(), pagesRedirects(loadEnv(mode, process.cwd(), "VITE_").VITE_API_URL)],
   resolve: {
     alias: {
       "@": resolve(__dirname, "./src"),
@@ -36,4 +51,4 @@ export default defineConfig({
       },
     },
   },
-});
+}));
