@@ -1,3 +1,4 @@
+import Media from "@/components/Media";
 import type { User } from "@/types";
 
 /**
@@ -30,7 +31,7 @@ export default function UserAvatar({ username, avatar, status }: UserAvatarProps
   return (
     <div className="relative h-10 w-10 shrink-0">
       {avatar ? (
-        <img
+        <Media
           src={avatar}
           alt={username}
           className="h-10 w-10 rounded-full object-cover ring-1 ring-white/15"

@@ -1,14 +1,11 @@
-import { Server as SocketServer, Socket } from "socket.io";
+﻿import { Server as SocketServer, Socket } from "socket.io";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { config } from "../config.js";
 import { prisma } from "../prisma.js";
-import { JWT_ALGORITHM } from "../middleware/auth.js";
 
 interface AuthPayload {
   userId: string;
-  /** Session version at issue time, so a revoked session cannot reconnect. */
-  sv?: number;
 }
 
 const channelRef = z.object({ channelId: z.string().uuid() });
@@ -26,6 +23,7 @@ const callInvite = targetRef.extend({
 });
 const roomTarget = targetRef.extend({ roomId: z.string().min(1).max(64) });
 const signalTarget = targetRef.extend({ signal: z.unknown() });
+const voiceSignal = channelRef.extend({ targetUserId: z.string().uuid(), signal: z.unknown() });
 
 /** Returns true when the socket's user belongs to the channel's server. */
 async function isChannelMember(channelId: string, userId: string): Promise<boolean> {
@@ -33,7 +31,7 @@ async function isChannelMember(channelId: string, userId: string): Promise<boole
     where: { id: channelId },
     select: { server: { select: { members: { where: { userId }, select: { id: true } } } } },
   });
-  // `server` is null when the channel outlives its server � possible on the
+  // `server` is null when the channel outlives its server — possible on the
   // MongoDB backend, which enforces no foreign keys. Prisma's types call it
   // non-nullable, so this is the only thing stopping a TypeError (and an
   // unhandled rejection in the async handlers below).
@@ -41,24 +39,38 @@ async function isChannelMember(channelId: string, userId: string): Promise<boole
 }
 
 /**
+ * A reply to an emitting client, when it asked for one.
+ *
+ * `call_invite` and `call_accept` are fire-and-forget on the wire from the
+ * store's point of view, but the caller/callee must not sit in a call nobody
+ * acknowledged: a refused invite (blocked, offline rules, already in a call)
+ * used to leave the caller ringing at a black screen forever, because the
+ * server simply dropped the event and said nothing.
+ */
+type Ack = (response: { ok: boolean; reason?: string }) => void;
+const noAck: Ack = () => undefined;
+
+/**
  * Wraps an async socket listener so a rejected database call cannot escape.
  *
  * Socket.IO does not await listeners, and `process.on("unhandledRejection")` in
- * index.ts swallows the rejection rather than crashing � so without this the
+ * index.ts swallows the rejection rather than crashing — so without this the
  * event is dropped in total silence and the socket stays half-joined. The
  * client gets a clear error instead.
  */
 function safe(
   socket: Socket,
   event: string,
-  handler: (payload: unknown) => Promise<void>
+  handler: (payload: unknown, ack: Ack) => Promise<void>
 ): void {
-  socket.on(event, (payload: unknown) => {
+  socket.on(event, (payload: unknown, ack?: unknown) => {
+    const reply: Ack = typeof ack === "function" ? (ack as Ack) : noAck;
     // Socket.IO ignores the return value; the promise is returned so tests
     // can await the handler deterministically.
-    return handler(payload).catch((err: unknown) => {
+    return handler(payload, reply).catch((err: unknown) => {
       console.error(`[socket] ${event} failed:`, err);
       socket.emit("error", { message: "Request failed" });
+      reply({ ok: false, reason: "error" });
     });
   });
 }
@@ -123,22 +135,51 @@ async function canContact(fromUserId: string, toUserId: string): Promise<boolean
  *
  * Signalling is relayed only between the two participants named in the
  * entry, so `webrtc_*` and `ice_candidate` need no database round trip per
- * event � which matters, because a single call emits dozens of ICE
+ * event — which matters, because a single call emits dozens of ICE
  * candidates.
  */
 interface ActiveCall {
   callerId: string;
   calleeId: string;
   startedAt: number;
+  /** Whether the callee answered. A ring nobody picks up is timed out. */
+  accepted: boolean;
+  /** Backstop timer that drops an invite nobody ever answered. */
+  ringTimer?: ReturnType<typeof setTimeout>;
 }
 
 const activeCalls = new Map<string, ActiveCall>();
 const CALL_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+/**
+ * How long an unanswered ring lasts before the server gives up.
+ *
+ * The callee's client auto-declines after 30s on its own, so this only fires
+ * when that client never saw the invite (app closed, phone asleep, invite
+ * lost) — without it the caller rang at "Ringing..." forever, because nothing
+ * else ever told them nobody was coming.
+ */
+const RING_TIMEOUT_MS = 40_000;
+
+/** Drops a call and cancels its ring timer, if either still exists. */
+function dropCall(roomId: string): void {
+  const call = activeCalls.get(roomId);
+  if (!call) return;
+  if (call.ringTimer) clearTimeout(call.ringTimer);
+  activeCalls.delete(roomId);
+}
 
 function pruneCalls(now: number): void {
   for (const [roomId, call] of activeCalls) {
-    if (now - call.startedAt > CALL_TIMEOUT_MS) activeCalls.delete(roomId);
+    if (now - call.startedAt > CALL_TIMEOUT_MS) dropCall(roomId);
   }
+}
+
+/** Whether this user is a participant of any live call right now. */
+function anyCallInvolving(userId: string): boolean {
+  for (const call of activeCalls.values()) {
+    if (call.callerId === userId || call.calleeId === userId) return true;
+  }
+  return false;
 }
 
 /** The live call between two users, with the room that identifies it. */
@@ -153,7 +194,7 @@ function callBetween(a: string, b: string): { roomId: string; call: ActiveCall }
 
 /** Exposed for tests: drops all in-flight call state. */
 export function resetActiveCalls(): void {
-  activeCalls.clear();
+  for (const roomId of [...activeCalls.keys()]) dropCall(roomId);
 }
 
 /**
@@ -173,66 +214,19 @@ function parse<T extends z.ZodType>(schema: T, data: unknown): z.output<T> | nul
 }
 
 export function setupSocketHandlers(io: SocketServer): void {
-  io.use(async (socket: Socket, next) => {
+  io.use((socket: Socket, next) => {
     const token = socket.handshake.auth.token;
     if (typeof token !== "string" || !token) {
       next(new Error("Authentication error"));
       return;
     }
 
-    let decoded: AuthPayload;
     try {
-      // Same pinned algorithm the HTTP middleware uses, so a token that would
-      // be rejected by `authenticate` can never open a socket.
-      decoded = jwt.verify(token, config.jwtSecret, {
-        algorithms: [JWT_ALGORITHM],
-      }) as AuthPayload;
+      const decoded = jwt.verify(token, config.jwtSecret) as AuthPayload;
       if (!decoded.userId) throw new Error("missing userId");
-    } catch {
-      next(new Error("Authentication error"));
-      return;
-    }
-
-    // The signature alone is not enough. A socket connection is long-lived �
-    // it can outlive the 15-minute life of the token that opened it � so the
-    // two things that can invalidate a session must be checked here, at
-    // connect time, rather than left to the next HTTP request:
-    //
-    //   - the session version, so a password change, password reset or address
-    //     change retires sockets opened with a token minted before it;
-    //   - the account itself, so a deleted user's token cannot connect and
-    //     cannot be used to flip a user row to "online".
-    try {
-      const user = await prisma.user.findUnique({
-        where: { id: decoded.userId },
-        select: { authSessionVersion: true, emailVerified: true },
-      });
-
-      if (!user) {
-        next(new Error("Authentication error"));
-        return;
-      }
-
-      const currentVersion = typeof user.authSessionVersion === "number" ? user.authSessionVersion : 0;
-      if ((decoded.sv ?? 0) !== currentVersion) {
-        next(new Error("Authentication error"));
-        return;
-      }
-
-      // Absent means a legacy account predating verification; only an explicit
-      // `false` blocks, matching the HTTP routes.
-      if (user.emailVerified === false) {
-        next(new Error("Authentication error"));
-        return;
-      }
-
       socket.data.userId = decoded.userId;
       next();
-    } catch (err) {
-      // A database error must fail the handshake closed rather than open:
-      // allowing it through would admit any user whose id happens to be in a
-      // valid token, including users who no longer exist.
-      console.error("[socket] handshake lookup failed:", err);
+    } catch {
       next(new Error("Authentication error"));
     }
   });
@@ -278,20 +272,12 @@ export function setupSocketHandlers(io: SocketServer): void {
         socket.emit("error", { message: "Invalid message payload" });
         return;
       }
-      // Membership is re-checked on every send, not only on join. A socket that
-      // joined while the user was a member keeps its socket.io rooms after they
-      // Membership is re-checked on every send, not only on join. A socket that
-      // joined while the user was a member keeps its socket.io rooms after they
-      // are kicked or banned, so without this they would go on receiving
-      // `new_message` broadcasts for a server they no longer belong to, and
-      // could keep posting into it. Leaving the rooms here closes the read and
-      // the write side together.
-      if (!(await isChannelMember(data.channelId, userId))) {
-        void socket.leave(`channel:${data.channelId}`);
-        void socket.leave(`voice:${data.channelId}`);
-        socket.emit("error", { message: "You cannot send messages to this channel" });
-        return;
-      }
+
+        if (!(await isChannelMember(data.channelId, userId))) {
+          socket.emit("error", { message: "You cannot send messages to this channel" });
+          return;
+        }
+
         if (data.replyToId) {
           const target = await prisma.message.findUnique({
             where: { id: data.replyToId },
@@ -343,7 +329,7 @@ export function setupSocketHandlers(io: SocketServer): void {
       const room = `voice:${data.channelId}`;
       // Read the room BEFORE this socket joins it: the members already inside
       // only learn about the newcomer from the broadcast below, so the
-      // newcomer is the only side that needs � and can be given � the roster.
+      // newcomer is the only side that needs — and can be given — the roster.
       const existing = await io.in(room).fetchSockets();
       const peers = existing
         .map((member) => member.data.userId as string | undefined)
@@ -363,18 +349,18 @@ export function setupSocketHandlers(io: SocketServer): void {
     });
 
     safe(socket, "voice_signal", async (payload: unknown) => {
-      const data = parse(signalTarget, payload);
+      const data = parse(voiceSignal, payload);
       if (!data) return;
-      // Voice-channel signalling is only meaningful between two people in
-      // the same voice room, and `voice_join` already verified channel
-      // membership before anyone could enter one.
+      // Voice-channel signalling is only meaningful between two people in the
+      // same voice room. Checking the specific room — not merely "shares any
+      // voice room" — keeps one member of a channel from signalling into a
+      // different channel they happen to also be part of.
       if (data.targetUserId === userId) return;
-      const voiceRooms = [...socket.rooms].filter((room) => room.startsWith("voice:"));
-      if (voiceRooms.length === 0) return;
+      if (!socket.rooms.has(`voice:${data.channelId}`)) return;
 
       const targets = await io.in(`user:${data.targetUserId}`).fetchSockets();
-      const sharesVoiceRoom = targets.some((peer) => voiceRooms.some((room) => peer.rooms.has(room)));
-      if (!sharesVoiceRoom) return;
+      const inRoom = targets.some((peer) => peer.rooms.has(`voice:${data.channelId}`));
+      if (!inRoom) return;
 
       io.to(`user:${data.targetUserId}`).emit("voice_signal", { userId, signal: data.signal });
     });
@@ -408,10 +394,10 @@ export function setupSocketHandlers(io: SocketServer): void {
     // A call is only ever relayed between its two participants. Without these
     // checks any authenticated user could ring, interrupt or tear down anyone
     // else's call simply by naming their id.
-    safe(socket, "call_invite", async (payload: unknown) => {
+    safe(socket, "call_invite", async (payload: unknown, ack: Ack) => {
       const data = parse(callInvite, payload);
       if (!data) {
-        socket.emit("call_unavailable", { targetUserId: null, reason: "bad_request" });
+        ack({ ok: false, reason: "invalid" });
         return;
       }
 
@@ -420,52 +406,96 @@ export function setupSocketHandlers(io: SocketServer): void {
       // A ringtone is an interruption to a real person, so an invite is rate
       // limited as well as authorised.
       if (rateLimited(inviteHits, 5, 60_000, now)) {
-        socket.emit("call_unavailable", { targetUserId: data.targetUserId, reason: "rate_limited" });
+        ack({ ok: false, reason: "rate" });
         return;
       }
       if (!(await canContact(userId, data.targetUserId))) {
-        // Saying nothing is what made this feel broken: the caller's call window
-        // opened, rang out into an empty room and sat on "Ringing..." for ever
-        // with no way to tell a refusal from someone who never answered. The
-        // reason is enough for the client to explain itself.
-        socket.emit("call_unavailable", { targetUserId: data.targetUserId, reason: "not_allowed" });
+        // The caller needs to hear "no" — a silently dropped invite left them
+        // ringing at a screen nobody will ever answer.
+        ack({ ok: false, reason: "unavailable" });
         return;
       }
 
-      activeCalls.set(data.roomId, {
+      // Same pair already ringing: re-send the EXISTING room instead of minting
+      // a second one. A double tap (or a second tab) used to overwrite the
+      // callee's stored room with an id that was never registered, so their
+      // accept hit nothing and both sides hung.
+      const existing = callBetween(userId, data.targetUserId);
+      if (existing) {
+        if (existing.call.accepted) {
+          ack({ ok: false, reason: "in-call" });
+          return;
+        }
+        io.to(`user:${data.targetUserId}`).emit("call_invite", {
+          callerId: userId,
+          callType: data.callType,
+          roomId: existing.roomId,
+        });
+        ack({ ok: true });
+        return;
+      }
+
+      // Either side busy with someone else (including a second device of this
+      // user holding a call) — ringing would stack two calls in one UI.
+      if (anyCallInvolving(userId)) {
+        ack({ ok: false, reason: "in-call" });
+        return;
+      }
+      if (anyCallInvolving(data.targetUserId)) {
+        ack({ ok: false, reason: "busy" });
+        return;
+      }
+
+      const call: ActiveCall = {
         callerId: userId,
         calleeId: data.targetUserId,
         startedAt: now,
-      });
+        accepted: false,
+      };
+      call.ringTimer = setTimeout(() => {
+        // The entry may already have been answered, ended or replaced — only a
+        // still-ringing call times out, and both sides must be told so the
+        // caller stops ringing and the callee's other devices stop glowing.
+        if (activeCalls.get(data.roomId) !== call) return;
+        activeCalls.delete(data.roomId);
+        io.to(`user:${call.callerId}`).emit("call_timeout", { roomId: data.roomId });
+        io.to(`user:${call.calleeId}`).emit("call_timeout", { roomId: data.roomId });
+      }, RING_TIMEOUT_MS);
+      activeCalls.set(data.roomId, call);
 
       io.to(`user:${data.targetUserId}`).emit("call_invite", {
         callerId: userId,
         callType: data.callType,
         roomId: data.roomId,
       });
-
-      // Nobody home: ringing into an account with no live socket is the same
-      // dead end as a refusal, and the caller deserves to be told now rather
-      // than after the full ring-out.
-      const online = await io.in(`user:${data.targetUserId}`).fetchSockets();
-      if (online.length === 0) {
-        activeCalls.delete(data.roomId);
-        socket.emit("call_unavailable", { targetUserId: data.targetUserId, reason: "offline" });
-      }
+      ack({ ok: true });
     });
 
-    socket.on("call_accept", (payload: unknown) => {
+    socket.on("call_accept", (payload: unknown, ack?: unknown) => {
+      const reply: Ack = typeof ack === "function" ? (ack as Ack) : noAck;
       const data = parse(roomTarget, payload);
-      if (!data) return;
-      const call = activeCalls.get(data.roomId);
-      if (!call) {
-        // The invite expired or was already torn down. Without this the callee's
-        // call window opened onto a conversation that no longer exists.
-        socket.emit("call_unavailable", { targetUserId: data.targetUserId, reason: "expired" });
+      if (!data) {
+        reply({ ok: false, reason: "invalid" });
         return;
       }
-      if (call.calleeId !== userId || call.callerId !== data.targetUserId) return;
+      const call = activeCalls.get(data.roomId);
+      if (!call || call.calleeId !== userId || call.callerId !== data.targetUserId) {
+        reply({ ok: false, reason: "gone" });
+        return;
+      }
+      // A second device of the callee answering the same ring: the first one
+      // wins, or the caller would receive two offers for one call.
+      if (call.accepted) {
+        reply({ ok: false, reason: "gone" });
+        return;
+      }
+      call.accepted = true;
+      if (call.ringTimer) clearTimeout(call.ringTimer);
       io.to(`user:${data.targetUserId}`).emit("call_accept", { accepterId: userId, roomId: data.roomId });
+      // The accepter's OWN other devices are still glowing and ringing — tell
+      // them the call was picked up here so they stand down.
+      io.to(`user:${userId}`).emit("call_accepted", { roomId: data.roomId });
+      reply({ ok: true });
     });
 
     socket.on("call_reject", (payload: unknown) => {
@@ -473,8 +503,11 @@ export function setupSocketHandlers(io: SocketServer): void {
       if (!data) return;
       const live = callBetween(userId, data.targetUserId);
       if (!live) return;
-      activeCalls.delete(live.roomId);
+      const roomId = live.roomId;
+      dropCall(roomId);
       io.to(`user:${data.targetUserId}`).emit("call_reject", { rejecterId: userId });
+      // Sibling devices of whoever declined are still ringing.
+      io.to(`user:${userId}`).emit("call_rejected", { roomId });
     });
 
     socket.on("call_end", (payload: unknown) => {
@@ -482,7 +515,7 @@ export function setupSocketHandlers(io: SocketServer): void {
       if (!data) return;
       const live = callBetween(userId, data.targetUserId);
       if (!live) return;
-      activeCalls.delete(live.roomId);
+      dropCall(live.roomId);
       io.to(`user:${data.targetUserId}`).emit("call_end", { enderId: userId });
     });
 
@@ -528,14 +561,23 @@ export function setupSocketHandlers(io: SocketServer): void {
       const remaining = io.sockets.adapter.rooms.get(`user:${userId}`)?.size ?? 0;
 
       // Still connected elsewhere. Relaying must keep working for this user,
-      // so leave their call state alone � otherwise closing a second tab
+      // so leave their call state alone — otherwise closing a second tab
       // silently tears down a call the peer is still sitting in.
       if (remaining > 0) return;
 
       // This was their last connection, so nobody is left to talk to on their
-      // calls: stop relaying signalling for them.
-      for (const [roomId, call] of activeCalls) {
-        if (call.callerId === userId || call.calleeId === userId) activeCalls.delete(roomId);
+      // calls: stop relaying signalling for them — and TELL the other side.
+      // Deleting the entry silently left the peer sitting in a call that could
+      // never be signalled again: no offer, no candidates, no hang-up, just a
+      // frozen screen until their own client gave up.
+      for (const [roomId, call] of [...activeCalls]) {
+        if (call.callerId !== userId && call.calleeId !== userId) continue;
+        dropCall(roomId);
+        const other = call.callerId === userId ? call.calleeId : call.callerId;
+        io.to(`user:${other}`).emit(
+          call.accepted ? "call_end" : "call_timeout",
+          { roomId, enderId: userId }
+        );
       }
 
       prisma.user

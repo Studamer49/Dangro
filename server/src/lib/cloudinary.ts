@@ -124,7 +124,7 @@ export interface UploadedImage {
  * Delivery transformation, baked into the stored URL so a given asset is
  * transformed once and then served from Cloudinary's cache.
  *
- *   c_limit,w_1920  fit inside a 1920px box WITHOUT cropping or upscaling,
+ *   c_limit,w_2560  fit inside a 2560px box WITHOUT cropping or upscaling,
  *                   so aspect ratio and small images are preserved
  *   f_auto          best format for the requesting browser (skipped for GIF)
  *   q_auto          automatic quality
@@ -137,7 +137,9 @@ function deliveryTransformation(format: string): Record<string, unknown> {
   const base: Record<string, unknown> = {
     // c_limit scales down only — it never enlarges and never crops.
     crop: "limit",
-    width: 1920,
+    // 2560 covers a full-width profile banner on a high-DPI display; a wider
+    // master is also what the video trimmer re-encodes at.
+    width: 2560,
     quality: "auto",
   };
   if (format !== "gif") base.fetch_format = "auto";
@@ -269,7 +271,7 @@ export function publicIdFromUrl(url: string | null | undefined): string | null {
 
   const rest = segments.slice(3);
 
-  // Transformation segments look like `c_limit,w_1920,f_auto,q_auto`; the
+  // Transformation segments look like `c_limit,w_2560,f_auto,q_auto`; the
   // version segment looks like `v1234567890`. Neither is part of the public ID.
   while (rest.length > 1 && /^[a-z]+_[^/]+$/i.test(rest[0]!)) rest.shift();
   if (rest.length > 1 && /^v\d+$/.test(rest[0]!)) rest.shift();

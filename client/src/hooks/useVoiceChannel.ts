@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "@/lib/api";
 import { getSocket } from "@/lib/socket";
-import { getIceConfiguration } from "@/lib/iceServers";
+import { ICE_SERVERS, refreshIceServers } from "@/lib/iceServers";
 import type { User } from "@/types";
 
 export interface VoicePeer {
@@ -87,7 +87,12 @@ export function useVoiceChannel(currentUser: User | null) {
   );
 
   const emitSignal = useCallback((targetUserId: string, signal: SignalPayload) => {
-    getSocket().emit("voice_signal", { targetUserId, signal });
+    const channelId = channelIdRef.current;
+    // Scope the signal to the voice room we are in, so the server can relay it
+    // only to someone actually in that same room rather than merely sharing
+    // *some* voice room with us.
+    if (!channelId) return;
+    getSocket().emit("voice_signal", { targetUserId, channelId, signal });
   }, []);
 
   const closePeer = useCallback(
@@ -110,7 +115,7 @@ export function useVoiceChannel(currentUser: User | null) {
       const existing = peersRef.current.get(peerId);
       if (existing) return existing;
 
-      const pc = new RTCPeerConnection(getIceConfiguration());
+      const pc = new RTCPeerConnection(ICE_SERVERS);
       const peer: PeerConnection = {
         userId: peerId,
         pc,
@@ -237,16 +242,40 @@ export function useVoiceChannel(currentUser: User | null) {
       void handleSignal(data.userId, data.signal);
     };
 
+    /**
+     * Socket.IO keeps the same object across reconnects but the server's room
+     * membership is per-connection, so a dropped socket silently removed the
+     * user from the voice room while the UI still showed them in it. On
+     * reconnect, tear down the now-dead peer connections and rejoin; the server
+     * hands back the roster and the members offer to us again.
+     */
+    const onReconnect = () => {
+      const id = channelIdRef.current;
+      if (!id) return;
+      for (const peer of peersRef.current.values()) {
+        try {
+          peer.pc.close();
+        } catch {
+          // Already closed.
+        }
+      }
+      peersRef.current.clear();
+      publishPeers();
+      getSocket().emit("voice_join", { channelId: id });
+    };
+
     socket.on("voice_peers", handlePeers);
     socket.on("voice_user_join", handleUserJoin);
     socket.on("voice_user_leave", handleUserLeave);
     socket.on("voice_signal", onVoiceSignal);
+    socket.on("connect", onReconnect);
 
     return () => {
       socket.off("voice_peers", handlePeers);
       socket.off("voice_user_join", handleUserJoin);
       socket.off("voice_user_leave", handleUserLeave);
       socket.off("voice_signal", onVoiceSignal);
+      socket.off("connect", onReconnect);
     };
   }, [createPeer, publishPeers, rememberUser, closePeer, handleSignal]);
 
@@ -294,6 +323,10 @@ export function useVoiceChannel(currentUser: User | null) {
       channelIdRef.current = id;
       setChannelId(id);
       setChannelName(name);
+
+      // Refresh the relay (and any short-lived credentials) before the mesh
+      // builds its connections.
+      void refreshIceServers();
 
       try {
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -373,21 +406,19 @@ export function useVoiceChannel(currentUser: User | null) {
 
   useEffect(() => {
     // Captured inside the effect on purpose. `peersRef.current` is assigned once
-    // (line 51) and only ever mutated — set/delete/clear — so this is the same
-    // Map object for the component's whole life and reading it here is
-    // identical to reading it at cleanup time. That is also what we want: the
-    // peers to tear down are the ones joined at unmount, not the ones that
-    // existed at mount. Reading the ref directly in the cleanup would work the
-    // same way but trips exhaustive-deps, which cannot see that the ref's
-    // identity is fixed.
+    // and only ever mutated — set/delete/clear — so this is the same Map object
+    // for the component's whole life and reading it here is identical to reading
+    // it at cleanup time. That is also what we want: the peers to tear down are
+    // the ones joined at unmount, not the ones that existed at mount. Reading the
+    // ref directly in the cleanup would work the same way but trips
+    // exhaustive-deps, which cannot see that the ref's identity is fixed.
     const peers = peersRef.current;
-    const localStream = localStreamRef;
 
     return () => {
       if (channelIdRef.current) {
         getSocket().emit("voice_leave", { channelId: channelIdRef.current });
       }
-      localStream.current?.getTracks().forEach((track) => track.stop());
+      localStreamRef.current?.getTracks().forEach((track) => track.stop());
       for (const peer of peers.values()) {
         try {
           peer.pc.close();

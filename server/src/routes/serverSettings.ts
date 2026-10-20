@@ -26,6 +26,7 @@ const updateServerSchema = z
   .object({
     name: z.string().trim().min(1).max(100).optional(),
     icon: nullableMediaUrl(),
+    banner: nullableMediaUrl(),
     description: z.string().trim().max(500).nullish(),
     /**
      * Public servers are listed on Explore; private ones are invite-only.
@@ -56,6 +57,7 @@ router.patch(
       data: {
         name: input.name,
         icon: input.icon === undefined ? undefined : input.icon ?? null,
+        banner: input.banner === undefined ? undefined : input.banner ?? null,
         description: input.description === undefined ? undefined : input.description ?? null,
         isPrivate: input.isPrivate,
       },
@@ -142,9 +144,17 @@ router.patch(
       const everyone = serverRoles.find((role) => role.isEveryone);
       const assignable = input.roleIds.filter((roleId) => roleId !== everyone?.id);
 
-      const known = new Set(serverRoles.map((role) => role.id));
+      const byId = new Map(serverRoles.map((role) => [role.id, role]));
       for (const roleId of assignable) {
-        if (!known.has(roleId)) throw AppError.of("BAD_REQUEST", "Unknown role for this server");
+        const role = byId.get(roleId);
+        if (!role) throw AppError.of("BAD_REQUEST", "Unknown role for this server");
+        // Handing out a role at or above your own reach would be a privilege
+        // escalation — an admin could promote someone past themselves and act
+        // through them — so it is refused even by someone who could otherwise
+        // assign roles. Mirrors the check in `PUT .../members/:id/roles`.
+        if (!actor.isOwner && role.position >= actor.position) {
+          throw AppError.of("FORBIDDEN", "You cannot assign a role at or above your own highest role");
+        }
       }
 
       await prisma.memberRole.deleteMany({ where: { memberId } });

@@ -85,7 +85,7 @@ export default function StoriesBar({ groups, viewer, onAdded, onLiked }: Stories
                 }`}
               >
                 <span className="block rounded-full bg-gray-950 p-[2px]">
-                  <Avatar user={myGroup?.author ?? viewer} className="h-14 w-14" linkToProfile={false} />
+                  <Avatar user={myGroup?.author ?? viewer} className="h-14 w-14" linkToProfile={false} animation="always" />
                 </span>
               </span>
               <span
@@ -121,7 +121,7 @@ export default function StoriesBar({ groups, viewer, onAdded, onLiked }: Stories
                   }`}
                 >
                   <span className="block rounded-full bg-gray-950 p-[2px]">
-                    <Avatar user={group.author} className="h-14 w-14" linkToProfile={false} />
+                    <Avatar user={group.author} className="h-14 w-14" linkToProfile={false} animation="always" />
                   </span>
                 </span>
                 <span className="w-full truncate text-center text-[11px] font-medium text-gray-400 transition-colors duration-200 ease-out group-hover:text-white">

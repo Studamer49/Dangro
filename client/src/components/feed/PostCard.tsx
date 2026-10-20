@@ -21,6 +21,11 @@ interface PostCardProps {
   onOpen?: (post: Post) => void;
   /** Opens the comment thread on first render (used by the expanded popup). */
   defaultShowComments?: boolean;
+  /**
+   * Hides the in-card comment thread entirely. Used by the expanded post
+   * popup, where the comments live in their own side panel instead.
+   */
+  hideComments?: boolean;
 }
 
 export default function PostCard({

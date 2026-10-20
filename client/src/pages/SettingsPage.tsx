@@ -293,6 +293,12 @@ export default function SettingsPage() {
               </div>
 
               <ToggleRow
+                label="Stop animated avatars & banners"
+                description="Freeze GIFs and videos used for avatars and banners"
+                enabled={!settings.animateAvatars}
+                onToggle={settings.toggleAnimateAvatars}
+              />
+              <ToggleRow
                 label="Animations"
                 description="Enable smooth animations throughout the app"
                 enabled={settings.animationsEnabled}

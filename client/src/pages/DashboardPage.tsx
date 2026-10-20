@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Routes, Route, useNavigate, useLocation } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
+import { useConfirm } from "@/hooks/useConfirm";
 import ServerSidebar from "@/components/ServerSidebar";
 import ChannelSidebar from "@/components/ChannelSidebar";
 import ChatArea from "@/components/ChatArea";
@@ -18,12 +19,20 @@ import NotFoundPage from "@/pages/NotFoundPage";
 export default function DashboardPage() {
   const user = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
+  const confirm = useConfirm();
   const navigate = useNavigate();
   const location = useLocation();
 
   const showChannelSidebar = location.pathname.startsWith("/channels/");
 
   const handleLogout = async () => {
+    const ok = await confirm({
+      title: "Log out?",
+      message: "You'll need to sign in again to get back to Dangro.",
+      confirmLabel: "Log out",
+      tone: "danger",
+    });
+    if (!ok) return;
     // logout() never rejects, but awaiting it in an onClick handler would turn
     // any future throw into an unhandled rejection.
     await logout();

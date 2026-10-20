@@ -16,7 +16,26 @@ function startOfDay(date: Date): number {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
 }
 
-/** "Today" / "Yesterday" for recent days, otherwise a localised date. */
+/** 1 -> "1st", 2 -> "2nd", 3 -> "3rd", 4 -> "4th", 11 -> "11th", 21 -> "21st". */
+function ordinal(day: number): string {
+  if (day % 100 >= 11 && day % 100 <= 13) return `${day}th`;
+  switch (day % 10) {
+    case 1:
+      return `${day}st`;
+    case 2:
+      return `${day}nd`;
+    case 3:
+      return `${day}rd`;
+    default:
+      return `${day}th`;
+  }
+}
+
+/**
+ * "Today" / "Yesterday" for the two most recent days, otherwise a dated label
+ * like "October 14th 2026". The year is always shown so a divider is
+ * unambiguous even when the chat spans a New Year.
+ */
 export function dayLabel(iso: string): string {
   const date = new Date(iso);
   const now = new Date();
@@ -25,10 +44,6 @@ export function dayLabel(iso: string): string {
   if (days === 0) return "Today";
   if (days === 1) return "Yesterday";
 
-  return date.toLocaleDateString(undefined, {
-    month: "long",
-    day: "numeric",
-    // The year only matters once the message is not from this year.
-    year: date.getFullYear() === now.getFullYear() ? undefined : "numeric",
-  });
+  const month = date.toLocaleDateString(undefined, { month: "long" });
+  return `${month} ${ordinal(date.getDate())} ${date.getFullYear()}`;
 }

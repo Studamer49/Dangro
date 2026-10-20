@@ -13,8 +13,10 @@ import UserContextMenu from "@/components/UserContextMenu";
 import EmojiPicker from "@/components/EmojiPicker";
 import Emoji from "@/components/Emoji";
 import ChatDayDivider from "@/components/ChatDayDivider";
+import ServerInviteEmbed from "@/components/ServerInviteEmbed";
 import { useToast } from "@/stores/toastStore";
 import { replaceEmojiShortcodes } from "@/lib/emojiData";
+import { extractInviteCodes } from "@/lib/invites";
 import { useDmPrefsStore } from "@/stores/dmPrefsStore";
 import { useBlocksStore } from "@/stores/blocksStore";
 import type { Conversation, DirectMessage, DirectReaction } from "@/types";
@@ -32,7 +34,6 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   const dmMuted = useDmPrefsStore((s) => s.isMuted(conversation.id));
   const otherUserId = conversation.otherUser?.id ?? "";
   const blocked = useBlocksStore((s) => s.isBlocked(otherUserId));
-  const loadBlocks = useBlocksStore((s) => s.load);
   const isPendingRequest = conversation.status === "pending";
   const amRequester = conversation.requestSenderId === user?.id;
   const [messages, setMessages] = useState<DirectMessage[]>([]);
@@ -53,6 +54,20 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   const [isUploading, setIsUploading] = useState(false);
   // 0-100 while an upload is in flight; reset to 0 when idle.
   const [uploadPercent, setUploadPercent] = useState(0);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<
+    Array<{
+      id: string;
+      content: string;
+      attachmentUrl: string | null;
+      attachmentType: string | null;
+      createdAt: string;
+      senderId: string;
+    }>
+  >([]);
+  const [searching, setSearching] = useState(false);
+  const pendingScrollIdRef = useRef<string | null>(null);
   const toast = useToast();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -61,13 +76,54 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const chatContainerRef = useRef<HTMLDivElement>(null);
   const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
-  // The conversation currently on screen, so a response for one already left
-  // behind cannot overwrite the thread that replaced it.
   const activeConversationRef = useRef(conversation.id);
 
+  const jumpToResult = useCallback(
+    async (id: string) => {
+      setSearchOpen(false);
+      if (messages.some((m) => m.id === id)) {
+        setShouldAutoScroll(false);
+        document.getElementById(`dm-message-${id}`)?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
+        setFlashId(id);
+        if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+        flashTimeoutRef.current = setTimeout(() => setFlashId((cur) => (cur === id ? null : cur)), 1500);
+        return;
+      }
+      pendingScrollIdRef.current = id;
+      try {
+        const { data } = await api.get(`/dms/${conversation.id}`, { params: { around: id } });
+        if (activeConversationRef.current !== conversation.id) return;
+        setShouldAutoScroll(false);
+        setMessages(data.messages as DirectMessage[]);
+      } catch {
+        pendingScrollIdRef.current = null;
+      }
+    },
+    [conversation.id, messages]
+  );
+
+  const scrollToMessage = (id: string) => {
+    document.getElementById(`dm-message-${id}`)?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
+    setFlashId(id);
+    if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+    flashTimeoutRef.current = setTimeout(
+      () => setFlashId((cur) => (cur === id ? null : cur)),
+      1500
+    );
+  };
+
   useEffect(() => {
-    void loadBlocks();
-  }, [loadBlocks]);
+    const id = pendingScrollIdRef.current;
+    if (!id || !messages.some((m) => m.id === id)) return;
+    pendingScrollIdRef.current = null;
+    const raf = requestAnimationFrame(() => {
+      document.getElementById(`dm-message-${id}`)?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
+      setFlashId(id);
+      if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
+      flashTimeoutRef.current = setTimeout(() => setFlashId((cur) => (cur === id ? null : cur)), 1500);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [messages]);
 
   const markAsRead = useCallback(async () => {
     try {
@@ -260,6 +316,9 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
     setFlashId(null);
     setMenu(null);
     setHeaderMenu(null);
+    setSearchOpen(false);
+    setSearchQuery("");
+    setSearchResults([]);
     // These carry the previous thread's state. Clearing them stops a failed
     // fetch from leaving one person's private messages under another person's
     // name, and stops the typing indicator from following you across — it is
@@ -467,18 +526,6 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
     }
   };
 
-  const scrollToMessage = (id: string) => {
-    document.getElementById(`dm-message-${id}`)?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
-    setFlashId(id);
-    // Tracked and cleared on unmount: an untracked timer outlives the component
-    // and can clear a flashId belonging to a conversation opened in the
-    // meantime.
-    if (flashTimeoutRef.current) clearTimeout(flashTimeoutRef.current);
-    flashTimeoutRef.current = setTimeout(
-      () => setFlashId((cur) => (cur === id ? null : cur)),
-      1500
-    );
-  };
 
   const editMessage = async (messageId: string) => {
     if (!editContent.trim() || messageId.startsWith("temp-")) return;
@@ -510,6 +557,29 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
       // silent
     }
   };
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!searchOpen || q.length < 2) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+    const requestConversationId = conversation.id;
+    setSearching(true);
+    const t = setTimeout(async () => {
+      try {
+        const { data } = await api.get(`/dms/${requestConversationId}/search`, { params: { q } });
+        if (activeConversationRef.current !== requestConversationId) return;
+        setSearchResults(data.results ?? []);
+      } catch {
+        if (activeConversationRef.current === requestConversationId) setSearchResults([]);
+      } finally {
+        if (activeConversationRef.current === requestConversationId) setSearching(false);
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [searchQuery, searchOpen, conversation.id]);
 
   const copyMessage = async (content: string) => {
     try {
@@ -634,6 +704,14 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
     return new Date(dateStr).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   };
 
+  const formatMessageDate = (dateStr: string) => {
+    try {
+      return new Date(dateStr).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    } catch {
+      return dateStr;
+    }
+  };
+
   const renderReadReceipt = (msg: DirectMessage) => {
     if (msg.senderId !== user?.id) return null;
     if (!msg.deliveredAt) return <span className="text-gray-500">✓</span>;
@@ -724,9 +802,27 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
           <p className="text-sm font-semibold tracking-tight text-white">{conversation.otherUser?.username}</p>
           <p className="text-xs capitalize text-gray-400">{conversation.otherUser?.status || "offline"}</p>
         </div>
-<div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2">
           {conversation.otherUser && (
             <>
+              <button
+                onClick={() => {
+                  setSearchOpen((v) => {
+                    if (v) {
+                      setSearchQuery("");
+                    }
+                    return !v;
+                  });
+                }}
+                className="icon-btn"
+                title="Search messages"
+                aria-label="Search messages"
+                aria-pressed={searchOpen}
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M17 11a6 6 0 11-12 0 6 6 0 0112 0z" />
+                </svg>
+              </button>
               <button
                 onClick={() => initiateCall(conversation.otherUser!.id, conversation.otherUser!, "voice")}
                 className="icon-btn"
@@ -754,6 +850,57 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
           </button>
         </div>
       </div>
+
+      {searchOpen && (
+        <div className="border-b border-gray-800/70 bg-gray-900/60 px-4 py-2">
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search this conversation..."
+              aria-label="Search this conversation"
+              className="field py-2"
+              autoFocus
+            />
+            <button
+              onClick={() => {
+                setSearchOpen(false);
+                setSearchQuery("");
+                setSearchResults([]);
+              }}
+              className="icon-btn"
+              title="Close search"
+            >
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+          {searchQuery.trim().length >= 2 && (
+            <div className="mt-2 max-h-60 overflow-y-auto rounded-lg border border-gray-800 bg-gray-950/70">
+              {searching ? (
+                <p className="p-3 text-xs text-gray-500">Searching…</p>
+              ) : searchResults.length === 0 ? (
+                <p className="p-3 text-xs text-gray-500">No matches.</p>
+              ) : (
+                searchResults.map((r) => (
+                  <button
+                    key={r.id}
+                    onClick={() => void jumpToResult(r.id)}
+                    className="block w-full border-b border-gray-800/50 px-3 py-2 text-left last:border-0 transition-colors duration-150 hover:bg-gray-800/50"
+                  >
+                    <p className="truncate text-sm text-gray-200">
+                      {r.content?.trim() || (r.attachmentType ? `[${r.attachmentType}] attachment` : "(no content)")}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-gray-500">{formatMessageDate(r.createdAt)}</p>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {isPendingRequest && (
         <div className="flex items-center justify-between gap-3 border-b border-gray-800/70 bg-amber-500/10 px-4 py-2">
@@ -869,6 +1016,9 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
                       ) : (
                         <>
                           {msg.content && <p className="text-sm break-words">{msg.content}</p>}
+                          {extractInviteCodes(msg.content).map((code) => (
+                            <ServerInviteEmbed key={code} code={code} />
+                          ))}
                           {renderAttachment(msg)}
                         </>
                       )}

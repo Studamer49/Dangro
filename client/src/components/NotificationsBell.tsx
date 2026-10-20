@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import api, { apiErrorMessage } from "@/lib/api";
 import { getSocket } from "@/lib/socket";
 import { useToast } from "@/stores/toastStore";
+import Media from "@/components/Media";
 import type { Notification } from "@/types";
 
 function timeAgo(iso: string): string {
@@ -149,7 +150,7 @@ export default function NotificationsBell() {
                 >
                   <div className="mt-0.5 h-8 w-8 shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-accent-500 to-accent-700">
                     {n.fromUser?.avatar ? (
-                      <img src={n.fromUser.avatar} alt="" className="h-full w-full object-cover" />
+                      <Media src={n.fromUser.avatar} alt="" className="h-full w-full object-cover" />
                     ) : (
                       <span className="flex h-full w-full items-center justify-center text-xs font-bold text-white">
                         {n.fromUser?.username?.[0]?.toUpperCase() ?? "?"}

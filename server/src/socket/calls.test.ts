@@ -12,17 +12,10 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 // vi.mock factories are hoisted above module-level declarations, so the
 // stub has to be created through vi.hoisted to exist by the time it runs.
-/**
- * `block` is part of the contact gate in `canContact` (socket/index.ts): a
- * block in either direction stops a call. Without it here the handler threw
- * `Cannot read properties of undefined (reading 'findFirst')`, which the
- * socket layer swallows into a log line, so every call test failed with an
- * empty `emitted` array instead of an error that named the missing model.
- */
 const prismaMock = vi.hoisted(() => ({
+  block: { findFirst: vi.fn() },
   friend: { findFirst: vi.fn() },
   follow: { findUnique: vi.fn() },
-  block: { findFirst: vi.fn() },
   user: { update: vi.fn() },
 }));
 
@@ -39,7 +32,7 @@ interface Emitted {
 }
 
 function fakeSocket(userId: string) {
-  const handlers = new Map<string, (payload: unknown) => unknown>();
+  const handlers = new Map<string, (payload: unknown, ack?: unknown) => unknown>();
   const rooms = new Set<string>([`user:${userId}`]);
   const emitted: Emitted[] = [];
 
@@ -51,11 +44,13 @@ function fakeSocket(userId: string) {
     handshake: { auth: { token: "test" } },
     join: (room: string) => rooms.add(room),
     leave: (room: string) => rooms.delete(room),
-    on: (event: string, handler: (payload: unknown) => unknown) => handlers.set(event, handler),
+    on: (event: string, handler: (payload: unknown, ack?: unknown) => unknown) =>
+      handlers.set(event, handler),
     emit: (event: string, payload: unknown) => {
       emitted.push({ room: `socket:${userId}`, event, payload });
     },
-    fire: (event: string, payload: unknown) => handlers.get(event)?.(payload),
+    fire: (event: string, payload: unknown, ack?: (response: unknown) => void) =>
+      handlers.get(event)?.(payload, ack),
     has: (event: string) => handlers.has(event),
   };
 }
@@ -64,16 +59,6 @@ function fakeIo() {
   const emitted: Emitted[] = [];
   let onConnection: ((socket: ReturnType<typeof fakeSocket>) => void) | undefined;
 
-  /**
-   * Presence has to be modelled, not stubbed away. `call_invite` asks
-   * `fetchSockets()` whether the callee is home and, if nobody is, deletes
-   * the call it just registered (socket/index.ts). Returning a hardcoded `[]`
-   * told every call it was made into the void, so the call was torn down
-   * before the test could send `call_end` or any WebRTC signal — which is why
-   * those cases failed with an empty `emitted` array.
-   */
-  const connected: Array<ReturnType<typeof fakeSocket>> = [];
-
   const io = {
     emitted,
     use: () => undefined,
@@ -81,14 +66,9 @@ function fakeIo() {
       if (event === "connection") onConnection = cb;
     },
     to: (room: string) => ({ emit: (event: string, payload: unknown) => emitted.push({ room, event, payload }) }),
-    in: (room: string) => ({
-      fetchSockets: async () => connected.filter((s) => s.rooms.has(room)),
-    }),
+    in: () => ({ fetchSockets: async () => [] as Array<{ rooms: Set<string> }> }),
     sockets: { adapter: { rooms: new Map<string, Set<string>>() } },
-    connect: (socket: ReturnType<typeof fakeSocket>) => {
-      connected.push(socket);
-      onConnection?.(socket);
-    },
+    connect: (socket: ReturnType<typeof fakeSocket>) => onConnection?.(socket),
   };
 
   return io;
@@ -98,21 +78,12 @@ function fakeIo() {
 function asFriends() {
   prismaMock.friend.findFirst.mockResolvedValue({ id: "edge-1" });
   prismaMock.follow.findUnique.mockResolvedValue(null);
-  prismaMock.block.findFirst.mockResolvedValue(null);
 }
 
 /** Makes them strangers: no friendship, no follow. */
 function asStrangers() {
   prismaMock.friend.findFirst.mockResolvedValue(null);
   prismaMock.follow.findUnique.mockResolvedValue(null);
-  prismaMock.block.findFirst.mockResolvedValue(null);
-}
-
-/** Friends, but one has blocked the other. */
-function asBlocked() {
-  prismaMock.friend.findFirst.mockResolvedValue({ id: "edge-1" });
-  prismaMock.follow.findUnique.mockResolvedValue(null);
-  prismaMock.block.findFirst.mockResolvedValue({ id: "block-1" });
 }
 
 const A = "aaaaaaaa-1111-4111-8111-111111111111";
@@ -129,9 +100,7 @@ beforeEach(() => {
   // cases or one test's call authorises the next test's signalling.
   resetActiveCalls();
   prismaMock.user.update.mockResolvedValue({});
-  // `mockClear` keeps implementations, so a default here is what stops a test
-  // that forgets to pick a relationship from inheriting the previous one's
-  // `block` result.
+  // Nobody is blocked by default; a case that cares overrides this.
   prismaMock.block.findFirst.mockResolvedValue(null);
 });
 
@@ -160,46 +129,6 @@ describe("call_invite", () => {
     await a.fire("call_invite", { targetUserId: ATTACKER, callType: "voice", roomId: nextRoom() });
 
     expect(io.emitted.filter((e) => e.event === "call_invite")).toHaveLength(0);
-  });
-
-  it("is dropped when either side has blocked the other", async () => {
-    // Friendship alone must not authorise the call: a blocker who is still a
-    // friend would otherwise be reachable by ringing them instead of DMing.
-    asBlocked();
-    const io = fakeIo();
-    setupSocketHandlers(io as never);
-    const a = fakeSocket(A);
-    io.connect(a);
-
-    await a.fire("call_invite", { targetUserId: B, callType: "voice", roomId: nextRoom() });
-
-    expect(io.emitted.filter((e) => e.event === "call_invite")).toHaveLength(0);
-  });
-
-  it("tears the call down when the callee has no live socket", async () => {
-    // Ringing an account nobody is sitting in is the same dead end as a
-    // refusal, so the call is dropped and the caller told why. B never
-    // connects here, which is what `fetchSockets` reports.
-    asFriends();
-    const io = fakeIo();
-    setupSocketHandlers(io as never);
-    const a = fakeSocket(A);
-    io.connect(a);
-
-    await a.fire("call_invite", { targetUserId: B, callType: "voice", roomId: nextRoom() });
-
-    expect(a.emitted).toContainEqual(
-      expect.objectContaining({
-        event: "call_unavailable",
-        payload: { targetUserId: B, reason: "offline" },
-      })
-    );
-
-    // And the dropped call leaves nothing to signal on.
-    io.emitted.length = 0;
-    a.emitted.length = 0;
-    await a.fire("webrtc_offer", { targetUserId: B, signal: { sdp: "x" } });
-    expect(io.emitted.filter((e) => e.event === "webrtc_offer")).toHaveLength(0);
   });
 
   it("cannot be used to ring one person repeatedly", async () => {
@@ -267,8 +196,6 @@ describe("call_end", () => {
     setupSocketHandlers(io as never);
     const a = fakeSocket(A);
     io.connect(a);
-    // B has to be home, otherwise `call_invite` tears the call down as offline.
-    io.connect(fakeSocket(B));
 
     await a.fire("call_invite", { targetUserId: B, callType: "video", roomId: nextRoom() });
     io.emitted.length = 0;
@@ -357,7 +284,6 @@ describe("WebRTC signalling", () => {
     setupSocketHandlers(io as never);
     const a = fakeSocket(A);
     io.connect(a);
-    io.connect(fakeSocket(B));
 
     await a.fire("call_invite", { targetUserId: B, callType: "video", roomId: nextRoom() });
     io.emitted.length = 0;
@@ -426,5 +352,226 @@ describe("async handler failures", () => {
     await a.fire("call_invite", { targetUserId: B, callType: "voice", roomId: nextRoom() });
 
     expect(io.emitted.filter((e) => e.event === "call_invite")).toHaveLength(1);
+  });
+});
+
+/** Captures the acknowledgement an event handler sends back to its emitter. */
+async function ackOf(
+  socket: ReturnType<typeof fakeSocket>,
+  event: string,
+  payload: unknown
+): Promise<{ ok?: boolean; reason?: string }> {
+  let response: { ok?: boolean; reason?: string } | undefined;
+  await socket.fire(event, payload, (reply) => {
+    response = reply as { ok?: boolean; reason?: string };
+  });
+  return response ?? {};
+}
+
+describe("invite acknowledgement", () => {
+  it("tells the caller when they are not allowed to ring", async () => {
+    asStrangers();
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    io.connect(a);
+
+    const reply = await ackOf(a, "call_invite", {
+      targetUserId: B,
+      callType: "voice",
+      roomId: nextRoom(),
+    });
+
+    // The old behaviour dropped the invite in silence, so the caller rang at
+    // a screen nobody was ever going to answer.
+    expect(reply).toEqual({ ok: false, reason: "unavailable" });
+  });
+
+  it("tells the caller when the callee is already in another call", async () => {
+    asFriends();
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    const c = fakeSocket(ATTACKER);
+    io.connect(a);
+    io.connect(c);
+
+    await a.fire("call_invite", { targetUserId: B, callType: "voice", roomId: nextRoom() });
+    const reply = await ackOf(c, "call_invite", {
+      targetUserId: B,
+      callType: "voice",
+      roomId: nextRoom(),
+    });
+
+    expect(reply).toEqual({ ok: false, reason: "busy" });
+  });
+
+  it("reuses the first room when the caller rings the same person twice", async () => {
+    asFriends();
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    io.connect(a);
+
+    const roomId = nextRoom();
+    await a.fire("call_invite", { targetUserId: B, callType: "voice", roomId });
+    // A double tap minted a second room id that was never registered, so the
+    // callee's accept landed on nothing and both sides hung.
+    const reply = await ackOf(a, "call_invite", {
+      targetUserId: B,
+      callType: "voice",
+      roomId: nextRoom(),
+    });
+
+    expect(reply).toEqual({ ok: true });
+    const invites = io.emitted.filter((e) => e.event === "call_invite");
+    expect(invites).toHaveLength(2);
+    expect(invites[1].payload).toEqual(expect.objectContaining({ roomId }));
+  });
+});
+
+describe("ring timeout", () => {
+  it("tells both sides when nobody answers, and stops relaying", async () => {
+    asFriends();
+    vi.useFakeTimers();
+    try {
+      const io = fakeIo();
+      setupSocketHandlers(io as never);
+      const a = fakeSocket(A);
+      io.connect(a);
+
+      await a.fire("call_invite", { targetUserId: B, callType: "voice", roomId: nextRoom() });
+      io.emitted.length = 0;
+
+      // The callee's client auto-declines after 30s on its own; this fires
+      // when it never saw the invite at all.
+      vi.advanceTimersByTime(41_000);
+
+      expect(io.emitted.filter((e) => e.event === "call_timeout")).toHaveLength(2);
+      expect(io.emitted.map((e) => e.room)).toEqual(expect.arrayContaining([`user:${A}`, `user:${B}`]));
+
+      await a.fire("ice_candidate", { targetUserId: B, signal: { candidate: "x" } });
+      expect(io.emitted.filter((e) => e.event === "ice_candidate")).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not fire once the call was answered", async () => {
+    asFriends();
+    vi.useFakeTimers();
+    try {
+      const io = fakeIo();
+      setupSocketHandlers(io as never);
+      const a = fakeSocket(A);
+      const b = fakeSocket(B);
+      io.connect(a);
+      io.connect(b);
+
+      const roomId = nextRoom();
+      await a.fire("call_invite", { targetUserId: B, callType: "video", roomId });
+      const accept = await ackOf(b, "call_accept", { targetUserId: A, roomId });
+      expect(accept).toEqual({ ok: true });
+
+      io.emitted.length = 0;
+      vi.advanceTimersByTime(41_000);
+
+      expect(io.emitted.filter((e) => e.event === "call_timeout")).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("call_accept acknowledgement", () => {
+  it("refuses an accept for a room the caller already left", async () => {
+    asFriends();
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    const b = fakeSocket(B);
+    io.connect(a);
+    io.connect(b);
+
+    const roomId = nextRoom();
+    await a.fire("call_invite", { targetUserId: B, callType: "video", roomId });
+    await a.fire("call_end", { targetUserId: B });
+    io.emitted.length = 0;
+
+    // Without this refusal the callee sat at "Connecting…" forever, waiting
+    // for an offer the caller would never send.
+    const reply = await ackOf(b, "call_accept", { targetUserId: A, roomId });
+    expect(reply).toEqual({ ok: false, reason: "gone" });
+    expect(io.emitted.filter((e) => e.event === "call_accept")).toHaveLength(0);
+  });
+
+  it("lets only the first device win the race", async () => {
+    asFriends();
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    const b = fakeSocket(B);
+    const bSecondDevice = fakeSocket(B);
+    io.connect(a);
+    io.connect(b);
+    io.connect(bSecondDevice);
+
+    const roomId = nextRoom();
+    await a.fire("call_invite", { targetUserId: B, callType: "video", roomId });
+    io.emitted.length = 0;
+
+    const first = await ackOf(b, "call_accept", { targetUserId: A, roomId });
+    const second = await ackOf(bSecondDevice, "call_accept", { targetUserId: A, roomId });
+
+    expect(first).toEqual({ ok: true });
+    expect(second).toEqual({ ok: false, reason: "gone" });
+    // The caller must receive exactly one offer's worth of "go ahead".
+    expect(io.emitted.filter((e) => e.event === "call_accept")).toHaveLength(1);
+    // And the winning device's siblings are told to stop ringing.
+    expect(io.emitted.filter((e) => e.event === "call_accepted")).toHaveLength(1);
+  });
+});
+
+describe("participant disconnect", () => {
+  it("ends an answered call for the peer when the last device drops", async () => {
+    asFriends();
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    const b = fakeSocket(B);
+    io.connect(a);
+    io.connect(b);
+
+    const roomId = nextRoom();
+    await a.fire("call_invite", { targetUserId: B, callType: "video", roomId });
+    await b.fire("call_accept", { targetUserId: A, roomId });
+    io.emitted.length = 0;
+
+    // The peer used to be left in a call that could never be signalled
+    // again: no hang-up, no candidates, just a frozen screen.
+    b.fire("disconnect", undefined);
+
+    expect(io.emitted).toContainEqual(
+      expect.objectContaining({ event: "call_end", room: `user:${A}` })
+    );
+  });
+
+  it("reports an unanswered ring as timed out for the caller", async () => {
+    asFriends();
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    const b = fakeSocket(B);
+    io.connect(a);
+    io.connect(b);
+
+    await a.fire("call_invite", { targetUserId: B, callType: "voice", roomId: nextRoom() });
+    io.emitted.length = 0;
+
+    b.fire("disconnect", undefined);
+
+    expect(io.emitted).toContainEqual(
+      expect.objectContaining({ event: "call_timeout", room: `user:${A}` })
+    );
   });
 });

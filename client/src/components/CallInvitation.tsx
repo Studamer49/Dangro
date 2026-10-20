@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useCallStore } from "@/stores/callStore";
 import { getSocket } from "@/lib/socket";
+import { bindCallSignalling } from "@/hooks/useWebRTC";
 import { startRingtone } from "@/lib/ringtone";
 import api from "@/lib/api";
 import Avatar from "@/components/Avatar";
@@ -14,6 +15,11 @@ export default function CallInvitation() {
 
   useEffect(() => {
     const socket = getSocket();
+    // Offers and ICE candidates must be catchable from the very first call in
+    // a fresh tab — this component is mounted for the whole session, while the
+    // in-call effect only exists once a call has started, which is too late for
+    // the first few milliseconds of signalling.
+    bindCallSignalling(socket);
 
     const handleCallInvite = async (data: { callerId: string; callType: string; roomId: string }) => {
       let caller: User | null = null;
@@ -38,11 +44,31 @@ export default function CallInvitation() {
       setRinging(false);
     };
 
+    /**
+     * Stops a ring that somebody else already resolved: a sibling device of
+     * ours answered, declined or let it time out. Without these the OTHER
+     * devices kept glowing and ringing until their own 30s timer, and a
+     * sibling that then tapped accept lost the race to a call that was gone.
+     */
+    const clearResolvedRing = (data: { roomId: string }) => {
+      const current = useCallStore.getState().incomingCall;
+      if (current && current.roomId === data.roomId) {
+        setIncomingCall(null);
+        setRinging(false);
+      }
+    };
+
     socket.on("call_invite", handleCallInvite);
     socket.on("call_end", handleCallEnd);
+    socket.on("call_accepted", clearResolvedRing);
+    socket.on("call_rejected", clearResolvedRing);
+    socket.on("call_timeout", clearResolvedRing);
     return () => {
       socket.off("call_invite", handleCallInvite);
       socket.off("call_end", handleCallEnd);
+      socket.off("call_accepted", clearResolvedRing);
+      socket.off("call_rejected", clearResolvedRing);
+      socket.off("call_timeout", clearResolvedRing);
     };
   }, [setIncomingCall]);
 

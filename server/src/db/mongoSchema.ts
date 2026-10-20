@@ -190,6 +190,7 @@ export const MODELS: Record<string, ModelDef> = {
     fields: {
       name: { type: "string" },
       icon: { type: "string", optional: true },
+      banner: { type: "string", optional: true },
       description: { type: "string", optional: true },
       /**
        * Invite-only servers. Declared with a default so `applyDefaults` fills

@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { useAuthStore } from "@/stores/authStore";
 import { useGlobalButtonBounce } from "@/hooks/useBounce";
+import { refreshIceServers } from "@/lib/iceServers";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
@@ -11,7 +12,6 @@ import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import DashboardPage from "@/pages/DashboardPage";
 import VideoCallModal from "@/components/VideoCallModal";
 import CallInvitation from "@/components/CallInvitation";
-import IceConfigLoader from "@/components/IceConfigLoader";
 
 /**
  * Full-bleed auth/loading screen.
@@ -92,10 +92,15 @@ export default function App() {
     fetchUser();
   }, [fetchUser]);
 
+  // Pull the deployment's ICE servers (including a TURN relay, when one is
+  // configured) as soon as the app mounts, so the first call already has them.
+  // Fire-and-forget: the static fallback covers a slow or absent server.
+  useEffect(() => {
+    void refreshIceServers();
+  }, []);
+
   return (
     <ErrorBoundary>
-      {/* Fetches this deployment's STUN/TURN list before anyone places a call. */}
-      <IceConfigLoader />
       <VideoCallModal />
       <CallInvitation />
       <Routes>

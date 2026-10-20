@@ -1,9 +1,21 @@
 import { useEffect, useState } from "react";
+import Media, { type MediaAnimation } from "@/components/Media";
 
 interface ProfileAvatarProps {
   username: string;
   avatar?: string | null;
   className?: string;
+  /**
+   * The profile identity avatar animates by default: opening a profile is
+   * exactly the moment the user asked to see the video/GIF move. Other callers
+   * can pass `"hover"` to fall back to the pointer-gated behaviour.
+   */
+  animation?: MediaAnimation;
+  /**
+   * Approximate rendered size in CSS pixels; only used to request a right-sized
+   * copy from Cloudinary at 2x. Layout is still driven by `className`.
+   */
+  size?: number;
 }
 
 /**
@@ -20,6 +32,8 @@ export default function ProfileAvatar({
   username,
   avatar,
   className = "h-20 w-20 text-3xl",
+  animation = "always",
+  size = 80,
 }: ProfileAvatarProps) {
   const [failed, setFailed] = useState(false);
 
@@ -32,9 +46,11 @@ export default function ProfileAvatar({
       className={`flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-accent-500 to-accent-700 font-bold text-white ${className}`}
     >
       {avatar && !failed ? (
-        <img
+        <Media
           src={avatar}
           alt={username}
+          animation={animation}
+          width={Math.round(size * 2)}
           onError={() => setFailed(true)}
           className="h-full w-full object-cover"
         />

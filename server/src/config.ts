@@ -281,85 +281,35 @@ const databaseUrl = usesMongo
         : "Add DATABASE_URL to server/.env — see server/.env.example."
     );
 
+/**
+ * TURN relay configuration.
+ *
+ * Calls between two networks (different cities, countries, mobile data,
+ * corporate NAT) frequently have no direct path, so the media has to be
+ * relayed. Two credential modes:
+ *   - static:  TURN_USERNAME + TURN_CREDENTIAL are handed to every client.
+ *   - secret:  TURN_SECRET signs short-lived per-user credentials (the coturn
+ *              "REST API" / `static-auth-secret` scheme), so the shared relay
+ *              password never reaches the browser and a leaked credential
+ *              expires on its own.
+ */
+const turnUrls = optional("TURN_URLS", "")
+  .split(",")
+  .map((url) => url.trim())
+  .filter(Boolean);
+const turnSecret = optional("TURN_SECRET", "");
+const turnUsername = optional("TURN_USERNAME", "");
+const turnCredential = optional("TURN_CREDENTIAL", "");
+const turnTtlSeconds = Math.min(
+  24 * 60 * 60,
+  Math.max(60, Number.parseInt(optional("TURN_TTL_SECONDS", "3600"), 10) || 3600)
+);
+
 /** Comma-separated list of allowed browser origins (CORS + Socket.IO). */
 const clientUrls = optional("CLIENT_URL", "http://localhost:5173")
   .split(",")
   .map((url) => url.trim().replace(/\/$/, ""))
   .filter(Boolean);
-
-// ---------------------------------------------------------------------------
-// ICE — the STUN/TURN servers browser calls use to find each other.
-//
-// Calls are peer-to-peer, and STUN alone only works when both people are
-// reachable. Two people both behind symmetric NAT (mobile data, corporate
-// networks, some VPNs) find no direct path at all, and without a TURN relay
-// they see their own camera, never each other, and nobody is audible.
-//
-// That is why a TURN server is not optional in practice. Point these at any
-// hosted relay — Metered and OpenRelay both hand out free credentials, and
-// Xirsys/Cloudflare/your own coturn all work — and no client rebuild is
-// needed, because the browser fetches this configuration from
-// `GET /api/rtc/ice-servers` at call time.
-//
-// Server-side env only, for the same reason SMTP is: a TURN credential must
-// never be baked into the browser bundle. Set VITE_TURN_* only if you accept
-// shipping a public, rate-limited credential to every visitor.
-// ---------------------------------------------------------------------------
-
-/** Public STUN defaults, used when the operator names none. */
-const DEFAULT_STUN_URLS = [
-  "stun:stun.l.google.com:19302",
-  "stun:stun1.l.google.com:19302",
-  "stun:global.stun.twilio.com:3478",
-];
-
-/**
- * A free, publicly-shared TURN relay, used only when the operator has not
- * configured one. It is heavily rate-limited and blocked on some networks,
- * which is exactly why the env vars above win over it.
- */
-const DEFAULT_TURN = {
-  urls: [
-    "turn:relay.metered.ca:80",
-    "turn:relay.metered.ca:80?transport=tcp",
-    "turn:relay.metered.ca:443",
-    "turn:relay.metered.ca:443?transport=tcp",
-    "turn:openrelay.metered.ca:80",
-    "turn:openrelay.metered.ca:443?transport=tcp",
-  ],
-  username: "openrelayproject",
-  credential: "openrelayproject",
-};
-
-const csv = (value: string): string[] =>
-  value
-    .split(",")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
-
-const stunUrls = csv(optional("STUN_URLS", "").length ? optional("STUN_URLS", "") : DEFAULT_STUN_URLS.join(","));
-const turnUrls = csv(optional("TURN_URLS", optional("TURN_URL", "")));
-const turnUsername = optional("TURN_USERNAME", "").trim();
-const turnCredential = optional("TURN_CREDENTIAL", "").trim();
-
-// A TURN server needs credentials to allocate a relay. An operator who names a
-// relay but no credentials almost certainly meant to paste both, and silently
-// shipping the request without them produces a connection that simply never
-// comes up — so it is called out at boot instead.
-if (turnUrls.length > 0 && !turnUsername) {
-  console.warn(
-    "[config] TURN_URLS is set but TURN_USERNAME is not. The relay will reject every allocation, so calls will only work on networks where a direct route exists. Set TURN_USERNAME and TURN_CREDENTIAL."
-  );
-}
-
-const rtc = {
-  stunUrls,
-  turnUrls,
-  turnUsername,
-  turnCredential,
-  /** The relay used when nothing is configured. */
-  fallbackTurn: DEFAULT_TURN,
-};
 
 // ---------------------------------------------------------------------------
 // Email — SMTP delivery for address verification, password resets and
@@ -556,8 +506,14 @@ export const config = {
   jwtSecret,
   jwtRefreshSecret: optional("JWT_REFRESH_SECRET", jwtSecret + "_refresh"),
   clientUrls,
-  /** STUN/TURN servers the browser uses to find a call peer. See lib/ice.ts. */
-  rtc,
+  turn: {
+    urls: turnUrls,
+    configured: turnUrls.length > 0,
+    secret: turnSecret,
+    username: turnUsername,
+    credential: turnCredential,
+    ttlSeconds: turnTtlSeconds,
+  },
   /** Absolute, CWD-independent directory where uploaded files are written.
    *  Override with UPLOAD_DIR (e.g. a persistent disk mount in production). */
   uploadDir: process.env.UPLOAD_DIR

@@ -4,6 +4,7 @@ import api, { apiErrorMessage } from "@/lib/api";
 import { useToast } from "@/stores/toastStore";
 import { useAuthStore } from "@/stores/authStore";
 import PostDetailModal from "@/components/feed/PostDetailModal";
+import Media from "@/components/Media";
 import type { Post, PostLike, Server, User } from "@/types";
 
 const MIN_QUERY_LENGTH = 2;
@@ -285,7 +286,7 @@ export default function ExplorePage() {
                       <div className="flex min-w-0 items-center gap-3">
                         <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-accent-500 to-accent-700 text-sm font-bold text-white">
                           {found.avatar ? (
-                            <img src={found.avatar} alt="" className="h-full w-full object-cover" />
+                            <Media src={found.avatar} alt="" className="h-full w-full object-cover" />
                           ) : (
                             found.username?.[0]?.toUpperCase() ?? "?"
                           )}

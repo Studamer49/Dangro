@@ -15,6 +15,7 @@ const router = Router();
 const createServerSchema = z.object({
   name: z.string().trim().min(1).max(100),
   icon: mediaUrl().optional(),
+  banner: mediaUrl().optional(),
   description: z.string().trim().max(500).optional(),
   /**
    * `true` creates an invite-only server. Defaults to public, which is what the
@@ -51,12 +52,13 @@ router.post(
   authenticate,
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = requireUser(req);
-    const { name, icon, description, isPrivate } = parseOrThrow(createServerSchema, req.body);
+    const { name, icon, banner, description, isPrivate } = parseOrThrow(createServerSchema, req.body);
 
     const server = await prisma.server.create({
       data: {
         name,
         icon,
+        banner,
         description: description ?? null,
         isPrivate,
         ownerId: userId,

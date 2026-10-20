@@ -10,9 +10,14 @@ interface CommentsSectionProps {
   postId: string;
   viewer: User | null;
   onCountChange: (postId: string, delta: number) => void;
+  /**
+   * Renders as the standalone side panel of the expanded post popup: its own
+   * header, its own scroll, and no top divider (the grid supplies it).
+   */
+  embedded?: boolean;
 }
 
-export default function CommentsSection({ postId, viewer, onCountChange }: CommentsSectionProps) {
+export default function CommentsSection({ postId, viewer, onCountChange, embedded = false }: CommentsSectionProps) {
   const toast = useToast();
   const confirm = useConfirm();
   const [comments, setComments] = useState<PostComment[]>([]);
@@ -116,8 +121,25 @@ export default function CommentsSection({ postId, viewer, onCountChange }: Comme
   };
 
   return (
-    <div className="border-t border-gray-700/50 p-4 pt-3">
-      {loading ? (
+    <div
+      className={
+        embedded
+          ? "flex h-full flex-col overflow-hidden rounded-2xl border border-gray-800/60 bg-gray-900/40"
+          : "border-t border-gray-700/50 p-4 pt-3"
+      }
+    >
+      {embedded && (
+        <div className="flex items-center justify-between border-b border-gray-800/60 px-4 py-3">
+          <p className="eyebrow">Comments</p>
+          <p className="tabular text-xs text-gray-500">{comments.length}</p>
+        </div>
+      )}
+      <div
+        className={
+          embedded ? "min-h-0 flex-1 space-y-1 overflow-y-auto p-3" : ""
+        }
+      >
+        {loading ? (
         <div className="space-y-3 py-1">
           {[0, 1, 2].map((row) => (
             <div key={row} className="flex gap-2.5">
@@ -244,8 +266,16 @@ export default function CommentsSection({ postId, viewer, onCountChange }: Comme
           })}
         </ul>
       )}
+      </div>
 
-      <form onSubmit={(event) => void submitComment(event)} className="mt-3 flex items-center gap-2">
+      <form
+        onSubmit={(event) => void submitComment(event)}
+        className={
+          embedded
+            ? "flex items-center gap-2 border-t border-gray-800/60 p-3"
+            : "mt-3 flex items-center gap-2"
+        }
+      >
         <input
           type="text"
           value={draft}

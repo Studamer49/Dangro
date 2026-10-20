@@ -30,6 +30,8 @@ export interface Server {
   id: string;
   name: string;
   icon: string | null;
+  /** Wide header banner; null falls back to the icon. */
+  banner?: string | null;
   description?: string | null;
   ownerId: string;
   inviteCode: string;
