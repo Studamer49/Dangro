@@ -37,8 +37,9 @@ automated sending from consumer accounts.
 
 ## 2. Environment variables
 
-Add these to `server/.env` locally, and to the service environment on Render.
-Copy `server/.env.example` — it already has the placeholders.
+Add these to `server/.env` locally, and as Worker secrets on Cloudflare
+(`npx wrangler secret put <NAME>`). Copy `server/.env.example` — it already has
+the placeholders. `worker/index.ts` forwards them into the container.
 
 ```env
 SMTP_HOST=smtp.resend.com
@@ -47,7 +48,7 @@ SMTP_USER=resend
 SMTP_PASS=re_XXXXXXXXXXXXXXXXXXXXXXXX
 EMAIL_FROM=Dangro <no-reply@yourdomain.com>
 EMAIL_FROM_NAME=Dangro
-APP_BASE_URL=https://dangro.onrender.com
+APP_BASE_URL=https://dangro.<subdomain>.workers.dev
 ```
 
 | Variable | Required | Meaning |
@@ -58,7 +59,7 @@ APP_BASE_URL=https://dangro.onrender.com
 | `SMTP_PASS` | with `SMTP_USER` | Its password or API key. Omit **both** for an unauthenticated local relay. |
 | `EMAIL_FROM` | yes | The `From:` address. Defaults to `SMTP_USER`. |
 | `EMAIL_FROM_NAME` | no (`Dangro`) | The display name. |
-| `APP_BASE_URL` | in production | The public origin every link is built from. Defaults to the first `CLIENT_URL`, which is right for both the single-origin Render layout and the Vite dev server. |
+| `APP_BASE_URL` | in production | The public origin every link is built from. Defaults to the first `CLIENT_URL`, which is right for both the single-origin Cloudflare layout and the Vite dev server. |
 | `EMAIL_TRANSPORT` | no (`smtp`) | `json` records that a message was produced in the server log instead of sending it — the body, and therefore the token, is **not** logged. For local UI work only; see §5. |
 | `EMAIL_TIMEOUT_MS` | no (`10000`) | Hard deadline for one send. |
 | `EMAIL_VERIFICATION_TOKEN_TTL_MINUTES` | no (`30`) | Verification link lifetime. Clamped to 5–1440. |
@@ -238,14 +239,14 @@ instead of rethrowing.
 ## 6. Production
 
 1. Verify the sending domain (§3).
-2. Set the six variables above in **Render → Environment**. `APP_BASE_URL` must
-   be your public `https://…onrender.com` origin — a `localhost` link is the
-   classic "it works on my machine" for this feature.
+2. Set the variables above as Worker secrets. `APP_BASE_URL` must be your
+   public Worker origin — a `localhost` link is the classic "it works on my
+   machine" for this feature.
 3. `SMTP_HOST`/`SMTP_PORT`/`SMTP_USER`/`SMTP_PASS`/`EMAIL_FROM` are all
-   `sync: false` in `render.yaml`; fill them in the dashboard, never in Git.
-4. Deploy and read the boot log:
+   `wrangler secret put` values; never put them in `wrangler.jsonc` or Git.
+4. Deploy and read the container boot log:
    ```
-   [startup] Email: SMTP smtp.resend.com:465 — links use https://dangro.onrender.com
+   [startup] Email: SMTP smtp.resend.com:465 — links use https://dangro.<subdomain>.workers.dev
    ```
    A `CONFIGURED BUT NOT WORKING` line means the server answered and the
    credentials were wrong — the deploy did not fail, so this line is the only

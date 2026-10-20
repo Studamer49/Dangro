@@ -94,8 +94,9 @@ counts afterwards, so a surprising cascade is visible immediately.
 │       │                uploads, media, posts, stories, follows,
 │       │                notifications
 │       └── socket/      Socket.IO auth + validation + rooms
-├── render.yaml        one-click Render deployment
-├── Dockerfile
+├── worker/index.ts    Cloudflare Worker: static assets + container proxy
+├── wrangler.jsonc     Workers + Containers configuration
+├── Dockerfile         container image for the Express server
 └── PROJECT_AUDIT.md / DEPLOYMENT.md
 ```
 
@@ -175,7 +176,16 @@ All errors carry `error.code`: `VALIDATION_ERROR` (400), `UNAUTHORIZED` (401), `
 
 ## Deployment
 
-Follow [`DEPLOYMENT.md`](./DEPLOYMENT.md). Short version: create a Render Web Service from `render.yaml`, preview a Neon `DATABASE_URL`, let Render generate `JWT_SECRET`/`JWT_REFRESH_SECRET`, set `CLIENT_URL` to your `.onrender.com` URL, deploy — `prisma migrate deploy` runs automatically before each release.
+Dangro runs entirely on Cloudflare: a Worker serves the React build as static
+assets and forwards `/api`, `/uploads` and `/socket.io` to a Cloudflare
+Container running the Express server. Data and GridFS media live in MongoDB
+Atlas.
+
+Follow [`DEPLOYMENT.md`](./DEPLOYMENT.md). Short version: enable Workers Paid,
+put `MONGODB_URI`, `JWT_SECRET` and the optional Cloudinary/SMTP/TURN values in
+`wrangler secret put`, then `npm run build:client && npx wrangler deploy`. The
+Worker detects its own public origin, so no URL needs editing first. Containers
+require the paid Workers plan.
 
 ## Security notes
 

@@ -7,7 +7,7 @@ import { publicOrigin } from "./lib/publicHost.js";
  *   1. server/.env  — local development override
  *   2. <repo>/.env  — repository root fallback
  *
- * In production (Render) neither file exists: every value comes from the
+ * In production (Cloudflare) neither file exists: every value comes from the
  * service environment. Never commit either file — only `.env.example`.
  *
  * Skipped under NODE_ENV=test. Otherwise a developer's local server/.env
@@ -69,13 +69,13 @@ function safeHostname(value: string): string {
 const rawPort = process.env.PORT ?? "3001";
 const port = Number.parseInt(rawPort, 10);
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
-  fail(`PORT must be a valid TCP port, received "${rawPort}"`, "Set PORT in your service environment (Render assigns one automatically).");
+  fail(`PORT must be a valid TCP port, received "${rawPort}"`, "Set PORT in the container environment (Cloudflare sets it to 8080).");
 }
 
 const jwtSecret = required(
   "JWT_SECRET",
   isProduction
-    ? "Set JWT_SECRET in the Render service environment (Dashboard → Environment)."
+    ? "Set JWT_SECRET as a Worker secret (`wrangler secret put JWT_SECRET`)."
     : "Add JWT_SECRET to server/.env — see server/.env.example."
 );
 
@@ -277,7 +277,7 @@ const databaseUrl = usesMongo
   : required(
       "DATABASE_URL",
       isProduction
-        ? "Set DATABASE_URL in the Render service environment to your Neon connection string."
+        ? "Set DATABASE_URL as a Worker secret to your Neon connection string."
         : "Add DATABASE_URL to server/.env — see server/.env.example."
     );
 
@@ -397,7 +397,7 @@ const emailConfigured = emailMissingVars.length === 0;
  * build the links inside every email.
  *
  * APP_BASE_URL wins; otherwise the first CLIENT_URL is used, which is correct
- * for both layouts this project supports (single-origin Render, and the Vite
+ * for both layouts this project supports (single-origin Cloudflare, and the Vite
  * dev server on :5173). Anything that is not an absolute http(s) URL is
  * refused outright — a malformed base silently produces a link that goes
  * nowhere, and the only symptom is a user staring at an inbox.
@@ -410,13 +410,13 @@ const appBaseUrl = (() => {
   } catch {
     fail(
       `APP_BASE_URL is not a valid URL (received "${raw}")`,
-      "Set APP_BASE_URL to the public address of the app, e.g. https://dangro.onrender.com"
+      "Set APP_BASE_URL to the public address of the app, e.g. https://dangro.<subdomain>.workers.dev"
     );
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
     fail(
       `APP_BASE_URL must use http:// or https://, received "${parsed.protocol}//"`,
-      'Example: APP_BASE_URL="https://dangro.onrender.com"'
+      'Example: APP_BASE_URL="https://dangro.<subdomain>.workers.dev"'
     );
   }
   if (parsed.username || parsed.password) {
@@ -536,7 +536,7 @@ export const devOrigins = [
  * - Matches CLIENT_URL -> allowed.
  * - Matches a dev origin and we are not in production -> allowed.
  * - Matches the Host the request arrived on -> allowed (same-service deploy,
- *   this is what makes the single-origin Render architecture work).
+ *   this is what makes the single-origin Cloudflare architecture work).
  *
  * Never returns "*" because credentials (cookies + Authorization) are in use.
  */

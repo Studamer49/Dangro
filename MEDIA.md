@@ -16,8 +16,8 @@ below only chooses where non-image media is kept.
 - **No local-network prompt.** Images load from a public https origin, so the
   browser never asks the visitor to expose their LAN. This is what the previous
   remote-media-host setup got wrong.
-- **No storage on the API host.** Render's filesystem is ephemeral, so images
-  kept there disappear on every deploy.
+- **No storage on the API host.** Container disk is ephemeral, so images
+  kept there disappear whenever the instance restarts.
 - **Optimised on delivery.** `f_auto` and `q_auto` pick the best format and
   quality per browser; `c_limit,w_1920` caps the width **without** upscaling or
   cropping, so small images and aspect ratios are preserved. Animated GIFs skip
@@ -29,7 +29,7 @@ below only chooses where non-image media is kept.
 
 ### Configure it
 
-In `server/.env` locally, or **Render → Environment** in production:
+In `server/.env` locally, or as Worker secrets in production:
 
 ```
 CLOUDINARY_CLOUD_NAME="your-cloud-name"
@@ -193,7 +193,8 @@ curl -I https://ab-macbook.xxxxxxxxx.ts.net/health
 > **`MEDIA_PUBLIC_URL` must be the full `https://….ts.net` URL above.**
 > Never put your LAN IP, your `.local` name, or `http://127.0.0.1:8081` there.
 > The media service binds `127.0.0.1` only, so a LAN address cannot reach it
-> from Render anyway — but before the guard below existed it was still accepted
+> from the Cloudflare container anyway — but before the guard below existed it
+> was still accepted
 > and sent to the browser, which is exactly what produced the "wants to see
 > devices on your local network" prompt on every image.
 
@@ -209,7 +210,7 @@ curl -I https://ab-macbook.xxxxxxxxx.ts.net/health
 
 ## 3. Point the API at it
 
-On the API host, in `server/.env` (or Render's Environment tab):
+On the API host, in `server/.env` (or as Worker secrets in production):
 
 ```
 MEDIA_PROVIDER=remote
@@ -284,7 +285,7 @@ comes back after a reboot.
 ## Backups
 
 Once media lives on your laptop, that directory is the **only** copy. Nothing
-replicates it to Render, Atlas or anywhere else. Keep it on a drive that is
+replicates it to Cloudflare, Atlas or anywhere else. Keep it on a drive that is
 backed up, or snapshot it:
 
 ```bash

@@ -11,10 +11,12 @@
     "build": "npm ci --prefix client && npm ci --prefix server && npm run build:client && npm run build:server",
     "build:client": "npm --prefix client run build",
     "build:server": "npm --prefix server run db:generate && npm --prefix server run build",
-    "build:pages": "npm ci --prefix client && npm --prefix client run build",
     "start": "npm --prefix server run start",
+    "deploy": "npm run build:client && wrangler deploy",
+    "dev:worker": "wrangler dev",
     "lint": "npm --prefix server run lint && npm --prefix client run lint",
-    "typecheck": "npm --prefix server run typecheck && npm --prefix client run typecheck",
+    "typecheck": "npm --prefix server run typecheck && npm --prefix client run typecheck && npm run typecheck:worker",
+    "typecheck:worker": "tsc -p worker/tsconfig.json",
     "test": "npm --prefix server run test && npm --prefix client run test",
     "db:migrate": "npm --prefix server run db:migrate",
     "db:deploy": "npm --prefix server run db:deploy",
@@ -22,7 +24,10 @@
     "verify": "npm run lint && npm run typecheck && npm run build && npm test"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "@cloudflare/workers-types": "^5.20261019.1",
+    "concurrently": "^9.1.2",
+    "typescript": "^5.9.3",
+    "wrangler": "^4.151.2"
   },
   "overrides": {
     "shell-quote": "^1.11.0"

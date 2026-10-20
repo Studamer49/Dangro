@@ -184,11 +184,10 @@ validation runs before anything is written, on every backend. See
 
 ## Deploying to production with MongoDB
 
-**Do not run `mongod` on Render.** Free web services have an *ephemeral
-filesystem*, so the database would be wiped on every deploy, restart, and
-15-minute spin-down — and free services cannot attach a persistent disk at all.
-Keep the API on Render and put the database on **MongoDB Atlas**, which is
-separate infrastructure and always on.
+**Do not run `mongod` inside the container.** Container disk is *ephemeral*, so
+the database would be wiped every time the instance sleeps, restarts or is
+replaced. Keep the API on Cloudflare and put the database on **MongoDB Atlas**,
+which is separate infrastructure and always on.
 
 This works cleanly because Dangro keeps no durable state on the API host:
 uploads live in GridFS, so the ephemeral disk holds nothing that matters.
@@ -196,8 +195,9 @@ uploads live in GridFS, so the ephemeral disk holds nothing that matters.
 ### 1. Create the cluster
 
 - [cloud.mongodb.com](https://cloud.mongodb.com) → **Create** → tier **M0 (Free)**.
-- Pick AWS region **Oregon (us-west)**, the same region Render runs in, to
-  minimise latency.
+- Pick the region closest to most of your users. Cloudflare starts the
+  container near the request, so there is no single fixed "app region" to
+  match; choose based on where the users are.
 - A free cluster is a replica set, so transactions are available. Note that
   free/shared tiers historically varied here; if transactions are refused, the
   server logs a warning and falls back to sequential automatically.
@@ -212,29 +212,30 @@ uploads live in GridFS, so the ephemeral disk holds nothing that matters.
 | Password | a long random string — this is the only thing protecting the DB once step 3 opens it to the internet |
 | Database User Privileges | *Read and write to any database* |
 
-### 3. Allow Render to connect
+### 3. Allow Cloudflare to connect
 
 **Network Access** → *Add IP Address*.
 
-Render's outbound IPs are not static on the free tier, so pinning them is not
-possible — the practical choice is `0.0.0.0/0`, which relies entirely on the
+Cloudflare's container egress addresses are not a fixed list, so pinning them is
+not possible — the practical choice is `0.0.0.0/0`, which relies entirely on the
 credentials from step 2. Make that password long and random; anyone who guesses
 it gets full read/write access.
 
-### 4. Configure Render
+### 4. Configure Cloudflare
 
-In the Render dashboard → your service → **Environment**, add:
+```bash
+npx wrangler secret put MONGODB_URI
+```
 
-| Key | Value |
-|---|---|
-| `MONGODB_URI` | the `mongodb+srv://...` string Atlas shows after step 3 |
-| `MONGODB_DB_NAME` | `dangro` |
+Paste the `mongodb+srv://...` string Atlas shows after step 3.
 
-`DATABASE_PROVIDER: mongo` and `NODE_ENV: production` come from `render.yaml`.
-Delete `DATABASE_URL` if it is still set — the MongoDB backend ignores it, but
-leaving a stale Postgres string around invites confusion.
+`DATABASE_PROVIDER=mongo`, `MONGODB_DB_NAME=dangro` and
+`MEDIA_PROVIDER=gridfs` come from `wrangler.jsonc`, and `worker/index.ts`
+forwards them into the container. Delete `DATABASE_URL` if it is still set —
+the MongoDB backend ignores it, but leaving a stale Postgres string around
+invites confusion.
 
-Then **Save and Deploy**. Watch the deploy log for:
+Then deploy (`npx wrangler deploy`) and watch the container log for:
 
 ```
 Connected to database (MongoDB dangro @ mongodb+srv://...)
@@ -244,7 +245,7 @@ MongoDB indexes verified
 ### 5. Verify before retiring the old database
 
 ```bash
-curl -s https://dangro.onrender.com/api/health
+curl -s https://dangro.<subdomain>.workers.dev/api/health
 # {"success":true,"data":{"status":"ok","uptime":..,"database":"mongo"}}
 ```
 
@@ -347,7 +348,7 @@ index would change comparison semantics everywhere else.
 ## Where to read more
 
 - [MEDIA.md](./MEDIA.md) — serving images and videos from a separate host
-- [DEPLOYMENT.md](./DEPLOYMENT.md) — Render deploy details
+- [DEPLOYMENT.md](./DEPLOYMENT.md) — Cloudflare Workers + Containers deploy details
 
 ## Switching back
 

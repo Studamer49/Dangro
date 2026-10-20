@@ -1,0 +1,36 @@
+# ============================================================================
+# DANGRO — local Worker + Container configuration (`npm run dev:worker`)
+# ============================================================================
+# Copy to `.dev.vars` (git-ignored). These are read by the Worker when it
+# starts the container; `worker/index.ts` forwards them. Production uses
+# `wrangler secret put` instead.
+#
+# `npm run dev` (Vite + Express) does NOT read this file — it uses
+# `server/.env`. This file is only for exercising the Cloudflare path locally,
+# which requires Docker.
+
+DATABASE_PROVIDER=mongo
+MONGODB_DB_NAME=dangro
+MONGODB_URI="mongodb://127.0.0.1:27017"
+
+MEDIA_PROVIDER=gridfs
+
+# 32+ random characters.
+JWT_SECRET="local-worker-secret-at-least-32-characters"
+JWT_REFRESH_SECRET="local-worker-refresh-secret-at-least-32-characters"
+
+# Optional. Image uploads return 503 until these are set.
+# CLOUDINARY_CLOUD_NAME="your-cloud-name"
+# CLOUDINARY_API_KEY="your-api-key"
+# CLOUDINARY_API_SECRET="your-api-secret"
+
+# Optional. Signup returns 503 until these are set.
+# SMTP_HOST="smtp.example.com"
+# SMTP_PORT=587
+# SMTP_USER="your-provider-username"
+# SMTP_PASS="your-provider-password"
+# EMAIL_FROM="Dangro <no-reply@yourdomain.com>"
+
+# Optional. Calls across networks.
+# TURN_URLS="turn:turn.example.com:3478"
+# TURN_SECRET="the-static-auth-secret-from-turnserver.conf"

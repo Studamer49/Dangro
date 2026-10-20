@@ -132,7 +132,7 @@ describe("Cloudinary credentials", () => {
   });
 
   it("treats a blank value as missing rather than as a credential", async () => {
-    // Render's dashboard and a stray `KEY=` line in .env both produce this.
+    // Cloudflare's dashboard and a stray `KEY=` line in .env both produce this.
     const config = await loadConfig({
       ...BASE,
       CLOUDINARY_CLOUD_NAME: "   ",

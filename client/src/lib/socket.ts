@@ -32,7 +32,7 @@ function isLocalHost(hostname: string): boolean {
 /**
  * Resolution order:
  *   1. `VITE_WS_URL` when set to a usable URL (non-production dev against :3001)
- *   2. same origin — correct for the single-service Render deployment
+ *   2. same origin — correct for the single-service Cloudflare deployment
  *
  * Never hardcode a hostname: a baked `localhost` breaks every production client.
  * In a production build a loopback or LAN address is discarded rather than

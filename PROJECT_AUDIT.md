@@ -2,6 +2,8 @@
 
 Full-stack audit and remediation log for **Dangro** (Discord-inspired app: React 19 + Express + Socket.IO + PostgreSQL/Prisma).
 
+> **Historical document.** This audit was written when the app deployed to Render with PostgreSQL/Neon. Hosting is now Cloudflare Workers + Containers with MongoDB Atlas — see [DEPLOYMENT.md](./DEPLOYMENT.md). The findings and measurements below are preserved as written; `render.yaml` no longer exists.
+
 **Status:** all critical and major findings fixed in this session. Drafted as a reference for future maintainers; not a confession of current defects.
 
 ---

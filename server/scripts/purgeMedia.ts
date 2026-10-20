@@ -26,7 +26,8 @@
  *     --clear-references to null the now-dangling URLs instead.
  *
  * Usage (with the production MONGODB_URI in the environment — copy it from
- * the Render dashboard's Environment tab; never commit it):
+ * the Cloudflare dashboard's Worker secrets, or `wrangler secret list`; never
+ * commit it):
  *
  *   npm --prefix server run purge:media
  *   npm --prefix server run purge:media -- --confirm

@@ -1,2 +1,39 @@
+# Cloudflare Workers static-asset headers.
+#
+# The Worker serves client/dist straight from the edge, so the Cache-Control
+# rules the Express server sets for its own static paths never run here. These
+# are the equivalent, plus the security headers helmet used to add when the
+# SPA was served by Express.
+
+# Vite content-hashes every filename under /assets, so a URL there changes
+# exactly when its bytes do. This is most of the payload (the JS bundle and
+# CSS), and a returning visitor should never revalidate it.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# These have stable URLs but change with a deploy, so cache for a day rather
+# than forever.
+/logo.png
+  Cache-Control: public, max-age=86400
+
+/favicon.png
+  Cache-Control: public, max-age=86400
+
+# The shell names the hashed bundles. A stale copy points at files that no
+# longer exist, so it must be revalidated on every load.
+/index.html
+  Cache-Control: no-cache
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: SAMEORIGIN
+  X-DNS-Prefetch-Control: off
+  X-Download-Options: noopen
+  X-Permitted-Cross-Domain-Policies: none
+  X-XSS-Protection: 0
+  Origin-Agent-Cluster: ?1
+  Cross-Origin-Opener-Policy: same-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Permissions-Policy: camera=(self), microphone=(self), display-capture=(self), geolocation=()
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; connect-src 'self'; font-src 'self' https: data:; form-action 'self'; frame-ancestors 'self'; img-src 'self' data: blob: https://res.cloudinary.com https://cdn.jsdelivr.net; media-src 'self' blob: https://res.cloudinary.com; object-src 'none'; script-src 'self'; script-src-attr 'none'; style-src 'self' https: 'unsafe-inline'; upgrade-insecure-requests

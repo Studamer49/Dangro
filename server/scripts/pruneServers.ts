@@ -12,7 +12,8 @@
  * line or matching `--match`.
  *
  * Usage (against production, with the production MONGODB_URI in the
- * environment — e.g. from the Render dashboard's shell, or locally):
+ * environment — e.g. from a local shell with the Worker secret exported, or
+ * from a one-off container):
  *
  *   npm --prefix server run prune:servers
  *   npm --prefix server run prune:servers -- <server-id> [<server-id> ...]

@@ -209,8 +209,9 @@ export class RemoteMediaStore implements MediaStore {
 
     // The spool file is this host's staging copy only. It is already on the
     // media host by now, so leaving it behind would leak a full copy of every
-    // upload onto the API's disk — on Render that fills the free tier, and on
-    // a persistent disk it doubles the storage for no reason.
+    // upload onto the API's disk — on Cloudflare's container disk that is
+    // ephemeral anyway, and on a persistent disk it doubles the storage for
+    // no reason.
     await fs.promises.unlink(tempPath).catch(() => undefined);
 
     return { url: `/uploads/${filename}`, filename, size };
@@ -264,7 +265,7 @@ export class CloudinaryMediaStore implements MediaStore {
     }
 
     // Cloudinary has the bytes now; keeping a local copy would fill the
-    // ephemeral disk on Render for no benefit.
+    // ephemeral container disk for no benefit.
     await fs.promises.unlink(tempPath).catch(() => undefined);
 
     return {

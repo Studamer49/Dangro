@@ -7,8 +7,10 @@ import { dirname, resolve } from "path";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// When the API lives on another origin (frontend on Cloudflare Pages), stored
-// `/uploads/...` media URLs are redirected there by a Pages `_redirects` file.
+// When the API lives on another origin, stored `/uploads/...` media URLs are
+// redirected there by a `_redirects` file. The default Cloudflare deployment
+// is same-origin (Worker + Container) and never emits this; it exists for
+// split setups where VITE_API_URL points at a different host.
 function pagesRedirects(apiUrl: string | undefined): Plugin {
   return {
     name: "pages-redirects",

@@ -44,7 +44,7 @@ import turnRoutes from "./routes/turn.js";
 const app = express();
 const httpServer = createServer(app);
 
-// Render (and every other reverse proxy) sits in front of this service.
+// Cloudflare (and every other reverse proxy) sits in front of this service.
 // Without this, req.ip is the proxy and every caller shares one rate-limit bucket.
 app.set("trust proxy", 1);
 

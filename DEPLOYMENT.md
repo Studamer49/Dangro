@@ -1,136 +1,224 @@
 # DEPLOYMENT.md
 
-How to stand Dangro up on Render with a Neon PostgreSQL database.
+How to run Dangro entirely on Cloudflare, with MongoDB Atlas as the database.
 
 ## Architecture
 
 ```
-GitHub  →  Render Web Service (single instance)  →  Neon PostgreSQL
+browser ──▶ Cloudflare Worker (dangro)
+                 ├─▶ Static assets: client/dist, served from the edge
+                 └─▶ Container: Express API + /uploads + Socket.IO
+                          └─▶ MongoDB Atlas (data + GridFS media)
 ```
 
-- Render builds the frontend **into** the service, and the Express server serves the SPA, the `/api` routes and Socket.IO all from **one origin** (`CLIENT_URL` = your Render service URL).
-- No separate static host, no GitHub Pages, no CORS gymnastics (origin == host is allowed; `VITE_*` variables are not required in production).
-- Uploads land on the service disk (default `server/uploads`) because Render Free has no persistent disk — treat them as ephemeral (files vanish on restart/redeploy). On a **paid** plan, attach a [Render persistent disk](https://render.com/docs/disks) and point `UPLOAD_DIR` at its mount path (e.g. `/var/data/uploads`) so uploads survive restarts. Backups / CDN are documented future work.
+One Worker, one hostname, one origin:
+
+- The React SPA is uploaded as [Workers static assets](https://developers.cloudflare.com/workers/static-assets/) and served from Cloudflare's edge. It never wakes the container.
+- `/api/*`, `/uploads/*` and `/socket.io/*` are forwarded to a [Cloudflare Container](https://developers.cloudflare.com/containers/) running the existing Express server.
+- Because both share the Worker hostname, `VITE_API_URL` is not needed, CORS is same-origin, cookies work normally and stored `/uploads/...` URLs resolve without a redirect.
+- Uploads live in **GridFS inside MongoDB** (`MEDIA_PROVIDER=gridfs`). Container disk is ephemeral, so `disk` must not be used in production.
+
+> **Cloudflare Containers require the Workers Paid plan** ($5/month plus container usage). The free Workers plan cannot run the container.
 
 ## Prerequisites
 
-1. A **Neon** project (https://neon.tech) — copy the pooled/unpooled connection string.
-2. A GitHub repo containing this project.
-3. A Render account.
+1. A Cloudflare account with **Workers Paid** enabled.
+2. A **MongoDB Atlas** cluster (the free M0 tier works). Cloudflare hosts the compute; Atlas stores the data.
+3. Node 20+ and this repository.
+4. Optional, for full functionality:
+   - Cloudinary credentials (image uploads).
+   - An SMTP provider (signup verification, password resets).
+   - A TURN relay (calls between different networks).
 
-## 1. Render service
+## 1. Public origin
 
-1. **New → Web Service → Connect** your GitHub repo.
-2. Template: use **`render.yaml`** (Blueprint) **or** create the service manually with:
-   - **Build Command**
-     ```bash
-     npm install --prefix server
-     npm install --prefix client
-     npm run build --prefix client
-     npm --prefix server run db:generate
-     npm run build --prefix server
-     ```
-   - **Pre-Deploy Command** (runs migrations against the DB before the new version starts)
-     ```bash
-     npm run db:deploy
-     ```
-   - **Start Command**
-     ```bash
-     npm start
-     ```
-   - **Health Check Path**: `/api/health`
+Nothing to configure. When the first request reaches the Worker, it passes its
+own origin (`https://dangro.<subdomain>.workers.dev`, or your custom domain) to
+the container as both `APP_BASE_URL` and `CLIENT_URL`, so emailed links and
+CORS are correct without editing a file.
 
-3. **Environment variables** (Dashboard → Environment):
+To pin a specific origin — because several hostnames point at the same Worker
+and links must always use one — set either value explicitly:
 
-   | Key | Value |
-   |-----|-------|
-   | `NODE_ENV` | `production` |
-   | `PORT` | `3001` (Render overrides the actual port; keep this as a fallback) |
-   | `CLIENT_URL` | `https://<your-service>.onrender.com` |
-   | `DATABASE_URL` | your Neon connection string |
-   | `JWT_SECRET` | long random string (≥32 chars) — use Render’s *Generate* |
-   | `JWT_REFRESH_SECRET` | another long random string — use Render’s *Generate* |
-   | `APP_BASE_URL` | the same value as `CLIENT_URL` — every emailed link is built from it |
-   | `SMTP_HOST` / `SMTP_PORT` | your mail provider, e.g. `smtp.resend.com` / `465` |
-   | `SMTP_USER` / `SMTP_PASS` | the credentials that provider issued |
-   | `EMAIL_FROM` | `Dangro <no-reply@yourdomain.com>`, on a **verified** domain |
+```jsonc
+"vars": {
+  "APP_BASE_URL": "https://dangro.example.com",
+  "CLIENT_URL": "https://dangro.example.com"
+}
+```
 
-   `JWT_REFRESH_SECRET` is optional — it defaults to `JWT_SECRET + "_refresh"` if unset, but a separate value is safer.
+`APP_BASE_URL` is what verification and password-reset emails link to;
+`CLIENT_URL` is the origin CORS and Socket.IO accept.
 
-   The SMTP variables are required for signup to work. Without them the service still
-   deploys and every other feature still works, but `/auth/register` returns 503 with an
-   explicit message and **no account is created** — see [`EMAIL.md`](./EMAIL.md) for provider
-   setup, sender-domain verification and troubleshooting.
+## 2. Set secrets
 
-4. Deploy. The first deploy runs `prisma migrate deploy`, then boots the service and serves everything from `https://<your-service>.onrender.com`.
-
-## 2. Local development
+Secrets are Worker secrets. `worker/index.ts` reads the allow-listed ones and
+passes them to the container when it starts, so they never appear in the image
+or the repository.
 
 ```bash
+npx wrangler login
+
+# Required
+npx wrangler secret put MONGODB_URI          # mongodb+srv://...
+npx wrangler secret put JWT_SECRET           # openssl rand -base64 48
+npx wrangler secret put JWT_REFRESH_SECRET   # a different long random string
+
+# Images (uploads return 503 without these)
+npx wrangler secret put CLOUDINARY_CLOUD_NAME
+npx wrangler secret put CLOUDINARY_API_KEY
+npx wrangler secret put CLOUDINARY_API_SECRET
+
+# Email (signup returns 503 without these)
+npx wrangler secret put SMTP_HOST
+npx wrangler secret put SMTP_PORT
+npx wrangler secret put SMTP_USER
+npx wrangler secret put SMTP_PASS
+npx wrangler secret put EMAIL_FROM
+
+# Calls across networks (optional)
+npx wrangler secret put TURN_SECRET
+```
+
+`DATABASE_PROVIDER=mongo`, `MONGODB_DB_NAME`, `MEDIA_PROVIDER=gridfs`,
+`NODE_ENV` and `PORT` are already set as vars in `wrangler.jsonc`.
+
+A running container keeps the environment it started with. After changing a
+secret, the new value is picked up on the next container start: it happens
+automatically after 30 idle minutes, or immediately if you redeploy.
+
+See [`EMAIL.md`](./EMAIL.md) for provider setup, [`MEDIA.md`](./MEDIA.md) for
+Cloudinary and GridFS, and [`MONGODB.md`](./MONGODB.md) for Atlas.
+
+## 3. Deploy
+
+### From your machine
+
+Docker must be installed and running, because Wrangler builds the container
+image from `Dockerfile`.
+
+```bash
+npm ci
+npm run build:client
+npx wrangler deploy
+```
+
+The first deploy takes several minutes: it builds and uploads the image, then
+provisions container capacity. The Worker can answer before the container is
+ready; requests during that window fail with a readiness error and succeed
+once provisioning finishes.
+
+### From Git (no local Docker)
+
+Connect the repository in **Workers & Pages → Create → Workers → Connect to
+Git** and set:
+
+| Setting | Value |
+|---|---|
+| Build command | `npm run build:client` |
+| Deploy command | `npx wrangler deploy` |
+| Production branch | `main` |
+
+Workers Builds can build Dockerfile-based containers in its own environment.
+Every push to `main` then rebuilds the image, rolls out new container
+instances, and updates the Worker.
+
+## 4. Verify
+
+```bash
+curl https://dangro.<your-subdomain>.workers.dev/api/health
+```
+
+You want `"status":"ok"`, plus `"database":"mongo"`, and
+`"imageStorage":"cloudinary"` / `"emailDelivery":"smtp"` once those are
+configured.
+
+Useful container commands:
+
+```bash
+npx wrangler containers list
+npx wrangler containers images list
+npx wrangler tail                       # Worker logs
+```
+
+Container logs (including the server's `[startup]` lines) are in the dashboard
+under **Workers & Pages → Containers → dangro**.
+
+## 5. Local development
+
+The ordinary dev loop is unchanged and does not involve Cloudflare:
+
+```bash
+npm ci
 npm ci --prefix server
 npm ci --prefix client
+npm run dev        # Express on 3001 + Vite on 5173
 ```
 
-Create `server/.env` (see `server/.env.example`):
+Create `server/.env` and `client/.env` from the examples. `npm run dev` keeps
+working because Vite proxies `/api`, `/uploads` and `/socket.io` to port 3001.
 
-```env
-DATABASE_URL=postgresql://...
-JWT_SECRET=a-long-random-string
-JWT_REFRESH_SECRET=another-long-random-string
-PORT=3001
-CLIENT_URL=http://localhost:5173
-```
-
-Create `client/.env` (all `VITE_*` values are public — never put secrets here):
-
-```env
-VITE_API_URL=/api
-VITE_WS_URL=
-```
-
-Then, from the repo root:
+To exercise the Worker and container locally, install Docker and put test
+secrets in `.dev.vars` (git-ignored):
 
 ```bash
-npm run dev            # server (3001) + client (5173), Vite proxies /api, /uploads, /socket.io
+npm run dev:worker   # wrangler dev on http://localhost:8787
 ```
 
-To apply schema changes locally: `npm run db:migrate`. To deploy DB schema: `npm run db:deploy`.
+## 6. Container behaviour
 
-## 3. Database (Neon) notes
+- **One instance, by design.** The server keeps Socket.IO rooms, presence,
+  rate-limit counters and call state in process memory. `worker/index.ts`
+  always routes to the Durable Object named `main`; adding instances would
+  split that state. If you ever need horizontal scale, move sockets to a
+  Redis adapter and rate limits to a shared store first.
+- **Idle sleep.** After 30 minutes with no traffic the container stops. The
+  next request performs a cold start (typically 1-3 seconds) and then the
+  readiness gate releases. Open WebSockets keep the Durable Object active.
+- **Ephemeral disk.** Anything written to the filesystem is lost when the
+  instance stops. GridFS and Cloudinary are unaffected; that is why
+  `MEDIA_PROVIDER=gridfs` is set in `wrangler.jsonc`.
+- **Outbound access** is enabled so the container can reach Atlas, Cloudinary
+  and your SMTP host.
+- **Size.** The container runs on the `basic` instance (1 GiB RAM, 1/4 vCPU).
+  `lite` (256 MiB) is too small for Node plus the Mongo driver.
 
-- The schema lives in `server/prisma/schema.prisma`; there are 2 committed migrations. Freestyle edits to the DB are discouraged — change the schema and run `prisma migrate dev`.
-- **Never commit `DATABASE_URL`.** Both `.env` files are git-ignored (`!.env.example` allows the templates).
-- Uploaded files and long-lived content are on the service disk. For any real user base, add object storage (S3/R2) before scaling beyond a hobby deployment.
+## 7. Database notes
 
-## 4. Health, logs, redeploys
+- Dangro's MongoDB backend has no migrations. `prisma generate` runs during the
+  image build only because the Prisma client types and shim are shared with the
+  optional PostgreSQL path; no database connection is needed at build time.
+- **Never commit `MONGODB_URI`.** It is a Worker secret.
+- Atlas must accept connections from Cloudflare's container egress addresses.
+  They are not a fixed list, so use `0.0.0.0/0` on the Atlas access list and rely
+  on the database user's password (and Atlas's own auth) for security. A
+  dedicated database user with access only to the `dangro` database is better
+  than reusing an admin user.
+- See [`MONGODB.md`](./MONGODB.md) for how to create the cluster and user.
 
-- `GET /api/health` returns `{ success: true, data: { status: "ok", uptime } }` — used by Render’s health checks and as the canary endpoint for curl/uptime tools.
-- Promote/rollback: any push to the connected branch triggers a new deploy. Use a staging branch + a second Web Service if you want preview deploys.
-- If a migration fails during pre-deploy, the old release stays live — fix the migration and redeploy.
+## 8. Post-deployment checklist
 
-## 5. Docker (alternative packaging)
-
-```bash
-docker build -t dangro .
-docker run --rm -p 3001:3001 \
-  -e NODE_ENV=production \
-  -e DATABASE_URL=postgresql://... \
-  -e JWT_SECRET=$(openssl rand -hex 32) \
-  -e CLIENT_URL=http://localhost:3001 \
-  dangro
-# open http://localhost:3001
-```
-
-The image builds from `Dockerfile` (base → build → runtime), installs with `npm ci`, generates the Prisma client, and exposes `3001`.
-
-## 6. Post-deployment checklist
-
-- [ ] `curl https://<service>.onrender.com/api/health` → `{"success":true,...}` and `"emailDelivery":"smtp"`
-- [ ] Register a user — the page must switch to "Check your inbox", and the link in the email must point at `https://<service>.onrender.com` (not localhost).
-- [ ] Click the link → "Email verified", then sign in with the same password.
-- [ ] Try signing in *before* clicking the link → a clear "verify your email" message, not a generic failure.
+- [ ] `curl https://<worker>/api/health` → `"status":"ok"` and `"database":"mongo"`
+- [ ] Register a user — the page says "Check your inbox", and the email link
+      points at the Worker origin (not localhost).
+- [ ] Click the link → "Email verified", then sign in.
+- [ ] Sign in before verifying → a clear "verify your email" message.
 - [ ] `/forgot-password` → the reset link arrives and the new password works.
-- [ ] Create a server → it appears in the left rail → add a channel → both users can chat.
-- [ ] Upload a profile avatar and an image post; confirm `/uploads/...` URLs load.
-- [ ] Open two browsers, send a DM, see typing + read receipts over Socket.IO.
-- [ ] Look for 400/401/500s in the Render build/runtime logs; ignore expected auth 401s before login.
+- [ ] Create a server, add a text channel, send a message from two accounts.
+- [ ] Upload an avatar and an image post; confirm the image loads from the
+      same origin.
+- [ ] Open two browsers, send a DM, and confirm typing and read receipts
+      arrive over Socket.IO.
+- [ ] Check **Workers & Pages → Containers → dangro** logs for 400/401/500s;
+      ignore expected 401s before login.
+
+## 9. Migrating off Render
+
+This repository used to deploy to Render. There is no Render configuration
+left: `render.yaml` is gone and every required variable is either a
+`wrangler.jsonc` var or a Worker secret. Workers statics assets replace the
+Express static handler, Cloudflare Containers replace the Render web service,
+and MongoDB Atlas was already external.
+
+The old Render service can be deleted once the Cloudflare deployment passes
+the checklist above.

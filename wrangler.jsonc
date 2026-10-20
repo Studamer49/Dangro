@@ -1,10 +1,79 @@
-// Cloudflare Workers Builds: serves the built React client as static assets.
-// Build command: npm run build:pages   Deploy command: npx wrangler deploy
+// Cloudflare Workers + Containers.
+//
+// One Worker does everything: it serves the built React SPA as static assets
+// and forwards the dynamic paths to a single Container running the existing
+// Express server (API, uploads, Socket.IO). Because both live on the same
+// Worker hostname, the browser talks to one origin and needs no CORS setup,
+// no cross-origin media redirect and no VITE_API_URL.
+//
+// Build command (Workers Builds):  npm run build:client
+// Deploy command:                   npx wrangler deploy
 {
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "dangro",
-  "compatibility_date": "2025-10-01",
+  "main": "./worker/index.ts",
+  "compatibility_date": "2026-10-20",
+  "upload_source_maps": true,
+  "observability": {
+    "enabled": true
+  },
   "assets": {
+    // `wrangler deploy` uploads whatever is in here. `npm run build:client`
+    // must run first.
     "directory": "./client/dist",
-    "not_found_handling": "single-page-application"
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    // Everything else is served straight from Cloudflare's edge without
+    // waking the container. Only the dynamic prefixes below wake it.
+    "run_worker_first": [
+      "/api",
+      "/api/*",
+      "/uploads",
+      "/uploads/*",
+      "/socket.io",
+      "/socket.io/*"
+    ]
+  },
+  "containers": [
+    {
+      "class_name": "DangroBackend",
+      "scheduling_policy": "durable_object",
+      "images": {
+        "base": {
+          "dockerfile": "./Dockerfile"
+        }
+      }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "BACKEND",
+        "class_name": "DangroBackend"
+      }
+    ]
+  },
+  "exports": {
+    "DangroBackend": {
+      "type": "durable-object",
+      "storage": "sqlite"
+    }
+  },
+  "vars": {
+    "NODE_ENV": "production",
+    // The port the container listens on. Keep it in sync with the Dockerfile.
+    "PORT": "8080",
+    "DATABASE_PROVIDER": "mongo",
+    "MONGODB_DB_NAME": "dangro",
+    // GridFS keeps uploads inside MongoDB, so they survive the container
+    // sleeping or being replaced. Never use "disk" here: container disk is
+    // ephemeral and every upload would vanish on restart.
+    "MEDIA_PROVIDER": "gridfs"
+    // APP_BASE_URL and CLIENT_URL are intentionally NOT set here. The Worker
+    // passes the public origin of the request that starts the container, so
+    // deployment works on <name>.<subdomain>.workers.dev and on a custom
+    // domain without editing this file. Set either one as a var (or secret)
+    // only if the app is served from several hostnames and links should
+    // always use one of them.
   }
 }
