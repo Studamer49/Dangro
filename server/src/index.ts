@@ -1,4 +1,5 @@
 import express from "express";
+import compression from "compression";
 import { createServer } from "http";
 import fs from "fs";
 import path from "path";
@@ -12,6 +13,8 @@ import { prisma } from "./prisma.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { buildCspDirectives } from "./lib/csp.js";
 import { checkCloudinaryConnection } from "./lib/cloudinary.js";
+import { checkEmailConnection } from "./lib/mailer.js";
+import { resendVerificationLimiter, verifyEmailLimiter } from "./lib/rateLimits.js";
 import { setupSocketHandlers } from "./socket/index.js";
 import { setIO } from "./socket/io.js";
 import { ensureIndexes, backfillServerLayout, backfillServerRoles } from "./db/mongoIndexes.js";
@@ -35,6 +38,8 @@ import storyRoutes from "./routes/stories.js";
 import followRoutes from "./routes/follows.js";
 import notificationRoutes from "./routes/notifications.js";
 import blockRoutes from "./routes/blocks.js";
+import { purgeExpiredStories } from "./routes/stories.js";
+import rtcRoutes from "./routes/rtc.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -84,6 +89,40 @@ app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: false, limit: "2mb" }));
 app.use(cookieParser());
 
+/**
+ * Response compression.
+ *
+ * This was absent entirely, so every byte this service sent left uncompressed:
+ * the 738 kB client bundle went over the wire at full size on every cold load,
+ * and every JSON API response did the same. gzip takes that bundle to 216 kB.
+ *
+ * Mounted before the limiters so that even a 429 body is compressed, and before
+ * the routers so it covers the API, the SPA shell and the static bundle.
+ *
+ * Two exclusions, both deliberate:
+ *
+ *   /uploads  Media arrives here already compressed — mp4, webm, mp3, jpeg,
+ *             pdf. Running a 50 MB video through zlib costs CPU, adds latency
+ *             and makes the response *larger*. The Content-Type check alone
+ *             would catch most of these, but the media route sets its header
+ *             from the stored name, so a mislabelled upload could still reach
+ *             zlib. Refusing the path outright removes the possibility.
+ *
+ *   /socket.io  Socket.IO's long-polling fallback streams chunked responses
+ *             that must reach the client promptly. Compressing them buffers
+ *             output for no real gain — the payloads are already small.
+ *             WebSocket upgrades are not HTTP and never passed through here.
+ */
+app.use(
+  compression({
+    filter: (req, res) => {
+      if (req.path.startsWith("/uploads")) return false;
+      if (req.path.startsWith("/socket.io")) return false;
+      return compression.filter(req, res);
+    },
+  })
+);
+
 const jsonResponse = (code: "RATE_LIMITED", message: string) =>
   ({ success: false, error: { code, message } }) as const;
 
@@ -123,9 +162,19 @@ app.get("/api/health", (_req, res) => {
        * pointing at the one broken part.
        */
       imageStorage: config.cloudinary.configured ? "cloudinary" : "unconfigured",
+      /**
+       * Same reasoning for mail. Reported so a deploy can be checked without
+       * waiting for someone to try to sign up.
+       */
+      emailDelivery: config.email.configured ? config.email.transport : "unconfigured",
     },
   });
 });
+
+// Public: the browser needs the STUN/TURN list before it has a session, and
+// mounted ahead of the global limiter so a cold cache on a busy tab cannot
+// spend a call's whole ICE gathering budget on a 429.
+app.use("/api", rtcRoutes);
 
 app.use("/api", globalLimiter);
 
@@ -135,6 +184,14 @@ app.use("/api", globalLimiter);
 // then lock the same user out of both login and silent refresh.
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/register", authLimiter);
+
+// Token submission and link reissue are limited separately from the rest of
+// /api/auth, and resend/forgot-password get the tightest budget of all: those
+// two turn the server into a mail relay aimed at someone else's inbox.
+app.use("/api/auth/verify-email", verifyEmailLimiter);
+app.use("/api/auth/resend-verification", resendVerificationLimiter);
+app.use("/api/auth/forgot-password", resendVerificationLimiter);
+app.use("/api/auth/reset-password", verifyEmailLimiter);
 
 // These three declare `/servers/...` paths in full, so they are mounted at the
 // API root — mounting them under `/api/servers` would resolve them to
@@ -184,12 +241,47 @@ const clientDistPath = path.resolve(__dirname, "../../client/dist");
 const hasClientBuild = fs.existsSync(path.join(clientDistPath, "index.html"));
 
 if (hasClientBuild) {
-  app.use(express.static(clientDistPath));
+  // Vite content-hashes every filename under /assets, so a URL there changes
+  // exactly when its bytes do. That is the one case where a browser can safely
+  // be told never to ask again, and it is the bulk of the payload: 738 kB of
+  // JS plus 75 kB of CSS that a returning visitor was re-downloading on every
+  // page load, because the catch-all `express.static` below sent them
+  // `Cache-Control: public, max-age=0` and forced a revalidation round trip.
+  app.use(
+    "/assets",
+    express.static(path.join(clientDistPath, "assets"), {
+      immutable: true,
+      maxAge: "1y",
+    })
+  );
+
+  // Everything else in dist is NOT hashed — the URL survives the deploy while
+  // the contents change — so it is split by how stale it may safely get:
+  //
+  //   index.html  no-cache. It names the hashed bundles, so a stale copy points
+  //               at filenames the next deploy deleted, and the app loads a
+  //               blank screen with 404s for every chunk.
+  //   logo.png    1d. A brand mark that changes is a design change, not a
+  //   favicon.png      routine deploy, and a day of staleness is invisible.
+  app.use(
+    express.static(clientDistPath, {
+      maxAge: "1d",
+      setHeaders(res, filePath) {
+        if (path.basename(filePath) === "index.html") {
+          res.setHeader("Cache-Control", "no-cache");
+        }
+      },
+    })
+  );
+
   app.get("*", (req, res, next) => {
     if (req.path.startsWith("/api") || req.path.startsWith("/socket.io")) {
       next();
       return;
     }
+    // Matches the index.html rule above: every client-side route resolves to
+    // this shell, so it must revalidate like the real one.
+    res.setHeader("Cache-Control", "no-cache");
     res.sendFile(path.join(clientDistPath, "index.html"));
   });
 } else if (config.isProduction) {
@@ -200,6 +292,29 @@ if (hasClientBuild) {
 app.use(errorHandler);
 
 setupSocketHandlers(io);
+
+/**
+ * Housekeeping that used to sit in a request handler.
+ *
+ * `GET /api/stories` deleted every expired story inline, so a read endpoint
+ * ran an unbounded collection-wide delete for every caller. The stories it
+ * removed were already excluded from the response by `expiresAt: { gt: now }`,
+ * so nothing about the endpoint's behaviour depends on when it runs — only on
+ * how much work it costs. It runs here instead: once at boot, then hourly.
+ */
+function startStorySweep(): void {
+  const run = (): void => {
+    void purgeExpiredStories()
+      .then((count) => {
+        if (count > 0) console.log(`[sweep] removed ${count} expired stories`);
+      })
+      .catch((err: unknown) => console.error("[sweep] story purge failed:", err));
+  };
+
+  run();
+  const timer = setInterval(run, 60 * 60 * 1000);
+  timer.unref();
+}
 
 async function main(): Promise<void> {
   try {
@@ -252,9 +367,31 @@ async function main(): Promise<void> {
       }
     });
 
+    /**
+     * Same for mail: a signup that silently never delivers its link is
+     * invisible from the outside until someone reports "I never got the
+     * email". One boot line turns that into a visible log entry, and the
+     * address every link is built from is printed so a wrong APP_BASE_URL is
+     * obvious too.
+     */
+    void checkEmailConnection().then((check) => {
+      if (!check.configured) {
+        console.error(
+          `[startup] Email is DISABLED — signup, resend and password reset will return 503 (missing ${config.email.missingVars.join(", ")}). Set them in server/.env or the service environment.`
+        );
+      } else if (!check.reachable) {
+        console.error(
+          `[startup] Email is CONFIGURED BUT NOT WORKING — ${check.detail}. Check SMTP_HOST / SMTP_PORT / SMTP_USER / SMTP_PASS.`
+        );
+      } else {
+        console.log(`[startup] Email: ${check.detail} — links use ${config.appBaseUrl}`);
+      }
+    });
+
     httpServer.listen(config.port, () => {
       console.log(`Server running on port ${config.port}`);
       console.log(`Serving ${hasClientBuild ? "client build + " : ""}API from the same origin`);
+      startStorySweep();
     });
   } catch (err) {
     console.error("Failed to start server:", err);

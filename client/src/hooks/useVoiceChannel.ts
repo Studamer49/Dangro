@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import api from "@/lib/api";
 import { getSocket } from "@/lib/socket";
-import { ICE_SERVERS } from "@/lib/iceServers";
+import { getIceConfiguration } from "@/lib/iceServers";
 import type { User } from "@/types";
 
 export interface VoicePeer {
@@ -110,7 +110,7 @@ export function useVoiceChannel(currentUser: User | null) {
       const existing = peersRef.current.get(peerId);
       if (existing) return existing;
 
-      const pc = new RTCPeerConnection(ICE_SERVERS);
+      const pc = new RTCPeerConnection(getIceConfiguration());
       const peer: PeerConnection = {
         userId: peerId,
         pc,
@@ -372,19 +372,30 @@ export function useVoiceChannel(currentUser: User | null) {
   }, []);
 
   useEffect(() => {
+    // Captured inside the effect on purpose. `peersRef.current` is assigned once
+    // (line 51) and only ever mutated — set/delete/clear — so this is the same
+    // Map object for the component's whole life and reading it here is
+    // identical to reading it at cleanup time. That is also what we want: the
+    // peers to tear down are the ones joined at unmount, not the ones that
+    // existed at mount. Reading the ref directly in the cleanup would work the
+    // same way but trips exhaustive-deps, which cannot see that the ref's
+    // identity is fixed.
+    const peers = peersRef.current;
+    const localStream = localStreamRef;
+
     return () => {
       if (channelIdRef.current) {
         getSocket().emit("voice_leave", { channelId: channelIdRef.current });
       }
-      localStreamRef.current?.getTracks().forEach((track) => track.stop());
-      for (const peer of peersRef.current.values()) {
+      localStream.current?.getTracks().forEach((track) => track.stop());
+      for (const peer of peers.values()) {
         try {
           peer.pc.close();
         } catch {
           // Already closed.
         }
       }
-      peersRef.current.clear();
+      peers.clear();
     };
   }, []);
 

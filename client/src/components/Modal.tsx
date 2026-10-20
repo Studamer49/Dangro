@@ -13,6 +13,16 @@ interface ModalProps {
 }
 
 /**
+ * Escape has to dismiss exactly one dialog: the topmost one.
+ *
+ * Every Modal installs its own document-level listener, so with a nested
+ * dialog — the role editor inside server settings, a confirmation on top of
+ * either — a single Escape fired every open handler at once and the whole
+ * stack closed. Only the most recently opened dialog acts.
+ */
+const modalStack: symbol[] = [];
+
+/**
  * The app's modal shell: overlay, title bar, Escape/backdrop dismissal.
  *
  * Every dialog in the app repeats this markup, and each copy had to remember
@@ -45,11 +55,21 @@ export default function Modal({
   }, [onClose]);
 
   useEffect(() => {
+    const token = Symbol("modal");
+    modalStack.push(token);
+
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onCloseRef.current();
+      if (event.key !== "Escape") return;
+      if (modalStack[modalStack.length - 1] !== token) return;
+      onCloseRef.current();
     };
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      const index = modalStack.lastIndexOf(token);
+      if (index !== -1) modalStack.splice(index, 1);
+    };
   }, []);
 
   // Move focus into the dialog so Tab stays inside it and Escape is caught

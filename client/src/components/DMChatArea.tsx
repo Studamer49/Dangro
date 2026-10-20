@@ -85,7 +85,24 @@ export default function DMChatArea({ conversation, onConversationUpdated }: Prop
       // the thread you just left would otherwise land in the one now open.
       if (activeConversationRef.current !== requestConversationId) return;
       const next = data.messages as DirectMessage[];
-      setMessages(next);
+
+      // A poll must not make a just-sent message disappear. The optimistic
+      // `temp-` bubble is swapped for the real one by `upsertMessage` when the
+      // socket echo arrives; a poll response landing in between used to replace
+      // the array wholesale and erase it, so the message reappeared (or did
+      // not) only at the next 15s tick. Kept only when the server does not
+      // already carry it, using the same sender+content match as the upsert.
+      setMessages((prev) => {
+        const pending = prev.filter(
+          (m) =>
+            m.id.startsWith("temp-") &&
+            !next.some((s) => s.senderId === m.senderId && s.content.trim() === m.content.trim())
+        );
+        if (pending.length === 0) return next;
+        return [...next, ...pending].sort(
+          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+      });
 
       // Only write when something is actually unread. This runs on a 15s
       // poll, so an unconditional PATCH meant a database write plus two

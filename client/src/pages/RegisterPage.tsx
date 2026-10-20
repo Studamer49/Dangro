@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useAuthStore } from "@/stores/authStore";
 import { apiErrorMessage } from "@/lib/api";
+import VerifyEmailNotice from "@/components/account/VerifyEmailNotice";
 
 const registerSchema = z
   .object({
@@ -32,6 +33,13 @@ export default function RegisterPage() {
   const register = useAuthStore((s) => s.register);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  /**
+   * Set once the account exists. From here the user cannot sign in — the
+   * server issues no session until the emailed link is clicked — so the form
+   * is replaced by the "check your inbox" notice rather than navigating into
+   * an app they have no session for.
+   */
+  const [pending, setPending] = useState<{ email: string } | null>(null);
 
   const {
     register: registerField,
@@ -45,7 +53,11 @@ export default function RegisterPage() {
     setError("");
     setIsSubmitting(true);
     try {
-      await register(data.username, data.email, data.password);
+      const result = await register(data.username, data.email, data.password);
+      if (result.verificationRequired) {
+        setPending({ email: result.email });
+        return;
+      }
       navigate("/");
     } catch (err: unknown) {
       setError(apiErrorMessage(err, "Registration failed"));
@@ -53,6 +65,35 @@ export default function RegisterPage() {
       setIsSubmitting(false);
     }
   };
+
+  if (pending) {
+    return (
+      <div className="flex min-h-screen items-center justify-center px-4 py-12">
+        <div className="grid w-full max-w-4xl overflow-hidden rounded-3xl glass-panel md:grid-cols-2">
+          <div className="p-8 sm:p-10">
+            <VerifyEmailNotice
+              email={pending.email}
+              onBack={() => navigate("/login")}
+            />
+          </div>
+          <BrandPanel
+            heading={
+              <>
+                One click and
+                <br />
+                you&apos;re in.
+              </>
+            }
+            lines={[
+              "The link works once and expires in 30 minutes",
+              "Resend it any time if it lands in spam",
+              "Your address is never shown to anyone else",
+            ]}
+          />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen items-center justify-center px-4 py-12">
@@ -164,57 +205,81 @@ export default function RegisterPage() {
           </p>
         </div>
 
-        <div
-          className="relative hidden flex-col justify-between overflow-hidden p-10 md:flex"
-          style={{
-            backgroundImage:
-              "linear-gradient(150deg, rgb(var(--accent-600-rgb) / 0.32) 0%, rgb(var(--accent-400-rgb) / 0.12) 55%, transparent 100%)",
-          }}
-        >
-          <div
-            className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full opacity-60 blur-3xl"
-            style={{ background: "rgb(var(--accent-400-rgb) / 0.45)" }}
-          />
-
-          <div className="relative flex items-center gap-2.5">
-            <img
-              src="/logo.png"
-              alt="Dangro"
-              className="h-9 w-9 rounded-xl object-cover shadow-glow"
-            />
-            <span className="text-lg font-bold tracking-tight text-white">Dangro</span>
-          </div>
-
-          <div className="relative">
-            <h2 className="text-2xl font-bold leading-snug tracking-tight text-white">
+        <BrandPanel
+          heading={
+            <>
               Build a server
               <br />
               for anything.
-            </h2>
-            <ul className="mt-6 space-y-3">
-              {[
-                "Channels, roles and categories built in",
-                "Voice and video calls, peer to peer",
-                "Stories and a feed for the rest"
-              ].map((line) => (
-                <li key={line} className="flex items-start gap-2.5 text-sm text-gray-300">
-                  <svg
-                    className="mt-0.5 h-4 w-4 shrink-0 text-accent-300"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M16.7 5.3a1 1 0 010 1.4l-8 8a1 1 0 01-1.4 0l-4-4a1 1 0 111.4-1.4L8 12.6l7.3-7.3a1 1 0 011.4 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                  {line}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
+            </>
+          }
+          lines={[
+            "Channels, roles and categories built in",
+            "Voice and video calls, peer to peer",
+            "Stories and a feed for the rest",
+          ]}
+        />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The decorative half of the auth pages.
+ *
+ * Extracted because the register page now renders two very different states —
+ * the form and the "check your inbox" notice — and duplicating that panel
+ * inline meant editing the same gradient in two places.
+ */
+export function BrandPanel({
+  heading,
+  lines,
+}: {
+  heading: React.ReactNode;
+  lines: string[];
+}) {
+  return (
+    <div
+      className="relative hidden flex-col justify-between overflow-hidden p-10 md:flex"
+      style={{
+        backgroundImage:
+          "linear-gradient(150deg, rgb(var(--accent-600-rgb) / 0.32) 0%, rgb(var(--accent-400-rgb) / 0.12) 55%, transparent 100%)",
+      }}
+    >
+      <div
+        className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full opacity-60 blur-3xl"
+        style={{ background: "rgb(var(--accent-400-rgb) / 0.45)" }}
+      />
+
+      <div className="relative flex items-center gap-2.5">
+        <img
+          src="/logo.png"
+          alt="Dangro"
+          className="h-9 w-9 rounded-xl object-cover shadow-glow"
+        />
+        <span className="text-lg font-bold tracking-tight text-white">Dangro</span>
+      </div>
+
+      <div className="relative">
+        <h2 className="text-2xl font-bold leading-snug tracking-tight text-white">{heading}</h2>
+        <ul className="mt-6 space-y-3">
+          {lines.map((line) => (
+            <li key={line} className="flex items-start gap-2.5 text-sm text-gray-300">
+              <svg
+                className="mt-0.5 h-4 w-4 shrink-0 text-accent-300"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M16.7 5.3a1 1 0 010 1.4l-8 8a1 1 0 01-1.4 0l-4-4a1 1 0 111.4-1.4L8 12.6l7.3-7.3a1 1 0 011.4 0z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              {line}
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );

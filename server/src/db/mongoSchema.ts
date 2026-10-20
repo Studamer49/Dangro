@@ -65,6 +65,8 @@ export const MODELS: Record<string, ModelDef> = {
     collection: "users",
     fields: {
       username: { type: "string" },
+      // Always stored normalised (trimmed + lower-cased) by the routes, so the
+      // unique index below is a unique index on normalised addresses.
       email: { type: "string" },
       password: { type: "string" },
       bio: { type: "string", optional: true },
@@ -72,6 +74,28 @@ export const MODELS: Record<string, ModelDef> = {
       cover: { type: "string", optional: true },
       isPrivate: { type: "boolean", default: false },
       status: { type: "string", default: "offline" },
+      // --- email verification -------------------------------------------------
+      // Deliberately NO default. A document written before verification
+      // existed has no `emailVerified` at all, and the routes read that as
+      // "legacy account, leave it alone" so deploying this does not lock
+      // every existing user out. Only `POST /auth/register` writes an
+      // explicit `false`, which is what makes an account unverified.
+      emailVerified: { type: "boolean", optional: true },
+      emailVerifiedAt: { type: "date", optional: true },
+      // SHA-256 of the emailed token. The raw token is never stored, so a
+      // database dump cannot be replayed. Null once spent.
+      emailVerificationTokenHash: { type: "string", optional: true },
+      emailVerificationExpiresAt: { type: "date", optional: true },
+      emailVerificationSentAt: { type: "date", optional: true },
+      emailVerificationUsedAt: { type: "date", optional: true },
+      // --- password reset ----------------------------------------------------
+      passwordResetTokenHash: { type: "string", optional: true },
+      passwordResetExpiresAt: { type: "date", optional: true },
+      passwordResetUsedAt: { type: "date", optional: true },
+      // Bumped whenever a credential changes (email address, password, or a
+      // password reset). Tokens carry the value they were issued with, so a
+      // bump retires every outstanding access and refresh token.
+      authSessionVersion: { type: "number", default: 0 },
       lastSeen: { type: "date", default: () => new Date() },
       createdAt: { type: "date", default: () => new Date() },
       updatedAt: { type: "date", default: () => new Date() },
@@ -167,6 +191,12 @@ export const MODELS: Record<string, ModelDef> = {
       name: { type: "string" },
       icon: { type: "string", optional: true },
       description: { type: "string", optional: true },
+      /**
+       * Invite-only servers. Declared with a default so `applyDefaults` fills
+       * it on create; a document written before this column existed simply has
+       * no value, and the Explore query uses `!= true` so it still lists.
+       */
+      isPrivate: { type: "boolean", default: false },
       ownerId: { type: "string" },
       inviteCode: { type: "string", default: () => crypto.randomUUID() },
       createdAt: { type: "date", default: () => new Date() },

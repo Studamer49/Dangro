@@ -287,6 +287,201 @@ const clientUrls = optional("CLIENT_URL", "http://localhost:5173")
   .map((url) => url.trim().replace(/\/$/, ""))
   .filter(Boolean);
 
+// ---------------------------------------------------------------------------
+// ICE — the STUN/TURN servers browser calls use to find each other.
+//
+// Calls are peer-to-peer, and STUN alone only works when both people are
+// reachable. Two people both behind symmetric NAT (mobile data, corporate
+// networks, some VPNs) find no direct path at all, and without a TURN relay
+// they see their own camera, never each other, and nobody is audible.
+//
+// That is why a TURN server is not optional in practice. Point these at any
+// hosted relay — Metered and OpenRelay both hand out free credentials, and
+// Xirsys/Cloudflare/your own coturn all work — and no client rebuild is
+// needed, because the browser fetches this configuration from
+// `GET /api/rtc/ice-servers` at call time.
+//
+// Server-side env only, for the same reason SMTP is: a TURN credential must
+// never be baked into the browser bundle. Set VITE_TURN_* only if you accept
+// shipping a public, rate-limited credential to every visitor.
+// ---------------------------------------------------------------------------
+
+/** Public STUN defaults, used when the operator names none. */
+const DEFAULT_STUN_URLS = [
+  "stun:stun.l.google.com:19302",
+  "stun:stun1.l.google.com:19302",
+  "stun:global.stun.twilio.com:3478",
+];
+
+/**
+ * A free, publicly-shared TURN relay, used only when the operator has not
+ * configured one. It is heavily rate-limited and blocked on some networks,
+ * which is exactly why the env vars above win over it.
+ */
+const DEFAULT_TURN = {
+  urls: [
+    "turn:relay.metered.ca:80",
+    "turn:relay.metered.ca:80?transport=tcp",
+    "turn:relay.metered.ca:443",
+    "turn:relay.metered.ca:443?transport=tcp",
+    "turn:openrelay.metered.ca:80",
+    "turn:openrelay.metered.ca:443?transport=tcp",
+  ],
+  username: "openrelayproject",
+  credential: "openrelayproject",
+};
+
+const csv = (value: string): string[] =>
+  value
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+const stunUrls = csv(optional("STUN_URLS", "").length ? optional("STUN_URLS", "") : DEFAULT_STUN_URLS.join(","));
+const turnUrls = csv(optional("TURN_URLS", optional("TURN_URL", "")));
+const turnUsername = optional("TURN_USERNAME", "").trim();
+const turnCredential = optional("TURN_CREDENTIAL", "").trim();
+
+// A TURN server needs credentials to allocate a relay. An operator who names a
+// relay but no credentials almost certainly meant to paste both, and silently
+// shipping the request without them produces a connection that simply never
+// comes up — so it is called out at boot instead.
+if (turnUrls.length > 0 && !turnUsername) {
+  console.warn(
+    "[config] TURN_URLS is set but TURN_USERNAME is not. The relay will reject every allocation, so calls will only work on networks where a direct route exists. Set TURN_USERNAME and TURN_CREDENTIAL."
+  );
+}
+
+const rtc = {
+  stunUrls,
+  turnUrls,
+  turnUsername,
+  turnCredential,
+  /** The relay used when nothing is configured. */
+  fallbackTurn: DEFAULT_TURN,
+};
+
+// ---------------------------------------------------------------------------
+// Email — SMTP delivery for address verification, password resets and
+// email-change confirmations.
+//
+// Credentials are deliberately NOT validated at boot, for the same reason
+// Cloudinary's are not: a missing mail server must not take down chat,
+// messages and friends for everyone. What it *does* have to guarantee is that
+// no route silently treats an account as verified because it could not send
+// an email — the signup, resend and reset paths return 503 and name the
+// missing variables instead.
+//
+// Every value here is SERVER-ONLY. None of them may ever take a VITE_ prefix:
+// that would inline the SMTP password into the browser bundle.
+// ---------------------------------------------------------------------------
+
+/** Bounded integer from the environment, falling back with a warning on a typo. */
+function boundedInt(name: string, fallback: number, min: number, max: number): number {
+  const raw = optional(name, "");
+  if (!raw) return fallback;
+  const parsed = Number.parseInt(raw, 10);
+  if (!Number.isFinite(parsed) || parsed < min || parsed > max) {
+    console.warn(`[config] ${name} must be an integer between ${min} and ${max} — using ${fallback}.`);
+    return fallback;
+  }
+  return parsed;
+}
+
+const smtpHost = optional("SMTP_HOST", "");
+const smtpPort = boundedInt("SMTP_PORT", 587, 1, 65535);
+const smtpUser = optional("SMTP_USER", "");
+const smtpPass = optional("SMTP_PASS", "");
+// Port 465 is implicit TLS; every other common port starts in the clear and is
+// upgraded with STARTTLS, which is what `secure: false` asks nodemailer for.
+const smtpSecure = optional("SMTP_SECURE", smtpPort === 465 ? "true" : "false").toLowerCase() === "true";
+
+// Half of a credential pair without the other half is always a mistake, and
+// sending it would produce a confusing 535/504 from the provider instead of a
+// named variable at boot.
+if ((smtpUser && !smtpPass) || (!smtpUser && smtpPass)) {
+  fail(
+    smtpUser ? "SMTP_USER is set but SMTP_PASS is not" : "SMTP_PASS is set but SMTP_USER is not",
+    "Set both SMTP_USER and SMTP_PASS to the mailbox credentials your provider issued, or remove both for an unauthenticated local relay."
+  );
+}
+
+// Most providers use the login address as the From address, so defaulting to
+// it removes one variable from the setup without ever guessing a domain.
+const emailFrom = optional("EMAIL_FROM", smtpUser);
+const emailFromName = optional("EMAIL_FROM_NAME", "Dangro");
+
+/**
+ * `smtp` talks to a real mail server. `json` renders the message and drops it
+ * in the server log instead of delivering it — for working on the UI with no
+ * mail account, and as the transport the test suite uses. Nothing is ever
+ * marked verified because of `json`: a token still has to be clicked.
+ */
+const requestedEmailTransport = optional("EMAIL_TRANSPORT", "smtp");
+if (requestedEmailTransport !== "smtp" && requestedEmailTransport !== "json") {
+  fail(
+    `EMAIL_TRANSPORT must be "smtp" or "json", received "${requestedEmailTransport}"`,
+    'Set EMAIL_TRANSPORT="json" to render emails to the server log without delivering them, or remove it to send real mail.'
+  );
+}
+
+// In `json` mode nothing is delivered, so requiring a mail server would make
+// the mode useless for the two things it exists for: working on the UI with
+// no mail account, and running the suite.
+const emailMissingVars =
+  requestedEmailTransport === "json"
+    ? []
+    : (
+        [
+          ["SMTP_HOST", smtpHost],
+          ["EMAIL_FROM", emailFrom],
+        ] as const
+      )
+        .filter(([, value]) => value.trim() === "")
+        .map(([name]) => name);
+
+const emailConfigured = emailMissingVars.length === 0;
+
+/**
+ * The absolute, publicly reachable origin the app is served from, used to
+ * build the links inside every email.
+ *
+ * APP_BASE_URL wins; otherwise the first CLIENT_URL is used, which is correct
+ * for both layouts this project supports (single-origin Render, and the Vite
+ * dev server on :5173). Anything that is not an absolute http(s) URL is
+ * refused outright — a malformed base silently produces a link that goes
+ * nowhere, and the only symptom is a user staring at an inbox.
+ */
+const appBaseUrl = (() => {
+  const raw = optional("APP_BASE_URL", "") || clientUrls[0] || "http://localhost:5173";
+  let parsed: URL;
+  try {
+    parsed = new URL(raw.trim());
+  } catch {
+    fail(
+      `APP_BASE_URL is not a valid URL (received "${raw}")`,
+      "Set APP_BASE_URL to the public address of the app, e.g. https://dangro.onrender.com"
+    );
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    fail(
+      `APP_BASE_URL must use http:// or https://, received "${parsed.protocol}//"`,
+      'Example: APP_BASE_URL="https://dangro.onrender.com"'
+    );
+  }
+  if (parsed.username || parsed.password) {
+    fail("APP_BASE_URL must not contain credentials", "Remove the user:password part — it ends up in every email link.");
+  }
+  // Trailing slash stripped so `${appBaseUrl}/verify-email` never doubles it.
+  return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}`;
+})();
+
+if (isProduction && !publicOrigin(appBaseUrl)) {
+  console.warn(
+    `[config] APP_BASE_URL resolves to "${appBaseUrl}", which is not a public https origin — verification and password-reset links will not work for anyone outside your network.`
+  );
+}
+
 export const config = {
   nodeEnv: process.env.NODE_ENV ?? "development",
   isProduction,
@@ -325,10 +520,44 @@ export const config = {
   },
   mediaIngestUrl,
   mediaIngestKey,
+  email: {
+    transport: requestedEmailTransport,
+    host: smtpHost,
+    port: smtpPort,
+    user: smtpUser,
+    pass: smtpPass,
+    secure: smtpSecure,
+    /** Abort a send that has not completed within this many ms. */
+    timeoutMs: boundedInt("EMAIL_TIMEOUT_MS", 10_000, 1_000, 120_000),
+    from: emailFrom,
+    fromName: emailFromName,
+    /** Whether the `From:` header should read "Dangro <addr>" or bare "addr". */
+    fromFormatted: emailFromName.trim() !== "",
+    configured: emailConfigured,
+    missingVars: emailMissingVars,
+  },
+  /** Public origin used to build every link inside an email. */
+  appBaseUrl,
+  emailVerification: {
+    /** How long a verification link stays usable. */
+    tokenTtlMinutes: boundedInt("EMAIL_VERIFICATION_TOKEN_TTL_MINUTES", 30, 5, 1440),
+    /** How long a password-reset link stays usable. */
+    resetTokenTtlMinutes: boundedInt("PASSWORD_RESET_TOKEN_TTL_MINUTES", 30, 5, 1440),
+    /**
+     * Per-IP request budget for token *submission* and resend/reset requests.
+     * Read per request from the environment so an operator can tighten it on a
+     * busy deployment without a code change, and so the test suite can exercise
+     * the real limiter with a tiny budget (see lib/rateLimits.ts).
+     */
+    verifyRateLimit: boundedInt("EMAIL_VERIFY_RATE_LIMIT", 20, 1, 1000),
+    resendRateLimit: boundedInt("EMAIL_RESEND_RATE_LIMIT", 5, 1, 1000),
+  },
   databaseUrl,
   jwtSecret,
   jwtRefreshSecret: optional("JWT_REFRESH_SECRET", jwtSecret + "_refresh"),
   clientUrls,
+  /** STUN/TURN servers the browser uses to find a call peer. See lib/ice.ts. */
+  rtc,
   /** Absolute, CWD-independent directory where uploaded files are written.
    *  Override with UPLOAD_DIR (e.g. a persistent disk mount in production). */
   uploadDir: process.env.UPLOAD_DIR

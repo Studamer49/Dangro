@@ -5,49 +5,72 @@ import { useCallStore } from "@/stores/callStore";
 import { devAuthEnabled, devUser } from "@/lib/devAuth";
 import type { User } from "@/types";
 
+/**
+ * What signup returns.
+ *
+ * Deliberately not a session: the account exists but cannot be signed in to
+ * until the emailed link is clicked, so the caller shows the "check your
+ * inbox" notice and routes to login rather than into the app.
+ */
+export interface RegisterResult {
+  verificationRequired: boolean;
+  /** The masked address the link was sent to. */
+  email: string;
+}
+
 interface AuthState {
   user: User | null;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (email: string, password: string) => Promise<void>;
-  register: (username: string, email: string, password: string) => Promise<void>;
+  register: (username: string, email: string, password: string) => Promise<RegisterResult>;
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
   setUser: (user: User | null) => void;
+  /**
+   * Set when the server refuses the session because the address is not
+   * verified. Cleared by a successful login or verification.
+   */
+  unverifiedEmail: string | null;
+  clearUnverifiedEmail: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isLoading: true,
   isAuthenticated: false,
+  unverifiedEmail: null,
 
   login: async (email, password) => {
     // Local dev runs without a backend, so any credentials "succeed" and land
     // the developer in the app. Never reachable in a production build.
     if (devAuthEnabled) {
-      set({ user: devUser, isAuthenticated: true });
+      set({ user: devUser, isAuthenticated: true, unverifiedEmail: null });
       return;
     }
     const { data } = await api.post("/auth/login", { email, password });
     localStorage.setItem("accessToken", data.accessToken);
-    set({ user: data.user, isAuthenticated: true });
+    set({ user: data.user, isAuthenticated: true, unverifiedEmail: null });
     connectSocket(data.accessToken);
   },
 
   register: async (username, email, password) => {
     if (devAuthEnabled) {
       set({ user: devUser, isAuthenticated: true });
-      return;
+      return { verificationRequired: false, email };
     }
-    const { data } = await api.post("/auth/register", {
-      username,
-      email,
-      password,
-    });
-    localStorage.setItem("accessToken", data.accessToken);
-    set({ user: data.user, isAuthenticated: true });
-    connectSocket(data.accessToken);
+    // No token is stored here. The server issues none until the address is
+    // verified, and writing one anyway would leave the app believing it is
+    // signed in with a session that does not exist.
+    const { data } = await api.post("/auth/register", { username, email, password });
+    set({ user: null, isAuthenticated: false, unverifiedEmail: data.email ?? email });
+    return {
+      verificationRequired: Boolean(data.verificationRequired),
+      email: data.email ?? email,
+    };
   },
+
+  clearUnverifiedEmail: () => set({ unverifiedEmail: null }),
 
   logout: async () => {
     // Ends the session locally first: any refresh still in flight would
@@ -85,9 +108,20 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
       const { data } = await api.get("/auth/me");
       const currentToken = localStorage.getItem("accessToken");
-      set({ user: data.user, isAuthenticated: true, isLoading: false });
+      set({ user: data.user, isAuthenticated: true, isLoading: false, unverifiedEmail: null });
       connectSocket(currentToken || token);
     } catch (err) {
+      // The server refused this session because the address is not verified —
+      // an email change can do that to a perfectly valid token. Send the user
+      // back to login with the address in hand rather than leaving them on a
+      // blank screen.
+      if (apiErrorCode(err) === "EMAIL_NOT_VERIFIED") {
+        const known = get().user?.email ?? null;
+        localStorage.removeItem("accessToken");
+        disconnectSocket();
+        set({ user: null, isAuthenticated: false, isLoading: false, unverifiedEmail: known });
+        return;
+      }
       // Only a real auth failure ends the session. Being offline, a 500 or
       // the global rate limiter must not delete a still-valid token and bounce
       // the user to /login.

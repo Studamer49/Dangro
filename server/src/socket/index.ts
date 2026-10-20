@@ -1,11 +1,14 @@
-﻿import { Server as SocketServer, Socket } from "socket.io";
+import { Server as SocketServer, Socket } from "socket.io";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { config } from "../config.js";
 import { prisma } from "../prisma.js";
+import { JWT_ALGORITHM } from "../middleware/auth.js";
 
 interface AuthPayload {
   userId: string;
+  /** Session version at issue time, so a revoked session cannot reconnect. */
+  sv?: number;
 }
 
 const channelRef = z.object({ channelId: z.string().uuid() });
@@ -30,7 +33,7 @@ async function isChannelMember(channelId: string, userId: string): Promise<boole
     where: { id: channelId },
     select: { server: { select: { members: { where: { userId }, select: { id: true } } } } },
   });
-  // `server` is null when the channel outlives its server — possible on the
+  // `server` is null when the channel outlives its server � possible on the
   // MongoDB backend, which enforces no foreign keys. Prisma's types call it
   // non-nullable, so this is the only thing stopping a TypeError (and an
   // unhandled rejection in the async handlers below).
@@ -41,7 +44,7 @@ async function isChannelMember(channelId: string, userId: string): Promise<boole
  * Wraps an async socket listener so a rejected database call cannot escape.
  *
  * Socket.IO does not await listeners, and `process.on("unhandledRejection")` in
- * index.ts swallows the rejection rather than crashing — so without this the
+ * index.ts swallows the rejection rather than crashing � so without this the
  * event is dropped in total silence and the socket stays half-joined. The
  * client gets a clear error instead.
  */
@@ -120,7 +123,7 @@ async function canContact(fromUserId: string, toUserId: string): Promise<boolean
  *
  * Signalling is relayed only between the two participants named in the
  * entry, so `webrtc_*` and `ice_candidate` need no database round trip per
- * event — which matters, because a single call emits dozens of ICE
+ * event � which matters, because a single call emits dozens of ICE
  * candidates.
  */
 interface ActiveCall {
@@ -170,19 +173,66 @@ function parse<T extends z.ZodType>(schema: T, data: unknown): z.output<T> | nul
 }
 
 export function setupSocketHandlers(io: SocketServer): void {
-  io.use((socket: Socket, next) => {
+  io.use(async (socket: Socket, next) => {
     const token = socket.handshake.auth.token;
     if (typeof token !== "string" || !token) {
       next(new Error("Authentication error"));
       return;
     }
 
+    let decoded: AuthPayload;
     try {
-      const decoded = jwt.verify(token, config.jwtSecret) as AuthPayload;
+      // Same pinned algorithm the HTTP middleware uses, so a token that would
+      // be rejected by `authenticate` can never open a socket.
+      decoded = jwt.verify(token, config.jwtSecret, {
+        algorithms: [JWT_ALGORITHM],
+      }) as AuthPayload;
       if (!decoded.userId) throw new Error("missing userId");
+    } catch {
+      next(new Error("Authentication error"));
+      return;
+    }
+
+    // The signature alone is not enough. A socket connection is long-lived �
+    // it can outlive the 15-minute life of the token that opened it � so the
+    // two things that can invalidate a session must be checked here, at
+    // connect time, rather than left to the next HTTP request:
+    //
+    //   - the session version, so a password change, password reset or address
+    //     change retires sockets opened with a token minted before it;
+    //   - the account itself, so a deleted user's token cannot connect and
+    //     cannot be used to flip a user row to "online".
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.userId },
+        select: { authSessionVersion: true, emailVerified: true },
+      });
+
+      if (!user) {
+        next(new Error("Authentication error"));
+        return;
+      }
+
+      const currentVersion = typeof user.authSessionVersion === "number" ? user.authSessionVersion : 0;
+      if ((decoded.sv ?? 0) !== currentVersion) {
+        next(new Error("Authentication error"));
+        return;
+      }
+
+      // Absent means a legacy account predating verification; only an explicit
+      // `false` blocks, matching the HTTP routes.
+      if (user.emailVerified === false) {
+        next(new Error("Authentication error"));
+        return;
+      }
+
       socket.data.userId = decoded.userId;
       next();
-    } catch {
+    } catch (err) {
+      // A database error must fail the handshake closed rather than open:
+      // allowing it through would admit any user whose id happens to be in a
+      // valid token, including users who no longer exist.
+      console.error("[socket] handshake lookup failed:", err);
       next(new Error("Authentication error"));
     }
   });
@@ -228,12 +278,20 @@ export function setupSocketHandlers(io: SocketServer): void {
         socket.emit("error", { message: "Invalid message payload" });
         return;
       }
-
-        if (!(await isChannelMember(data.channelId, userId))) {
-          socket.emit("error", { message: "You cannot send messages to this channel" });
-          return;
-        }
-
+      // Membership is re-checked on every send, not only on join. A socket that
+      // joined while the user was a member keeps its socket.io rooms after they
+      // Membership is re-checked on every send, not only on join. A socket that
+      // joined while the user was a member keeps its socket.io rooms after they
+      // are kicked or banned, so without this they would go on receiving
+      // `new_message` broadcasts for a server they no longer belong to, and
+      // could keep posting into it. Leaving the rooms here closes the read and
+      // the write side together.
+      if (!(await isChannelMember(data.channelId, userId))) {
+        void socket.leave(`channel:${data.channelId}`);
+        void socket.leave(`voice:${data.channelId}`);
+        socket.emit("error", { message: "You cannot send messages to this channel" });
+        return;
+      }
         if (data.replyToId) {
           const target = await prisma.message.findUnique({
             where: { id: data.replyToId },
@@ -285,7 +343,7 @@ export function setupSocketHandlers(io: SocketServer): void {
       const room = `voice:${data.channelId}`;
       // Read the room BEFORE this socket joins it: the members already inside
       // only learn about the newcomer from the broadcast below, so the
-      // newcomer is the only side that needs — and can be given — the roster.
+      // newcomer is the only side that needs � and can be given � the roster.
       const existing = await io.in(room).fetchSockets();
       const peers = existing
         .map((member) => member.data.userId as string | undefined)
@@ -352,14 +410,27 @@ export function setupSocketHandlers(io: SocketServer): void {
     // else's call simply by naming their id.
     safe(socket, "call_invite", async (payload: unknown) => {
       const data = parse(callInvite, payload);
-      if (!data) return;
+      if (!data) {
+        socket.emit("call_unavailable", { targetUserId: null, reason: "bad_request" });
+        return;
+      }
 
       const now = Date.now();
       pruneCalls(now);
       // A ringtone is an interruption to a real person, so an invite is rate
       // limited as well as authorised.
-      if (rateLimited(inviteHits, 5, 60_000, now)) return;
-      if (!(await canContact(userId, data.targetUserId))) return;
+      if (rateLimited(inviteHits, 5, 60_000, now)) {
+        socket.emit("call_unavailable", { targetUserId: data.targetUserId, reason: "rate_limited" });
+        return;
+      }
+      if (!(await canContact(userId, data.targetUserId))) {
+        // Saying nothing is what made this feel broken: the caller's call window
+        // opened, rang out into an empty room and sat on "Ringing..." for ever
+        // with no way to tell a refusal from someone who never answered. The
+        // reason is enough for the client to explain itself.
+        socket.emit("call_unavailable", { targetUserId: data.targetUserId, reason: "not_allowed" });
+        return;
+      }
 
       activeCalls.set(data.roomId, {
         callerId: userId,
@@ -372,13 +443,27 @@ export function setupSocketHandlers(io: SocketServer): void {
         callType: data.callType,
         roomId: data.roomId,
       });
+
+      // Nobody home: ringing into an account with no live socket is the same
+      // dead end as a refusal, and the caller deserves to be told now rather
+      // than after the full ring-out.
+      const online = await io.in(`user:${data.targetUserId}`).fetchSockets();
+      if (online.length === 0) {
+        activeCalls.delete(data.roomId);
+        socket.emit("call_unavailable", { targetUserId: data.targetUserId, reason: "offline" });
+      }
     });
 
     socket.on("call_accept", (payload: unknown) => {
       const data = parse(roomTarget, payload);
       if (!data) return;
       const call = activeCalls.get(data.roomId);
-      if (!call) return;
+      if (!call) {
+        // The invite expired or was already torn down. Without this the callee's
+        // call window opened onto a conversation that no longer exists.
+        socket.emit("call_unavailable", { targetUserId: data.targetUserId, reason: "expired" });
+        return;
+      }
       if (call.calleeId !== userId || call.callerId !== data.targetUserId) return;
       io.to(`user:${data.targetUserId}`).emit("call_accept", { accepterId: userId, roomId: data.roomId });
     });
@@ -443,7 +528,7 @@ export function setupSocketHandlers(io: SocketServer): void {
       const remaining = io.sockets.adapter.rooms.get(`user:${userId}`)?.size ?? 0;
 
       // Still connected elsewhere. Relaying must keep working for this user,
-      // so leave their call state alone — otherwise closing a second tab
+      // so leave their call state alone � otherwise closing a second tab
       // silently tears down a call the peer is still sitting in.
       if (remaining > 0) return;
 

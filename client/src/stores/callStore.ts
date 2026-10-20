@@ -30,6 +30,16 @@ interface CallState {
   isVideoOff: boolean;
   isScreenSharing: boolean;
   /**
+   * Why a call could not even be placed, in words the UI can show.
+   *
+   * A refused or unroutable invite used to be dropped silently by the server,
+   * which left the caller's window sitting on "Ringing..." indefinitely —
+   * indistinguishable from someone who simply never picked up. The server now
+   * answers with a reason, and this surfaces it.
+   */
+  callUnavailableReason: string | null;
+
+  /**
    * Why the call is not working, in words the UI can show.
    *
    * A call that fails to connect used to present as a black rectangle with the
@@ -49,6 +59,8 @@ interface CallState {
   setLocalScreenStream: (stream: MediaStream | null) => void;
   setRemoteScreenStream: (stream: MediaStream | null) => void;
   setConnectionStatus: (status: string | null) => void;
+  /** Records why an invite was refused; `null` clears it. */
+  setCallUnavailable: (reason: string | null) => void;
   setScreenSharing: (sharing: boolean) => void;
   toggleMute: () => void;
   toggleVideo: () => void;
@@ -71,6 +83,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   isVideoOff: false,
   isScreenSharing: false,
   connectionStatus: null,
+  callUnavailableReason: null,
 
   initiateCall: (targetUserId, targetUser, callType) => {
     const roomId = `call_${Date.now()}_${Math.random().toString(36).slice(2)}`;
@@ -85,6 +98,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       targetUser,
       isMuted: false,
       isVideoOff: false,
+      callUnavailableReason: null,
     });
   },
 
@@ -106,6 +120,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       incomingCall: null,
       isMuted: false,
       isVideoOff: false,
+      callUnavailableReason: null,
     });
   },
 
@@ -147,6 +162,7 @@ export const useCallStore = create<CallState>((set, get) => ({
       isVideoOff: false,
       isScreenSharing: false,
       connectionStatus: null,
+      callUnavailableReason: null,
     });
   },
 
@@ -155,6 +171,7 @@ export const useCallStore = create<CallState>((set, get) => ({
   setLocalScreenStream: (stream) => set({ localScreenStream: stream }),
   setRemoteScreenStream: (stream) => set({ remoteScreenStream: stream }),
   setConnectionStatus: (connectionStatus) => set({ connectionStatus }),
+  setCallUnavailable: (callUnavailableReason) => set({ callUnavailableReason }),
   setScreenSharing: (isScreenSharing) => set({ isScreenSharing }),
 
   toggleMute: () => {

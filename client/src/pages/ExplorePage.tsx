@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import api, { apiErrorMessage } from "@/lib/api";
 import { useToast } from "@/stores/toastStore";
@@ -36,6 +36,7 @@ export default function ExplorePage() {
   const [postsLoading, setPostsLoading] = useState(true);
   const [postsError, setPostsError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const pendingLikes = useRef<Set<string>>(new Set());
 
   const [servers, setServers] = useState<Server[]>([]);
   const [serversLoading, setServersLoading] = useState(true);
@@ -140,6 +141,13 @@ export default function ExplorePage() {
   };
 
   const handleLike = async (post: Post) => {
+    // `POST /posts/:id/like` is a toggle, so a second click landing while the
+    // first is still in flight flips it back — the heart animates twice and
+    // ends up showing the state the user never asked for. FeedPage guards this
+    // with the same set.
+    if (pendingLikes.current.has(post.id)) return;
+    pendingLikes.current.add(post.id);
+
     const wasLiked = (post.likes?.length ?? 0) > 0;
     const previousCount = post._count?.likes ?? 0;
     const viewerLike: PostLike = {
@@ -168,6 +176,8 @@ export default function ExplorePage() {
     } catch (err) {
       apply(wasLiked, previousCount);
       toast.error(apiErrorMessage(err));
+    } finally {
+      pendingLikes.current.delete(post.id);
     }
   };
 

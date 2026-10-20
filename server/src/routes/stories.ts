@@ -9,6 +9,20 @@ import { destroyImageForUrl } from "../lib/cloudinary.js";
 
 const router = Router();
 
+/**
+ * Removes stories that have outlived `expiresAt`.
+ *
+ * This used to run inline in `GET /`, which made a read endpoint do an
+ * unbounded collection-wide delete on every request from every caller. The
+ * read already filters `expiresAt: { gt: now }`, so the sweep never affected
+ * the response — it is pure housekeeping, and housekeeping belongs on a timer
+ * (`startStorySweep` in index.ts) rather than in the request path.
+ */
+export async function purgeExpiredStories(): Promise<number> {
+  const result = await prisma.story.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+  return result.count ?? 0;
+}
+
 const createStorySchema = z.object({
   mediaUrl: mediaUrl(),
   mediaType: z.enum(["image", "video"]),
@@ -38,21 +52,33 @@ router.get(
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = requireUser(req);
 
-    await prisma.story.deleteMany({ where: { expiresAt: { lt: new Date() } } });
-
-    const [following, friendships] = await Promise.all([
+    const [following, friendships, blocks] = await Promise.all([
       prisma.follow.findMany({ where: { followerId: userId }, select: { followingId: true } }),
       prisma.friend.findMany({
         where: { OR: [{ userId }, { friendId: userId }] },
         select: { userId: true, friendId: true },
       }),
+      prisma.block.findMany({
+        where: { OR: [{ userId }, { blockedId: userId }] },
+        select: { userId: true, blockedId: true },
+      }),
     ]);
+
+    // A block is a wall in both directions, so either side removes the other
+    // from the story ring. Blocking does not delete the `Follow`/`Friend` rows,
+    // so without this the two lookups above kept re-admitting a blocked user.
+    const walled = new Set<string>();
+    for (const block of blocks) {
+      if (block.userId !== userId) walled.add(block.userId);
+      if (block.blockedId !== userId) walled.add(block.blockedId);
+    }
 
     const visibleIds = new Set<string>([userId, ...following.map((f) => f.followingId)]);
     for (const f of friendships) {
       visibleIds.add(f.userId);
       visibleIds.add(f.friendId);
     }
+    for (const id of walled) visibleIds.delete(id);
 
     const stories = await prisma.story.findMany({
       where: {

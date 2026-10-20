@@ -86,3 +86,64 @@ describe("Cloudinary credentials stay on the server", () => {
     expect(lib).not.toMatch(/["'][0-9a-f]{32}["']/i);
   });
 });
+
+describe("SMTP credentials stay on the server", () => {
+  it("the client source names no SMTP variable", () => {
+    const offenders = clientFiles.filter((file) => /SMTP_(HOST|USER|PASS|PORT|SECURE)/.test(fs.readFileSync(file, "utf8")));
+    expect(offenders).toEqual([]);
+  });
+
+  it("no client file imports the server mailer or config", () => {
+    const offenders = clientFiles.filter((file) =>
+      /from\s+["'].*(lib\/mailer|lib\/emailVerification|src\/config|\/config)["']/.test(fs.readFileSync(file, "utf8"))
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("no VITE_ variable holds an SMTP credential", () => {
+    const offenders = clientEnvFiles.filter((file) =>
+      /^[^#\n]*VITE_[^=\n]*=.*(SMTP|PASSWORD|EMAIL_FROM)/im.test(fs.readFileSync(file, "utf8"))
+    );
+    expect(offenders).toEqual([]);
+  });
+
+  it("reads the mail server only from the environment", () => {
+    const lib = fs.readFileSync(path.join(SERVER_ROOT, "lib/mailer.ts"), "utf8");
+    expect(lib).toMatch(/config\.email/);
+    // No hardcoded host, and nothing shaped like a committed password.
+    expect(lib).not.toMatch(/smtp\.[a-z0-9.-]+\.[a-z]{2,}/i);
+    expect(lib).not.toMatch(/["'][A-Za-z0-9+/]{20,}={0,2}["']/);
+  });
+
+  it("never logs the password or the sender address", () => {
+    const lib = fs.readFileSync(path.join(SERVER_ROOT, "lib/mailer.ts"), "utf8");
+    // console.* must not interpolate config.email.pass or the raw recipient.
+    for (const call of lib.matchAll(/console\.(?:log|error|warn)\(([^;]*)\);/g)) {
+      expect(call[1]).not.toMatch(/config\.email\.pass\b/);
+      expect(call[1]).not.toMatch(/\$\{\s*mail\.to\b/);
+    }
+  });
+});
+
+describe("verification tokens stay out of the logs", () => {
+  const serverLibs = walk(path.join(SERVER_ROOT, "lib"), (f) => f.endsWith(".ts") && !f.endsWith(".test.ts"));
+
+  it("no server module logs a raw token or a full verification link", () => {
+    const offenders = serverLibs.filter((file) => {
+      const text = fs.readFileSync(file, "utf8");
+      return /console\.(?:log|error|warn)\([^)]*\b(?:raw|rawToken|token|verificationUrl|passwordResetUrl)\b/.test(text);
+    });
+
+    // Anything that mentions them must be masked or hashed first. Failures
+    // here mean a deploy log is one `grep` away from a working login link.
+    expect(offenders).toEqual([]);
+  });
+
+  it("the account routes log neither the token nor the recipient", () => {
+    const auth = fs.readFileSync(path.join(SERVER_ROOT, "routes/auth.ts"), "utf8");
+    for (const call of auth.matchAll(/console\.(?:log|error|warn)\(([^;]*)\);/g)) {
+      expect(call[1]).not.toMatch(/\btoken\b/);
+      expect(call[1]).not.toMatch(/\buser\.email\b/);
+    }
+  });
+});

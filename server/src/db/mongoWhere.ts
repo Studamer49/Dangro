@@ -1,5 +1,5 @@
 import type { Filter, Document } from "mongodb";
-import { getModel, type ModelDef } from "./mongoSchema.js";
+import { getModel, type ModelDef, type RelationDef } from "./mongoSchema.js";
 import { sessionOpts } from "./session.js";
 
 /** Anything the query engine needs to resolve a `where` clause. */
@@ -34,6 +34,49 @@ const OPERATORS = new Set([
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Resolves Prisma's `{ relation: { ...columns } }` filter form.
+ *
+ * `MemberRole.findMany({ where: { member: { serverId } } })` means "the links
+ * whose member belongs to that server". Prisma answers it with a join; the same
+ * answer is produced here by a subquery: read the matching children, then
+ * restrict the parent to the foreign keys that point at them.
+ *
+ * Both directions of the relation have to be handled, because they store the
+ * foreign key on opposite sides:
+ *
+ *   has-many  (`Server.members`)  the key lives on the child, so the parent's
+ *                                id is matched against the children's key
+ *   belongs-to (`MemberRole.member`) the key lives on the parent, so it is
+ *                                matched against the children's ids
+ *
+ * Before this existed the form threw, and every route that used it answered
+ * 500 — `findServerOr404` is on the path that loads the channel sidebar, so
+ * opening a server failed with "Internal server error" and no channels.
+ */
+async function relationColumnFilter(
+  rel: RelationDef,
+  nested: Where,
+  ctx: QueryContext
+): Promise<Filter<Document>> {
+  const target = getModel(rel.target);
+  const childFilter = await buildFilter(target, nested, ctx);
+  const children: Document[] = await ctx
+    .collectionFor(rel.target)
+    .find(childFilter, sessionOpts())
+    .toArray();
+
+  if (rel.backKey) {
+    return { _id: { $in: children.map((child) => child[rel.backKey as string]) } } as Filter<Document>;
+  }
+
+  if (rel.ownKey) {
+    return { [rel.ownKey]: { $in: children.map((child) => String(child._id)) } } as Filter<Document>;
+  }
+
+  throw new Error(`Relation "${rel.name}" cannot be used as a filter because it holds no foreign key`);
 }
 
 /**
@@ -89,11 +132,30 @@ export async function buildFilter(
       continue;
     }
 
-    // Relation filters are keyed by the relation name, with the operator
-    // inside: `{ memberships: { some: { role: "owner" } } }`.
+    // Relation filters are keyed by the relation name. Two spellings exist:
+    //   `{ memberships: { some: { role: "owner" } } }` — "has at least one"
+    //   `{ memberRole: { serverId } }`             — "whose member matches this"
     const relationDef = model.relations.find((r) => r.name === key);
     if (relationDef) {
       const spec = value as Record<string, unknown>;
+      const usesSome = Object.prototype.hasOwnProperty.call(spec, "some");
+
+      if (!usesSome) {
+        // Nested-field form. Everything in the spec has to be a column of the
+        // related model; anything operator-shaped is a relation operator this
+        // engine does not implement, and silently treating `every`/`none` as a
+        // field name would match the wrong rows.
+        const operators = Object.keys(spec).filter((entry) => OPERATORS.has(entry));
+        if (operators.length > 0) {
+          throw new Error(
+            `Relation filter "${key}: { ${operators.join(", ")} }" is not supported by the MongoDB backend. Use "some", or filter on the related model's columns.`
+          );
+        }
+
+        clauses.push(await relationColumnFilter(relationDef, spec, ctx));
+        continue;
+      }
+
       const unsupported = Object.keys(spec).filter((op) => op !== "some");
       if (unsupported.length > 0) {
         throw new Error(

@@ -22,6 +22,7 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [showEditModal, setShowEditModal] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const pendingLikes = useRef<Set<string>>(new Set());
 
   const isOwnProfile = !!currentUser && currentUser.id === userId;
 
@@ -110,6 +111,11 @@ export default function ProfilePage() {
   };
 
   const handleLike = async (post: Post) => {
+    // `POST /posts/:id/like` toggles, so without this guard a double click
+    // sends two toggles and the second undoes the first.
+    if (pendingLikes.current.has(post.id)) return;
+    pendingLikes.current.add(post.id);
+
     const wasLiked = (post.likes?.length ?? 0) > 0;
     const previousCount = post._count?.likes ?? 0;
     const viewerLike: PostLike = {
@@ -138,6 +144,8 @@ export default function ProfilePage() {
     } catch (err) {
       apply(wasLiked, previousCount);
       toast.error(apiErrorMessage(err));
+    } finally {
+      pendingLikes.current.delete(post.id);
     }
   };
 
@@ -353,11 +361,23 @@ export default function ProfilePage() {
                   className="glass-card group relative aspect-square cursor-pointer overflow-hidden rounded-2xl"
                 >
                   {post.media?.[0] ? (
-                    <img
-                      src={post.media[0].url}
-                      alt=""
-                      className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-105"
-                    />
+                    post.media[0].type === "image" ? (
+                      <img
+                        src={post.media[0].url}
+                        alt=""
+                        className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-105"
+                      />
+                    ) : (
+                      // Without the `image`/`video` split a video post was fed to
+                      // <img>, which renders as a broken image on the grid.
+                      <video
+                        src={post.media[0].url}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        className="h-full w-full object-cover transition-transform duration-300 ease-out group-hover:scale-105"
+                      />
+                    )
                   ) : (
                     <div className="flex h-full items-center justify-center bg-gray-800/50 p-3">
                       <p className="line-clamp-3 text-center text-xs leading-relaxed text-gray-400">

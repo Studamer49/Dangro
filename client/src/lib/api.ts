@@ -12,8 +12,24 @@ export interface ApiErrorEnvelope {
 
 const API_BASE = import.meta.env.VITE_API_URL || "/api";
 
-/** Endpoints where a 401 means "bad credentials", not "token expired". */
-const AUTH_ENDPOINTS = ["/auth/login", "/auth/register", "/auth/refresh", "/auth/logout"];
+/**
+ * Endpoints where a 401 means "bad credentials", not "token expired".
+ *
+ * The verification and password routes belong here for the same reason: they
+ * are called by people who, by definition, have no valid session yet, so
+ * reacting to a 401 with a refresh attempt only burns the auth rate limit and
+ * hides the real error.
+ */
+const AUTH_ENDPOINTS = [
+  "/auth/login",
+  "/auth/register",
+  "/auth/refresh",
+  "/auth/logout",
+  "/auth/verify-email",
+  "/auth/resend-verification",
+  "/auth/forgot-password",
+  "/auth/reset-password",
+];
 
 const api = axios.create({
   baseURL: API_BASE,

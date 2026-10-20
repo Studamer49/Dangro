@@ -10,6 +10,16 @@ export interface User {
   isPrivate?: boolean;
   status: "online" | "idle" | "dnd" | "offline";
   lastSeen: string;
+  /**
+   * Whether the email address has been confirmed.
+   *
+   * `false` means "signed up, link not clicked yet" and the server refuses to
+   * issue a session for it. `null`/absent is an account that predates email
+   * verification and is trusted — the API resolves it for you, so treat only
+   * an explicit `false` as unverified.
+   */
+  emailVerified?: boolean | null;
+  emailVerifiedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 }

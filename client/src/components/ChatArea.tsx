@@ -56,7 +56,23 @@ export default function ChatArea() {
       // that arrives after the user switched channels is dropped rather than
       // written into the new channel's view.
       if (activeChannelRef.current !== requestChannelId) return;
-      setMessages(data.messages);
+      // A poll must not make a just-sent message disappear. The optimistic
+      // `temp-` bubble is swapped for the real one by `handleNewMessage`; a
+      // poll response landing in between used to replace the array wholesale
+      // and erase it. Kept only when the server does not already carry it,
+      // using the same author+content match as the upsert above.
+      const next = data.messages as Message[];
+      setMessages((prev) => {
+        const pending = prev.filter(
+          (m) =>
+            m.id.startsWith("temp-") &&
+            !next.some((s) => s.authorId === m.authorId && s.content.trim() === m.content.trim())
+        );
+        if (pending.length === 0) return next;
+        return [...next, ...pending].sort(
+          (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+        );
+      });
       setCanManageMessages(Boolean(data.canManageMessages));
     } catch {
       // Silent: the next poll retries, and the messages already on screen stay.

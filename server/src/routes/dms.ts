@@ -120,6 +120,28 @@ async function isBlockedEitherWay(a: string, b: string): Promise<boolean> {
   return !!block;
 }
 
+/**
+ * Membership plus the block wall, for every route that reads or continues a
+ * thread.
+ *
+ * Only the two write paths checked for a block, so a block stopped new
+ * messages but left the whole history readable — which contradicts the rule
+ * this file states above. Every read, edit and reaction now goes through here.
+ */
+async function assertConversationOpen(conversationId: string, userId: string) {
+  const conversation = await assertConversationMember(conversationId, userId);
+  const otherUserId = conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
+  if (await isBlockedEitherWay(userId, otherUserId)) {
+    throw AppError.of("FORBIDDEN", "You can no longer access this conversation");
+  }
+  return conversation;
+}
+
+/** The other party in a conversation the caller belongs to. */
+function counterpart(conversation: { user1Id: string; user2Id: string }, userId: string): string {
+  return conversation.user1Id === userId ? conversation.user2Id : conversation.user1Id;
+}
+
 router.get(
   "/",
   authenticate,
@@ -139,6 +161,18 @@ router.get(
       },
       orderBy: { lastMessageAt: "desc" },
     });
+
+    // Everyone on either side of a block involving the caller. A block is a
+    // wall, so it hides the thread from both the blocker and the blocked.
+    const blocks = await prisma.block.findMany({
+      where: { OR: [{ userId }, { blockedId: userId }] },
+      select: { userId: true, blockedId: true },
+    });
+    const walledIds = new Set<string>();
+    for (const block of blocks) {
+      if (block.userId !== userId) walledIds.add(block.userId);
+      if (block.blockedId !== userId) walledIds.add(block.blockedId);
+    }
 
     // One query for every conversation's unread count.
     //
@@ -166,21 +200,27 @@ router.get(
     }
 
     const result = await Promise.all(
-      conversations.map(async (c) => {
-        const otherUser = c.user1Id === userId ? c.user2 : c.user1;
-        const lastMessage = c.messages[0] || null;
-        const unreadCount = unreadByConversation.get(c.id) ?? 0;
+      conversations
+        // A block has to hide the thread from the list as well as from the
+        // conversation itself: the list carries the most recent message, so
+        // filtering only the per-conversation read would leave the newest
+        // message readable to exactly the person who asked not to be reached.
+        .filter((c) => !walledIds.has(counterpart(c, userId)))
+        .map(async (c) => {
+          const otherUser = c.user1Id === userId ? c.user2 : c.user1;
+          const lastMessage = c.messages[0] || null;
+          const unreadCount = unreadByConversation.get(c.id) ?? 0;
 
-        return {
-          id: c.id,
-          otherUser,
-          lastMessage,
-          lastMessageAt: c.lastMessageAt,
-          unreadCount,
-          status: c.status,
-          requestSenderId: c.requestSenderId,
-        };
-      })
+          return {
+            id: c.id,
+            otherUser,
+            lastMessage,
+            lastMessageAt: c.lastMessageAt,
+            unreadCount,
+            status: c.status,
+            requestSenderId: c.requestSenderId,
+          };
+        })
     );
 
     ok(res, { conversations: result });
@@ -260,7 +300,7 @@ router.get(
     const userId = requireUser(req);
     const conversationId = paramId(req.params.conversationId, "conversation id");
 
-    await assertConversationMember(conversationId, userId);
+    await assertConversationOpen(conversationId, userId);
 
     const messages = await prisma.directMessage.findMany({
       where: { conversationId },
@@ -389,7 +429,7 @@ router.patch(
       throw AppError.of("FORBIDDEN", "You can only edit your own messages");
     }
 
-    const conversation = await assertConversationMember(message.conversationId, userId);
+    const conversation = await assertConversationOpen(message.conversationId, userId);
 
     const updated = await prisma.directMessage.update({
       where: { id: messageId },
@@ -430,7 +470,7 @@ router.delete(
       throw AppError.of("FORBIDDEN", "You can only delete your own messages");
     }
 
-    const conversation = await assertConversationMember(message.conversationId, userId);
+    const conversation = await assertConversationOpen(message.conversationId, userId);
 
     // Everything above is the existing authorisation chain and is unchanged.
     // Only once the caller is confirmed to own the message does any external
@@ -477,7 +517,7 @@ router.post(
     const message = await prisma.directMessage.findUnique({ where: { id: messageId } });
     if (!message) throw AppError.of("NOT_FOUND", "Message not found");
 
-    await assertConversationMember(message.conversationId, userId);
+    await assertConversationOpen(message.conversationId, userId);
 
     const existing = await prisma.directReaction.findUnique({
       where: { userId_directMessageId_emoji: { userId, directMessageId: messageId, emoji } },

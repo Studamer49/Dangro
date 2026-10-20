@@ -144,10 +144,13 @@ curl -s http://localhost:3001/api/health
 curl -s -X POST http://localhost:3001/api/auth/register \
   -H 'Content-Type: application/json' \
   -d '{"username":"mongotest","email":"mongotest@example.com","password":"password123"}'
+# -> 201, and NO tokens: the account is unverified until the emailed link is
+#    clicked. Needs the SMTP_* variables in EMAIL.md.
 ```
 
-Sign up in the browser, create a server and a channel, post a message, then
-confirm it landed in Mongo:
+Sign up in the browser, click the emailed verification link (signup returns no
+session until you do — see [`EMAIL.md`](./EMAIL.md)), then create a server and a
+channel, post a message, and confirm it landed in Mongo:
 
 ```bash
 mongosh
@@ -266,6 +269,54 @@ foreign-key indexes declared in `mongoSchema.ts`, so there is no migration step.
 Note the consequence: unique constraints only exist once the server has started
 at least once against that cluster.
 
+## 7. Email verification on MongoDB
+
+Users gained the verification columns with no migration and no backfill, which
+is only safe because of one deliberate decision worth knowing about:
+
+**A user document with no `emailVerified` field is a legacy account and is
+trusted.** Only `POST /auth/register` writes an explicit `false`, and that is
+the only thing that makes an account unverified. Deploying this feature
+therefore does **not** sign anyone out — no `updateMany`, no data rewrite, and
+nothing to roll back if you change your mind.
+
+The same decision is expressed in `prisma/schema.prisma` as a **nullable,
+defaultless** `Boolean?`, so `null` means the same thing on both backends. Do
+not "tidy" either side into `NOT NULL DEFAULT false`: that single change locks
+out every pre-existing account until they click a link they never received.
+
+Two indexes back the feature, both created on boot by `ensureIndexes`:
+
+| Index | Collection | Why |
+|---|---|---|
+| `email_verification_token` | `users` | `users.emailVerificationTokenHash` |
+| `password_reset_token` | `users` | `users.passwordResetTokenHash` |
+
+Without them, every link click is a collection scan — which turns "open the link
+in my email" into a slow request once the user collection is large.
+
+Verification state lives **on the user document**, not in a side collection, so
+claiming a token is a single conditional write inside one document and needs no
+transaction:
+
+```js
+db.users.updateMany(
+  { emailVerificationTokenHash: sha256, emailVerificationUsedAt: null, emailVerified: false },
+  { $set: { emailVerified: true, emailVerifiedAt: now, emailVerificationUsedAt: now } }
+)
+```
+
+That is the whole single-use guarantee: the filter names the hash, the unused
+marker, the verified flag and a live expiry, so exactly one concurrent request
+can match. Two simultaneous clicks cannot both verify.
+
+The existing `uniq_email` and `uniq_username` indexes already cover uniqueness.
+`uniq_email` is a unique index on *normalised* addresses because the routes
+lower-case and trim on every write, so `Bob@Example.com` and `bob@example.com`
+cannot both exist. Usernames are stored as typed and checked case-insensitively
+by the route, because MongoDB's unique indexes are byte-exact and a collation
+index would change comparison semantics everywhere else.
+
 ---
 
 ## Behaviour differences from the PostgreSQL backend
@@ -284,7 +335,9 @@ at least once against that cluster.
 - **Unique constraints are not enforced by the database.** `mongoSchema.ts`
   declares them so `findUnique` can build a compound filter, but a duplicate
   insert will not be rejected. The routes already check for existing records
-  before creating, which covers the current call sites.
+  before creating, which covers the current call sites. (`ensureIndexes` does
+  create the unique indexes, so a duplicate is normally caught as a duplicate-key
+  error, which `lib/http.ts` maps to `CONFLICT` rather than a 500.)
 - **Unsupported query shapes throw loudly** instead of silently returning the
   wrong rows: relation filters other than `some` (`every`, `none`), nested
   writes, `createMany`, `aggregate`, and any field missing from

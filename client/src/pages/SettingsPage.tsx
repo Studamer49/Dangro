@@ -1,6 +1,9 @@
 import { useSettingsStore } from "@/stores/settingsStore";
 import { useAuthStore } from "@/stores/authStore";
 import EditProfileForm from "@/components/profile/EditProfileForm";
+import EmailVerificationCard from "@/components/account/EmailVerificationCard";
+import ChangePasswordCard from "@/components/account/ChangePasswordCard";
+import ChangeEmailCard from "@/components/account/ChangeEmailCard";
 import type {
   Theme,
   AccentColor,
@@ -57,36 +60,51 @@ export default function SettingsPage() {
       <div className="glass w-60 shrink-0 overflow-y-auto border-r p-4">
         <h2 className="mb-4 text-base font-semibold tracking-tight text-white">Settings</h2>
         <nav className="space-y-1">
-          <SectionLink label="Account" />
-          <SectionLink label="Appearance" />
-          <SectionLink label="Chat" />
-          <SectionLink label="Privacy" />
+          <SectionLink label="Account" target="settings-account" />
+          <SectionLink label="Appearance" target="settings-appearance" />
+          <SectionLink label="Chat" target="settings-chat" />
+          <SectionLink label="Privacy" target="settings-privacy" />
         </nav>
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-8">
         <div className="mx-auto max-w-3xl space-y-6">
-          <section className="glass-panel rounded-2xl p-6 animate-fade-up">
+          <section id="settings-account" className="glass-panel scroll-mt-6 rounded-2xl p-6 animate-fade-up">
             <h3 className="eyebrow">Account</h3>
             <div className="mt-4 space-y-4">
-              <div className="glass-card rounded-2xl p-4">
-                <p className="text-sm font-semibold tracking-tight text-white">Email</p>
-                <p className="mt-1 break-all text-sm text-gray-300">
-                  {currentUser?.email ?? "—"}
-                </p>
-                <p className="mt-2 text-xs leading-relaxed text-gray-500">
-                  Your email address is used to sign in and cannot be changed here.
-                </p>
-              </div>
+              {/* Verification first: an unconfirmed address is the one thing
+                  here that blocks the others working at all. */}
               {currentUser ? (
-                <EditProfileForm user={currentUser} />
+                <EmailVerificationCard />
               ) : (
-                <p className="text-sm text-gray-400">Sign in to edit your profile.</p>
+                <p className="text-sm text-gray-400">Sign in to manage your account.</p>
               )}
+
+              {currentUser && <ChangeEmailCard currentEmail={currentUser.email} />}
+
+              {currentUser ? (
+                <ChangePasswordCard />
+              ) : (
+                <p className="text-sm text-gray-400">Sign in to change your password.</p>
+              )}
+
+              <div className="glass-card rounded-2xl p-4">
+                <p className="text-sm font-semibold tracking-tight text-white">Profile</p>
+                <p className="mt-1 text-xs leading-relaxed text-gray-500">
+                  Your username, bio, avatar and banner.
+                </p>
+                {currentUser ? (
+                  <div className="mt-4">
+                    <EditProfileForm user={currentUser} />
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-gray-400">Sign in to edit your profile.</p>
+                )}
+              </div>
             </div>
           </section>
 
-          <section className="glass-panel rounded-2xl p-6 animate-fade-up">
+          <section id="settings-appearance" className="glass-panel scroll-mt-6 rounded-2xl p-6 animate-fade-up">
             <h3 className="eyebrow">Theme</h3>
             <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
               {themes.map((t) => (
@@ -250,7 +268,7 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          <section className="glass-panel rounded-2xl p-6 animate-fade-up">
+          <section id="settings-chat" className="glass-panel scroll-mt-6 rounded-2xl p-6 animate-fade-up">
             <h3 className="eyebrow">Chat</h3>
             <div className="mt-4 space-y-3">
               <div className="glass-card rounded-2xl p-5">
@@ -283,7 +301,7 @@ export default function SettingsPage() {
             </div>
           </section>
 
-          <section className="glass-panel rounded-2xl p-6 animate-fade-up">
+          <section id="settings-privacy" className="glass-panel scroll-mt-6 rounded-2xl p-6 animate-fade-up">
             <h3 className="eyebrow">Privacy</h3>
             <div className="mt-4 space-y-3">
               <ToggleRow
@@ -312,9 +330,15 @@ export default function SettingsPage() {
   );
 }
 
-function SectionLink({ label }: { label: string }) {
+function SectionLink({ label, target }: { label: string; target: string }) {
   return (
-    <button className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-gray-400 transition-all duration-200 ease-out hover:bg-white/5 hover:text-white">
+    <button
+      type="button"
+      onClick={() => {
+        document.getElementById(target)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }}
+      className="w-full rounded-xl px-3 py-2 text-left text-sm font-medium text-gray-400 transition-all duration-200 ease-out hover:bg-white/5 hover:text-white"
+    >
       {label}
     </button>
   );

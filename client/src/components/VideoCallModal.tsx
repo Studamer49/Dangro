@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useCallStore } from "@/stores/callStore";
-import { useWebRTC } from "@/hooks/useWebRTC";
+import { callUnavailableMessage, useWebRTC } from "@/hooks/useWebRTC";
 import { useToast } from "@/stores/toastStore";
 import { startRingtone } from "@/lib/ringtone";
 import Avatar from "@/components/Avatar";
@@ -58,6 +58,7 @@ export default function VideoCallModal() {
     toggleMute,
     toggleVideo,
     connectionStatus,
+    callUnavailableReason,
     endCall,
   } = useCallStore();
 
@@ -124,6 +125,16 @@ export default function VideoCallModal() {
   const remoteHasVideo = !!remoteStream?.getVideoTracks().length;
 
   const anySharing = remoteSharing || localSharing;
+
+  /**
+   * Why this call is not happening, if it is not happening.
+   *
+   * `setCallUnavailable` on a refused invite also tears the call down, so this
+   * can only be non-null while the window is still open for the unanswered
+   * case — which is exactly the state that used to be indistinguishable from
+   * "still ringing".
+   */
+  const unavailableMessage = isConnected ? null : callUnavailableMessage(callUnavailableReason);
   const sharedScreen = remoteSharing ? remoteScreenStream : localSharing ? localScreenStream : null;
   const sharerCamera = remoteSharing ? remoteStream : localSharing ? localStream : null;
   // Whether the camera on screen belongs to this user (so it stays mirrored,
@@ -186,9 +197,7 @@ export default function VideoCallModal() {
                 <p className="text-xl font-semibold tracking-tight text-white">{targetUser?.username}</p>
                 <p className="tabular mt-2 text-sm text-gray-400">
                   {!isConnected
-                    ? isCaller
-                      ? "Ringing..."
-                      : "Connecting..."
+                    ? unavailableMessage ?? (isCaller ? "Ringing…" : "Connecting…")
                     : anySharing
                     ? "Screen shared"
                     : !isVideoCall
@@ -197,6 +206,20 @@ export default function VideoCallModal() {
                     ? "Connected"
                     : "Camera off"}
                 </p>
+                {unavailableMessage && (
+                  <p className="mx-auto mt-3 max-w-sm text-xs leading-relaxed text-amber-200/90">
+                    {unavailableMessage}
+                  </p>
+                )}
+                {!!unavailableMessage && !isConnected && (
+                  <button
+                    type="button"
+                    onClick={() => endCall()}
+                    className="mt-4 rounded-full border border-white/20 px-4 py-1.5 text-xs font-semibold text-gray-300 transition-colors hover:bg-white/10 hover:text-white"
+                  >
+                    Close
+                  </button>
+                )}
               </div>
             </div>
           )}

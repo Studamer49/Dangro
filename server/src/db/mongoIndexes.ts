@@ -80,6 +80,13 @@ export async function ensureIndexes(db: Db): Promise<void> {
     if (model.name === "invite") {
       await collection.createIndex({ serverId: 1, createdAt: -1 }, { name: "server_invites" });
     }
+    // Every link a user clicks resolves to exactly one row by token hash, and
+    // without this the claim is a full collection scan — which turns "click
+    // the link in my email" into a slow request on a large deployment.
+    if (model.name === "user") {
+      await collection.createIndex({ emailVerificationTokenHash: 1 }, { name: "email_verification_token" });
+      await collection.createIndex({ passwordResetTokenHash: 1 }, { name: "password_reset_token" });
+    }
     if (model.name === "role") {
       await collection.createIndex({ serverId: 1, position: -1 }, { name: "server_order" });
       // At most one @everyone per server; it is the baseline every member

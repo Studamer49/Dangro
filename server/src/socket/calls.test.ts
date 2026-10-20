@@ -12,9 +12,17 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 
 // vi.mock factories are hoisted above module-level declarations, so the
 // stub has to be created through vi.hoisted to exist by the time it runs.
+/**
+ * `block` is part of the contact gate in `canContact` (socket/index.ts): a
+ * block in either direction stops a call. Without it here the handler threw
+ * `Cannot read properties of undefined (reading 'findFirst')`, which the
+ * socket layer swallows into a log line, so every call test failed with an
+ * empty `emitted` array instead of an error that named the missing model.
+ */
 const prismaMock = vi.hoisted(() => ({
   friend: { findFirst: vi.fn() },
   follow: { findUnique: vi.fn() },
+  block: { findFirst: vi.fn() },
   user: { update: vi.fn() },
 }));
 
@@ -56,6 +64,16 @@ function fakeIo() {
   const emitted: Emitted[] = [];
   let onConnection: ((socket: ReturnType<typeof fakeSocket>) => void) | undefined;
 
+  /**
+   * Presence has to be modelled, not stubbed away. `call_invite` asks
+   * `fetchSockets()` whether the callee is home and, if nobody is, deletes
+   * the call it just registered (socket/index.ts). Returning a hardcoded `[]`
+   * told every call it was made into the void, so the call was torn down
+   * before the test could send `call_end` or any WebRTC signal — which is why
+   * those cases failed with an empty `emitted` array.
+   */
+  const connected: Array<ReturnType<typeof fakeSocket>> = [];
+
   const io = {
     emitted,
     use: () => undefined,
@@ -63,9 +81,14 @@ function fakeIo() {
       if (event === "connection") onConnection = cb;
     },
     to: (room: string) => ({ emit: (event: string, payload: unknown) => emitted.push({ room, event, payload }) }),
-    in: () => ({ fetchSockets: async () => [] as Array<{ rooms: Set<string> }> }),
+    in: (room: string) => ({
+      fetchSockets: async () => connected.filter((s) => s.rooms.has(room)),
+    }),
     sockets: { adapter: { rooms: new Map<string, Set<string>>() } },
-    connect: (socket: ReturnType<typeof fakeSocket>) => onConnection?.(socket),
+    connect: (socket: ReturnType<typeof fakeSocket>) => {
+      connected.push(socket);
+      onConnection?.(socket);
+    },
   };
 
   return io;
@@ -75,12 +98,21 @@ function fakeIo() {
 function asFriends() {
   prismaMock.friend.findFirst.mockResolvedValue({ id: "edge-1" });
   prismaMock.follow.findUnique.mockResolvedValue(null);
+  prismaMock.block.findFirst.mockResolvedValue(null);
 }
 
 /** Makes them strangers: no friendship, no follow. */
 function asStrangers() {
   prismaMock.friend.findFirst.mockResolvedValue(null);
   prismaMock.follow.findUnique.mockResolvedValue(null);
+  prismaMock.block.findFirst.mockResolvedValue(null);
+}
+
+/** Friends, but one has blocked the other. */
+function asBlocked() {
+  prismaMock.friend.findFirst.mockResolvedValue({ id: "edge-1" });
+  prismaMock.follow.findUnique.mockResolvedValue(null);
+  prismaMock.block.findFirst.mockResolvedValue({ id: "block-1" });
 }
 
 const A = "aaaaaaaa-1111-4111-8111-111111111111";
@@ -97,6 +129,10 @@ beforeEach(() => {
   // cases or one test's call authorises the next test's signalling.
   resetActiveCalls();
   prismaMock.user.update.mockResolvedValue({});
+  // `mockClear` keeps implementations, so a default here is what stops a test
+  // that forgets to pick a relationship from inheriting the previous one's
+  // `block` result.
+  prismaMock.block.findFirst.mockResolvedValue(null);
 });
 
 describe("call_invite", () => {
@@ -124,6 +160,46 @@ describe("call_invite", () => {
     await a.fire("call_invite", { targetUserId: ATTACKER, callType: "voice", roomId: nextRoom() });
 
     expect(io.emitted.filter((e) => e.event === "call_invite")).toHaveLength(0);
+  });
+
+  it("is dropped when either side has blocked the other", async () => {
+    // Friendship alone must not authorise the call: a blocker who is still a
+    // friend would otherwise be reachable by ringing them instead of DMing.
+    asBlocked();
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    io.connect(a);
+
+    await a.fire("call_invite", { targetUserId: B, callType: "voice", roomId: nextRoom() });
+
+    expect(io.emitted.filter((e) => e.event === "call_invite")).toHaveLength(0);
+  });
+
+  it("tears the call down when the callee has no live socket", async () => {
+    // Ringing an account nobody is sitting in is the same dead end as a
+    // refusal, so the call is dropped and the caller told why. B never
+    // connects here, which is what `fetchSockets` reports.
+    asFriends();
+    const io = fakeIo();
+    setupSocketHandlers(io as never);
+    const a = fakeSocket(A);
+    io.connect(a);
+
+    await a.fire("call_invite", { targetUserId: B, callType: "voice", roomId: nextRoom() });
+
+    expect(a.emitted).toContainEqual(
+      expect.objectContaining({
+        event: "call_unavailable",
+        payload: { targetUserId: B, reason: "offline" },
+      })
+    );
+
+    // And the dropped call leaves nothing to signal on.
+    io.emitted.length = 0;
+    a.emitted.length = 0;
+    await a.fire("webrtc_offer", { targetUserId: B, signal: { sdp: "x" } });
+    expect(io.emitted.filter((e) => e.event === "webrtc_offer")).toHaveLength(0);
   });
 
   it("cannot be used to ring one person repeatedly", async () => {
@@ -191,6 +267,8 @@ describe("call_end", () => {
     setupSocketHandlers(io as never);
     const a = fakeSocket(A);
     io.connect(a);
+    // B has to be home, otherwise `call_invite` tears the call down as offline.
+    io.connect(fakeSocket(B));
 
     await a.fire("call_invite", { targetUserId: B, callType: "video", roomId: nextRoom() });
     io.emitted.length = 0;
@@ -279,6 +357,7 @@ describe("WebRTC signalling", () => {
     setupSocketHandlers(io as never);
     const a = fakeSocket(A);
     io.connect(a);
+    io.connect(fakeSocket(B));
 
     await a.fire("call_invite", { targetUserId: B, callType: "video", roomId: nextRoom() });
     io.emitted.length = 0;

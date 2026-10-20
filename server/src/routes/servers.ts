@@ -16,6 +16,11 @@ const createServerSchema = z.object({
   name: z.string().trim().min(1).max(100),
   icon: mediaUrl().optional(),
   description: z.string().trim().max(500).optional(),
+  /**
+   * `true` creates an invite-only server. Defaults to public, which is what the
+   * create form offers first and what every server that predates the column is.
+   */
+  isPrivate: z.boolean().optional().default(false),
 });
 
 const listInclude = {
@@ -46,13 +51,14 @@ router.post(
   authenticate,
   asyncHandler(async (req: AuthRequest, res) => {
     const userId = requireUser(req);
-    const { name, icon, description } = parseOrThrow(createServerSchema, req.body);
+    const { name, icon, description, isPrivate } = parseOrThrow(createServerSchema, req.body);
 
     const server = await prisma.server.create({
       data: {
         name,
         icon,
         description: description ?? null,
+        isPrivate,
         ownerId: userId,
         inviteCode: uuidv4().slice(0, 8),
         members: { create: { userId, role: "owner" } },
@@ -175,11 +181,32 @@ async function respondWithServer(
   ok(res, { server, joined, channelId: target?.id ?? null });
 }
 
+/**
+ * Explore: the public server directory.
+ *
+ * Only public servers are ever listed here. `isPrivate: { not: true }` rather
+ * than `isPrivate: false` on purpose — MongoDB `$ne` also matches documents
+ * where the field is absent, so every server created before the column existed
+ * stays discoverable instead of silently vanishing from Explore.
+ *
+ * `?q=` searches by name, and is filtered to public servers too, so the search
+ * box cannot be used to fish out the name of a private one.
+ */
 router.get(
   "/explore",
   authenticate,
-  asyncHandler(async (_req: AuthRequest, res) => {
+  asyncHandler(async (req: AuthRequest, res) => {
+    const query = String(req.query.q ?? "").trim().slice(0, 100);
+
+    const where = {
+      isPrivate: { not: true },
+      ...(query
+        ? { name: { contains: query, mode: "insensitive" as const } }
+        : {}),
+    };
+
     const servers = await prisma.server.findMany({
+      where,
       include: { _count: { select: { members: true } } },
       orderBy: { createdAt: "desc" },
       take: 50,

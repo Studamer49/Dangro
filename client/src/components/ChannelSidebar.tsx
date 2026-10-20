@@ -51,6 +51,12 @@ export default function ChannelSidebar() {
   const [newCategoryName, setNewCategoryName] = useState("");
 
   const voice = useVoiceChannel(currentUser);
+  // Pulled out under its own name because `voice` itself is a fresh object on
+  // every render, so a dependency array containing `voice.leave` is a new array
+  // entry each time and exhaustive-deps cannot tell the member apart from the
+  // object. `leave` is a useCallback whose own deps are stable, so naming it
+  // here gives the linter — and the reader — something it can actually verify.
+  const { leave: leaveVoice } = voice;
   const joinedVoiceId = voice.channelId;
   const [busy, setBusy] = useState(false);
 
@@ -77,7 +83,7 @@ export default function ChannelSidebar() {
       if (loadedServerIdRef.current && nextId && loadedServerIdRef.current !== nextId) {
         // A voice session belongs to the channel it was joined in, so the bar
         // must not survive the jump into a different server.
-        voice.leave();
+        leaveVoice();
       }
       loadedServerIdRef.current = nextId;
       setServer(data.server);
@@ -97,7 +103,7 @@ export default function ChannelSidebar() {
         navigate("/explore", { replace: true });
       }
     }
-  }, [navigate, voice.leave]);
+  }, [navigate, leaveVoice]);
 
   useEffect(() => {
     if (channelId) {
@@ -105,9 +111,9 @@ export default function ChannelSidebar() {
     } else {
       setServer(null);
       setChannels([]);
-      voice.leave();
+      leaveVoice();
     }
-  }, [channelId, fetchServerForChannel, voice.leave]);
+  }, [channelId, fetchServerForChannel, leaveVoice]);
 
   useEffect(() => {
     if (voice.error) toastRef.current.error(voice.error);
@@ -262,10 +268,6 @@ export default function ChannelSidebar() {
 
   const joinVoice = (channel: Channel) => {
     void voice.join(channel.id, channel.name);
-  };
-
-  const leaveVoice = () => {
-    voice.leave();
   };
 
   if (!server) {
@@ -593,7 +595,13 @@ export default function ChannelSidebar() {
       {showSettings && (
         <ServerSettingsModal
           server={server}
-          myRole={can("MANAGE_SERVER") ? "owner" : can("MANAGE_ROLES") ? "admin" : "member"}
+          myRole={
+            server.ownerId === currentUser?.id
+              ? "owner"
+              : can("MANAGE_ROLES")
+                ? "admin"
+                : "member"
+          }
           onClose={() => setShowSettings(false)}
           onOpenInvites={() => {
             setShowSettings(false);
@@ -614,7 +622,7 @@ export default function ChannelSidebar() {
           peers={voice.peers}
           onToggleMic={voice.toggleMic}
           onToggleCamera={voice.toggleCamera}
-          onLeave={voice.leave}
+          onLeave={leaveVoice}
         />
       )}
     </div>

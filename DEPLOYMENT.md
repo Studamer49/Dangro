@@ -50,8 +50,17 @@ GitHub  →  Render Web Service (single instance)  →  Neon PostgreSQL
    | `DATABASE_URL` | your Neon connection string |
    | `JWT_SECRET` | long random string (≥32 chars) — use Render’s *Generate* |
    | `JWT_REFRESH_SECRET` | another long random string — use Render’s *Generate* |
+   | `APP_BASE_URL` | the same value as `CLIENT_URL` — every emailed link is built from it |
+   | `SMTP_HOST` / `SMTP_PORT` | your mail provider, e.g. `smtp.resend.com` / `465` |
+   | `SMTP_USER` / `SMTP_PASS` | the credentials that provider issued |
+   | `EMAIL_FROM` | `Dangro <no-reply@yourdomain.com>`, on a **verified** domain |
 
    `JWT_REFRESH_SECRET` is optional — it defaults to `JWT_SECRET + "_refresh"` if unset, but a separate value is safer.
+
+   The SMTP variables are required for signup to work. Without them the service still
+   deploys and every other feature still works, but `/auth/register` returns 503 with an
+   explicit message and **no account is created** — see [`EMAIL.md`](./EMAIL.md) for provider
+   setup, sender-domain verification and troubleshooting.
 
 4. Deploy. The first deploy runs `prisma migrate deploy`, then boots the service and serves everything from `https://<your-service>.onrender.com`.
 
@@ -116,8 +125,11 @@ The image builds from `Dockerfile` (base → build → runtime), installs with `
 
 ## 6. Post-deployment checklist
 
-- [ ] `curl https://<service>.onrender.com/api/health` → `{"success":true,...}`
-- [ ] Register a user, confirm the email free inbox isn’t required (no email verification yet).
+- [ ] `curl https://<service>.onrender.com/api/health` → `{"success":true,...}` and `"emailDelivery":"smtp"`
+- [ ] Register a user — the page must switch to "Check your inbox", and the link in the email must point at `https://<service>.onrender.com` (not localhost).
+- [ ] Click the link → "Email verified", then sign in with the same password.
+- [ ] Try signing in *before* clicking the link → a clear "verify your email" message, not a generic failure.
+- [ ] `/forgot-password` → the reset link arrives and the new password works.
 - [ ] Create a server → it appears in the left rail → add a channel → both users can chat.
 - [ ] Upload a profile avatar and an image post; confirm `/uploads/...` URLs load.
 - [ ] Open two browsers, send a DM, see typing + read receipts over Socket.IO.

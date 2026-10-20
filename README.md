@@ -6,6 +6,7 @@ A modern communication platform inspired by Discord — real-time chat, voice ch
 
 - **Single-origin deploy:** the Express server serves the built React app, the `/api` REST API **and** Socket.IO from one URL — no CORS or static-host juggling.
 - **Uniform API envelope:** every response is `{ success: true, data }` or `{ success: false, error: { code, message } }`; the client unwraps it automatically, so components read `const { data } = await api.get(...)`.
+- **Verified accounts:** signup issues no session at all — a single-use, 30-minute link has to be clicked first. Password reset and address changes work the same way. See [`EMAIL.md`](./EMAIL.md).
 - **Resilient by default:** ErrorBoundary + toast system, sanitized persisted settings, guarded `server.name?.[0]`-style access, and a test suite that catches envelope/status regressions.
 - See [`PROJECT_AUDIT.md`](./PROJECT_AUDIT.md) for the engineering audit and [`DEPLOYMENT.md`](./DEPLOYMENT.md) for run instructions.
 
@@ -25,6 +26,7 @@ npm ci --prefix client
 
 # configure env — see the .env.example files
 # server/.env  → DATABASE_URL, JWT_SECRET (JWT_REFRESH_SECRET, CLIENT_URL, PORT)
+#                + SMTP_* and APP_BASE_URL for email verification — see EMAIL.md
 # client/.env  → VITE_API_URL=/api, VITE_WS_URL=
 
 npm run dev                 # server on :3001, client on :5173 (Vite proxies /api, /uploads, /socket.io)
@@ -153,9 +155,23 @@ owner — that is what stops two admins from demoting or removing each other.
 | `POST` | `/api/channels/:channelId/move` | moderator+ |
 
 
+| Method | Path | Who |
+|---|---|---|
+| `POST` | `/api/auth/register` | anyone — creates an **unverified** account, mails the link, issues no session |
+| `POST` | `/api/auth/login` | anyone — `403 EMAIL_NOT_VERIFIED` until the address is confirmed |
+| `POST` | `/api/auth/refresh` | refresh cookie — re-checks verification and session version against the database |
+| `GET` | `/api/auth/me` | bearer — returns the profile, or `403 EMAIL_NOT_VERIFIED` |
+| `GET` | `/api/auth/verification-status` | bearer — `{ email, emailVerified, emailVerifiedAt }` |
+| `POST` | `/api/auth/verify-email` | anyone with the link — single-use, 30 minutes |
+| `POST` | `/api/auth/resend-verification` | anyone — generic 200; `503` when the mail server is unusable; `502` when the provider refused the message |
+| `POST` | `/api/auth/forgot-password` | anyone — same three-way split |
+| `POST` | `/api/auth/reset-password` | anyone with the link — also counts as verifying the address |
+| `POST` | `/api/auth/change-password` | bearer — needs the current password; signs other devices out |
+| `POST` | `/api/auth/logout` | anyone — clears the refresh cookie |
+
 ## API status codes
 
-All errors carry `error.code`: `VALIDATION_ERROR` (400), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `NOT_FOUND` (404), `CONFLICT` (409), `PAYLOAD_TOO_LARGE` (413), `RATE_LIMITED` (429), `INTERNAL_ERROR` (500).
+All errors carry `error.code`: `VALIDATION_ERROR` (400), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `EMAIL_NOT_VERIFIED` (403), `INVALID_TOKEN` / `TOKEN_EXPIRED` / `TOKEN_ALREADY_USED` (400), `NOT_FOUND` (404), `CONFLICT` (409), `PAYLOAD_TOO_LARGE` (413), `RATE_LIMITED` (429), `UPSTREAM_ERROR` (502 — the mail provider refused a message), `SERVICE_UNAVAILABLE` (503 — email is not configured, or the mail server is unreachable), `INTERNAL_ERROR` (500).
 
 ## Deployment
 
@@ -164,8 +180,10 @@ Follow [`DEPLOYMENT.md`](./DEPLOYMENT.md). Short version: create a Render Web Se
 ## Security notes
 
 - Passwords hashed with bcrypt (cost 12); refresh tokens live in an `httpOnly`, `sameSite=lax`, production-`secure` cookie.
+- Signup issues **no** session: an account must have its emailed link clicked first. Verification tokens are 32 CSPRNG bytes with only a SHA-256 stored, are single-use, expire in 30 minutes, and are claimed with one conditional write so a double-click cannot verify twice.
+- Changing an email address or password bumps a session version carried inside every JWT, so outstanding tokens stop working.
 - Uploaded files are magic-byte sniffed and stored with generated names — never the client filename/extension.
-- Server validates membership/reply ownership on every path; `DATABASE_URL`/secrets never leave `.env` (git-ignored).
+- Server validates membership/reply ownership on every path; `DATABASE_URL`/`JWT_SECRET`/SMTP credentials never leave `.env` (git-ignored). A test fails the build if an `SMTP_*` value appears in the client bundle.
 - No analytics, no ads. Ever.
 
 ## License

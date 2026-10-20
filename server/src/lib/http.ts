@@ -6,6 +6,10 @@ export type ErrorCode =
   | "VALIDATION_ERROR"
   | "UNAUTHORIZED"
   | "FORBIDDEN"
+  | "EMAIL_NOT_VERIFIED"
+  | "INVALID_TOKEN"
+  | "TOKEN_EXPIRED"
+  | "TOKEN_ALREADY_USED"
   | "NOT_FOUND"
   | "CONFLICT"
   | "PAYLOAD_TOO_LARGE"
@@ -32,6 +36,13 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   VALIDATION_ERROR: 400,
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
+  // The credentials were right, the account is simply not usable yet. 403
+  // rather than 401: re-authenticating cannot help, and the client needs to
+  // distinguish this to offer "resend the email" instead of "try again".
+  EMAIL_NOT_VERIFIED: 403,
+  INVALID_TOKEN: 400,
+  TOKEN_EXPIRED: 400,
+  TOKEN_ALREADY_USED: 400,
   NOT_FOUND: 404,
   CONFLICT: 409,
   PAYLOAD_TOO_LARGE: 413,

@@ -25,6 +25,7 @@ const { prismaMock, store, uuid } = vi.hoisted(() => {
     channels: new Map<string, any>(),
     roles: new Map<string, any>(),
     memberRoles: new Map<string, any>(),
+    bans: new Map<string, any>(),
     users: new Map<string, any>([["owner-1", { id: "owner-1", username: "owner" }]]),
   };
 
@@ -167,6 +168,44 @@ prismaMock.invite = {
       return { count: 1 };
     }
     return { count: 0 };
+  },
+};
+
+/**
+ * `ban` is consulted by `POST /invites/:code` before it lets anyone join.
+ * It was missing here, so the route threw
+ * `Cannot read properties of undefined (reading 'findUnique')`, the error
+ * handler turned that into a 500, and all three redemption cases failed
+ * expecting 200/404.
+ */
+prismaMock.ban = {
+  create: async (args: any) => {
+    const ban = {
+      id: uuid(),
+      serverId: args.data.serverId,
+      userId: args.data.userId,
+      moderatorId: args.data.moderatorId ?? "owner-1",
+      reason: args.data.reason ?? null,
+      createdAt: new Date(),
+    };
+    store.bans.set(`${ban.serverId}:${ban.userId}`, ban);
+    return ban;
+  },
+  findUnique: async (args: any) => {
+    const key = `${args?.where?.serverId_userId?.serverId}:${args?.where?.serverId_userId?.userId}`;
+    return store.bans.get(key) ?? null;
+  },
+  findMany: async (args: any) =>
+    [...store.bans.values()].filter((b) => !args?.where?.serverId || b.serverId === args.where.serverId),
+  deleteMany: async (args: any) => {
+    let count = 0;
+    for (const [key, ban] of [...store.bans.entries()]) {
+      if (ban.serverId === args.where.serverId && ban.userId === args.where.userId) {
+        store.bans.delete(key);
+        count += 1;
+      }
+    }
+    return { count };
   },
 };
 
@@ -486,6 +525,25 @@ describe("POST /api/invites/:code", () => {
     const second = await request(app).post(`/api/invites/${code}`).set("x-user", "second-joiner");
 
     expect(second.status).toBe(404);
+  });
+
+  it("refuses someone who has been banned from the server", async () => {
+    // A valid invite link is not a way back in for a banned member, so the
+    // redemption checks the ban before it creates the membership row.
+    const created = await request(app).post(`/api/servers/${UUID}/invites`).send({ maxAge: "never" });
+    const code = created.body.data.invite.code;
+    await prismaMock.ban.create({
+      data: { serverId: UUID, userId: "banned-user", moderatorId: "owner-1" },
+    });
+
+    const res = await request(app).post(`/api/invites/${code}`).set("x-user", "banned-user");
+
+    expect(res.status).toBe(403);
+    // Members are keyed by generated id, so this has to scan the values —
+    // `has("banned-user")` would be false for every test in the file.
+    expect([...store.members.values()].some((m) => m.userId === "banned-user")).toBe(false);
+    // A refused redemption must not burn a use from the cap either.
+    expect(store.invites.get(code)!.uses).toBe(0);
   });
 });
 

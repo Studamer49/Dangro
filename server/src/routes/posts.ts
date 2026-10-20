@@ -41,6 +41,36 @@ function withViewer(userId: string) {
   return { ...baseInclude, likes: { where: { userId }, select: { id: true } } };
 }
 
+/**
+ * Which authors' posts `viewerId` is allowed to read.
+ *
+ * A private profile hides its posts from everyone except its owner and the
+ * people it has accepted a follow from. `/user/:userId` has always enforced
+ * that, but the feed carried no such filter at all — so "enforced as well as
+ * in the UI" was true of the profile page only, and every private account's
+ * posts were handed to every authenticated caller who asked for `/feed`, and
+ * to anyone who had the post id.
+ *
+ * `not: true` rather than `equals: false` so that a user document written
+ * before the column existed still counts as public: on MongoDB the field is
+ * absent rather than false, and `$ne: true` matches an absent field while an
+ * equality test does not.
+ */
+async function visibleAuthorWhere(viewerId: string) {
+  const following = await prisma.follow.findMany({
+    where: { followerId: viewerId },
+    select: { followingId: true },
+  });
+
+  return {
+    OR: [
+      { authorId: viewerId },
+      { author: { isPrivate: { not: true } } },
+      { authorId: { in: following.map((row) => row.followingId) } },
+    ],
+  };
+}
+
 router.post(
   "/",
   authenticate,
@@ -76,6 +106,7 @@ router.get(
     const userId = requireUser(req);
 
     const posts = await prisma.post.findMany({
+      where: await visibleAuthorWhere(userId),
       include: withViewer(userId),
       orderBy: { createdAt: "desc" },
       take: 50,
@@ -142,6 +173,15 @@ router.get(
     });
 
     if (!post) throw AppError.of("NOT_FOUND", "Post not found");
+
+    // A post id is as guessable as any other id in the app, so the feed's
+    // privacy rule has to be applied here too rather than trusting the caller
+    // to have reached this through the feed in the first place.
+    const visible = await prisma.post.findFirst({
+      where: { AND: [{ id }, await visibleAuthorWhere(userId)] },
+      select: { id: true },
+    });
+    if (!visible) throw AppError.of("NOT_FOUND", "Post not found");
 
     ok(res, { post });
   })

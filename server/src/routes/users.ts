@@ -2,16 +2,29 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../prisma.js";
 import { authenticate, AuthRequest, requireUser } from "../middleware/auth.js";
-import { AppError, asyncHandler, ok, parseOrThrow } from "../lib/http.js";
+import { AppError, asyncHandler, ok, parseOrThrow, isDuplicateKeyError } from "../lib/http.js";
 import { paramId } from "../lib/access.js";
 import { nullableMediaUrl } from "../lib/urls.js";
 import { destroyImageForUrl } from "../lib/cloudinary.js";
+import { assertEmailConfigured, MailDeliveryError, sendMail } from "../lib/mailer.js";
+import {
+  maskEmail,
+  normalizeEmail,
+  renderEmailChangeAlertEmail,
+} from "../lib/emailVerification.js";
+import {
+  bumpSessionVersion,
+  clearVerificationToken,
+  sendVerificationEmail,
+} from "../lib/accountSecurity.js";
+import { config } from "../config.js";
 
 const router = Router();
 
 const updateProfileSchema = z.object({
   username: z.string().min(3).max(32).regex(/^\S+$/, "Username cannot contain spaces").optional(),
-  email: z.string().email().max(254).optional(),
+  // Trimmed before validation, for the same reason as on signup.
+  email: z.string().trim().email().max(254).optional(),
   bio: z.string().max(500).optional(),
   avatar: nullableMediaUrl(),
   cover: nullableMediaUrl(),
@@ -31,6 +44,23 @@ const publicUserSelect = {
   bio: true,
   status: true,
   isPrivate: true,
+} as const;
+
+/** The signed-in user's own record, including their verification state. */
+const profileSelect = {
+  id: true,
+  username: true,
+  email: true,
+  bio: true,
+  avatar: true,
+  cover: true,
+  isPrivate: true,
+  status: true,
+  lastSeen: true,
+  emailVerified: true,
+  emailVerifiedAt: true,
+  createdAt: true,
+  updatedAt: true,
 } as const;
 
 router.get(
@@ -99,7 +129,26 @@ router.patch(
       throw AppError.of("BAD_REQUEST", "Nothing to update");
     }
 
+    // One read up front: the address-change path needs the previous address to
+    // roll back to, and the uniqueness checks below need the caller's own row
+    // to compare against.
+    const currentUser = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true, email: true, emailVerified: true, emailVerifiedAt: true },
+    });
+
     const data: Record<string, string | null | boolean> = {};
+
+    // Everything an address change has to be able to undo if the confirmation
+    // email cannot be delivered. Captured before the write below.
+    let emailChanged = false;
+    let previousAddress = "";
+    let previousVerification: { emailVerified: boolean | null; emailVerifiedAt: Date | null } = {
+      emailVerified: null,
+      emailVerifiedAt: null,
+    };
+
+    if (!currentUser) throw AppError.of("NOT_FOUND", "User not found");
 
     if (input.username !== undefined) {
       const existing = await prisma.user.findFirst({
@@ -111,13 +160,34 @@ router.patch(
     }
 
     if (input.email !== undefined) {
-      const email = input.email.trim().toLowerCase();
-      const existing = await prisma.user.findFirst({
-        where: { email: { equals: email, mode: "insensitive" }, id: { not: userId } },
-        select: { id: true },
-      });
-      if (existing) throw AppError.of("CONFLICT", "Email already in use");
-      data.email = email;
+      const email = normalizeEmail(input.email);
+      if (email !== currentUser.email) {
+        const existing = await prisma.user.findFirst({
+          where: { email: { equals: email, mode: "insensitive" }, id: { not: userId } },
+          select: { id: true },
+        });
+        if (existing) throw AppError.of("CONFLICT", "Email already in use");
+
+        // Refuse before writing, so a missing mail server can never leave an
+        // account sitting on an address nobody can be verified at.
+        assertEmailConfigured();
+
+        emailChanged = true;
+        previousAddress = currentUser.email;
+        // Restore the REAL previous values on rollback. Writing a bare `null`
+        // here would read as "legacy account, trusted" — so a failed change
+        // would silently upgrade an unverified account to a verified one.
+        previousVerification = {
+          emailVerified: currentUser.emailVerified ?? null,
+          emailVerifiedAt: currentUser.emailVerifiedAt ?? null,
+        };
+        data.email = email;
+        // A new address is unproven until it is confirmed from inside the new
+        // inbox. Carrying the old `true` over would let anyone who can receive
+        // mail at an address they just claimed hold a verified account.
+        data.emailVerified = false;
+        data.emailVerifiedAt = null;
+      }
     }
 
     if (input.bio !== undefined) data.bio = input.bio;
@@ -146,23 +216,61 @@ router.patch(
           }))?.cover ?? null)
         : null;
 
-    const user = await prisma.user.update({
-      where: { id: userId },
-      data,
-      select: {
-        id: true,
-        username: true,
-        email: true,
-        bio: true,
-        avatar: true,
-        cover: true,
-        isPrivate: true,
-        status: true,
-        lastSeen: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    let user;
+    try {
+      user = await prisma.user.update({
+        where: { id: userId },
+        data,
+        select: profileSelect,
+      });
+    } catch (err) {
+      if (isDuplicateKeyError(err)) {
+        throw AppError.of("CONFLICT", "Email already in use");
+      }
+      throw err;
+    }
+
+    if (emailChanged) {
+      try {
+        // The link proving control of the NEW address...
+        await sendVerificationEmail(user);
+        // ...and a warning to the OLD one, so whoever actually owns it learns
+        // the account was moved out from under them. Deliberately not a
+        // reset link: those now go to the new address.
+        const alert = renderEmailChangeAlertEmail({
+          username: user.username,
+          newAddress: user.email,
+          baseUrl: config.appBaseUrl,
+        });
+        await sendMail({ to: previousAddress, ...alert });
+        // A changed address retires every existing token, so a stolen session
+        // does not survive the account moving.
+        await bumpSessionVersion(userId);
+      } catch (err) {
+        // Undo the whole change. Leaving the account on an address that has
+        // no verification link is the one outcome worse than refusing.
+        await prisma.user
+          .update({
+            where: { id: userId },
+            data: {
+              email: previousAddress,
+              emailVerified: previousVerification.emailVerified,
+              emailVerifiedAt: previousVerification.emailVerifiedAt,
+            },
+          })
+          .catch(() => undefined);
+        await clearVerificationToken(userId).catch(() => undefined);
+
+        throw err instanceof AppError
+          ? err
+          : AppError.of(
+              "UPSTREAM_ERROR",
+              `The address was not changed because the confirmation email could not be sent: ${
+                err instanceof MailDeliveryError ? err.reason : "delivery failed"
+              }.`
+            );
+      }
+    }
 
     // After the save, and only if it really changed. Never throws: the
     // profile update has already succeeded.
@@ -173,7 +281,13 @@ router.patch(
       await destroyImageForUrl(replacedCover, `the cover of ${userId}`);
     }
 
-    ok(res, { user });
+    ok(res, {
+      user,
+      // The client must not leave the user thinking they are verified: the
+      // backend has to see the click first.
+      verificationRequired: emailChanged,
+      ...(emailChanged ? { email: maskEmail(user.email) } : {}),
+    });
   })
 );
 

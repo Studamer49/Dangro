@@ -18,6 +18,31 @@ model User {
   cover      String?
   isPrivate  Boolean  @default(false)
   status         String         @default("offline") // online, idle, dnd, offline
+
+  // --- email verification ---------------------------------------------------
+  // Nullable with NO default, and that is the point. A row that predates this
+  // column reads back as NULL, which every route treats as "legacy account -
+  // verified, leave it alone", so adding verification does not lock existing
+  // users out. Only POST /auth/register writes an explicit `false`.
+  emailVerified          Boolean?   @map("emailVerified")
+  /// When the address was confirmed.
+  emailVerifiedAt        DateTime?  @map("emailVerifiedAt")
+  /// SHA-256 of the emailed token; the raw token is never stored. Null once spent.
+  emailVerificationTokenHash  String?   @map("emailVerificationTokenHash")
+  emailVerificationExpiresAt  DateTime? @map("emailVerificationExpiresAt")
+  emailVerificationSentAt     DateTime? @map("emailVerificationSentAt")
+  emailVerificationUsedAt     DateTime? @map("emailVerificationUsedAt")
+
+  // --- password reset -------------------------------------------------------
+  passwordResetTokenHash  String?   @map("passwordResetTokenHash")
+  passwordResetExpiresAt  DateTime? @map("passwordResetExpiresAt")
+  passwordResetUsedAt     DateTime? @map("passwordResetUsedAt")
+
+  /// Bumped whenever a credential changes (email address, password, or a
+  /// password reset). Tokens carry the value they were issued with, so a bump
+  /// retires every outstanding access and refresh token.
+  authSessionVersion Int @default(0) @map("authSessionVersion")
+
   lastSeen       DateTime       @default(now())
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
@@ -106,6 +131,10 @@ model Server {
   icon        String?
   description String?
   ownerId     String
+  /// Public servers are listed on Explore and searchable. A private server is
+  /// invite-only: it never appears in Explore or in server search, and can only
+  /// be reached through an invite link. Toggling it is a MANAGE_SERVER action.
+  isPrivate   Boolean  @default(false)
   inviteCode  String   @unique @default(uuid())
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

@@ -5,9 +5,13 @@ import { useGlobalButtonBounce } from "@/hooks/useBounce";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import LoginPage from "@/pages/LoginPage";
 import RegisterPage from "@/pages/RegisterPage";
+import VerifyEmailPage from "@/pages/VerifyEmailPage";
+import ForgotPasswordPage from "@/pages/ForgotPasswordPage";
+import ResetPasswordPage from "@/pages/ResetPasswordPage";
 import DashboardPage from "@/pages/DashboardPage";
 import VideoCallModal from "@/components/VideoCallModal";
 import CallInvitation from "@/components/CallInvitation";
+import IceConfigLoader from "@/components/IceConfigLoader";
 
 /**
  * Full-bleed auth/loading screen.
@@ -62,6 +66,22 @@ function GuestRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/**
+ * Public route for the pages a link in an email can land on.
+ *
+ * Same as GuestRoute with one difference: someone who is already signed in and
+ * clicks their own verification link should be shown the result, not bounced
+ * into the app where they cannot see it. So this only renders a splash while
+ * the session is being resolved, and never redirects.
+ */
+function PublicRoute({ children }: { children: React.ReactNode }) {
+  const { isLoading } = useAuthStore();
+
+  if (isLoading) return <Splash />;
+
+  return <>{children}</>;
+}
+
 export default function App() {
   const fetchUser = useAuthStore((s) => s.fetchUser);
 
@@ -74,6 +94,8 @@ export default function App() {
 
   return (
     <ErrorBoundary>
+      {/* Fetches this deployment's STUN/TURN list before anyone places a call. */}
+      <IceConfigLoader />
       <VideoCallModal />
       <CallInvitation />
       <Routes>
@@ -90,6 +112,32 @@ export default function App() {
           element={
             <GuestRoute>
               <RegisterPage />
+            </GuestRoute>
+          }
+        />
+        {/* Reached from a link in an email, on a device that is not signed in
+            — and sometimes on one that is. */}
+        <Route
+          path="/verify-email"
+          element={
+            <PublicRoute>
+              <VerifyEmailPage />
+            </PublicRoute>
+          }
+        />
+        <Route
+          path="/reset-password"
+          element={
+            <PublicRoute>
+              <ResetPasswordPage />
+            </PublicRoute>
+          }
+        />
+        <Route
+          path="/forgot-password"
+          element={
+            <GuestRoute>
+              <ForgotPasswordPage />
             </GuestRoute>
           }
         />

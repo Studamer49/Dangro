@@ -27,6 +27,11 @@ const updateServerSchema = z
     name: z.string().trim().min(1).max(100).optional(),
     icon: nullableMediaUrl(),
     description: z.string().trim().max(500).nullish(),
+    /**
+     * Public servers are listed on Explore; private ones are invite-only.
+     * Gated behind the same MANAGE_SERVER permission as the name and icon.
+     */
+    isPrivate: z.boolean().optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: "Nothing to update" });
 
@@ -52,6 +57,7 @@ router.patch(
         name: input.name,
         icon: input.icon === undefined ? undefined : input.icon ?? null,
         description: input.description === undefined ? undefined : input.description ?? null,
+        isPrivate: input.isPrivate,
       },
       include: { channels: { orderBy: { position: "asc" } }, categories: { orderBy: { position: "asc" } } },
     });

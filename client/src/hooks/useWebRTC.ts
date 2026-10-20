@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import type { Socket } from "socket.io-client";
 import { getSocket } from "@/lib/socket";
-import { ICE_SERVERS } from "@/lib/iceServers";
+import { getIceConfiguration } from "@/lib/iceServers";
 import { useCallStore } from "@/stores/callStore";
 
 type OfferHandler = (offer: RTCSessionDescriptionInit, userId: string) => void;
@@ -30,6 +30,31 @@ let activeOfferHandler: OfferHandler | null = null;
  * connection to a stranger's stale session description.
  */
 const OFFER_SHELF_LIFE_MS = 30_000;
+
+/**
+ * How long a caller waits before concluding nobody is coming.
+ *
+ * Slightly longer than the server's own 30 s invite timeout, so a person who
+ * lets it ring all the way out is told "no answer" rather than "declined".
+ */
+const RING_TIMEOUT_MS = 40_000;
+
+/** How each reason the server can give back is worded for a person. */
+const UNAVAILABLE_MESSAGES: Record<string, string> = {
+  not_allowed:
+    "You can only call people you can message directly — add them as a friend or follow them first.",
+  offline: "They are not online right now.",
+  rate_limited: "You are calling too often. Wait a moment and try again.",
+  expired: "That call is no longer active.",
+  bad_request: "That call could not be placed.",
+};
+
+/** The sentence to show for a refusal reason, or null when there is none. */
+export function callUnavailableMessage(reason: string | null): string | null {
+  if (!reason) return null;
+  if (reason === "no_answer") return "Nobody answered.";
+  return UNAVAILABLE_MESSAGES[reason] ?? "That call could not be connected.";
+}
 let stashedOffer: { offer: RTCSessionDescriptionInit; userId: string; at: number } | null = null;
 let stashBoundTo: Socket | null = null;
 
@@ -103,6 +128,7 @@ export function useWebRTC() {
     setLocalScreenStream,
     setRemoteScreenStream,
     setConnectionStatus,
+    setCallUnavailable,
     setScreenSharing,
     endCall,
   } = useCallStore();
@@ -116,7 +142,10 @@ export function useWebRTC() {
     assembledRemoteRef.current = null;
     assembledRemoteScreenRef.current = null;
 
-    const pc = new RTCPeerConnection(ICE_SERVERS);
+    // Read at call time rather than module scope: the deployment's relay list is
+    // fetched at startup, so a connection created before that lands would be
+    // stuck with the fallback for its whole lifetime.
+    const pc = new RTCPeerConnection(getIceConfiguration());
 
     pc.onicecandidate = (event) => {
       if (event.candidate && targetUserId) {
@@ -395,7 +424,16 @@ export function useWebRTC() {
     setRemoteScreenStream(null);
     setConnectionStatus(null);
     setScreenSharing(false);
-  }, [setLocalStream, setRemoteStream, setLocalScreenStream, setRemoteScreenStream, setConnectionStatus, setScreenSharing]);
+    setCallUnavailable(null);
+  }, [
+    setLocalStream,
+    setRemoteStream,
+    setLocalScreenStream,
+    setRemoteScreenStream,
+    setConnectionStatus,
+    setScreenSharing,
+    setCallUnavailable,
+  ]);
 
   const [callError, setCallError] = useState<string | null>(null);
 
@@ -449,7 +487,7 @@ export function useWebRTC() {
       if (err instanceof DOMException && err.name === "NotAllowedError") return;
       console.warn("[webrtc] screen share failed", err);
     }
-  }, [getScreenSender]);
+  }, [getScreenSender, setLocalScreenStream]);
 
   /** Ends the call and surfaces why, instead of rejecting into the void. */
   const failCall = useCallback((err: unknown) => {
@@ -504,6 +542,29 @@ export function useWebRTC() {
       useCallStore.getState().resetCall();
     };
 
+    /**
+     * The server refused or could not route the invite.
+     *
+     * It used to drop it silently, so the caller's window rang into nothing
+     * and sat on "Ringing..." for ever. Ending the call immediately is wrong
+     * for the *callee* — a call that cannot be placed must not put them in a
+     * window either — so the caller is torn down and the reason is left in the
+     * store for the UI to show.
+     */
+    const handleUnavailable = (data: { reason?: string }) => {
+      const reason = data?.reason;
+      const isCaller = useCallStore.getState().isCaller;
+      if (reason === "expired" && !isCaller) {
+        useCallStore.getState().resetCall();
+        return;
+      }
+      if (isCaller) {
+        cleanup();
+        useCallStore.getState().resetCall();
+        setCallUnavailable(reason ?? "unavailable");
+      }
+    };
+
     // `webrtc_offer` is bound once at module scope rather than here, so an
     // offer that beats this effect is stashed instead of lost. Everything else
     // still registers per call, because those can only arrive while one is up.
@@ -517,20 +578,47 @@ export function useWebRTC() {
     socket.on("ice_candidate", handleIceEvent);
     socket.on("call_end", handleCallEnd);
     socket.on("call_reject", handleCallReject);
+    socket.on("call_unavailable", handleUnavailable);
+
+    // Nobody picked up. Without this the caller watches "Ringing..." for ever
+    // with no conclusion; the window is left open so the reason is readable
+    // rather than snapping shut on its own.
+    const ringTimeout = isCaller
+      ? window.setTimeout(() => {
+          const state = useCallStore.getState();
+          if (state.isInCall && state.isCaller && !state.remoteStream) {
+            state.setCallUnavailable("no_answer");
+          }
+        }, RING_TIMEOUT_MS)
+      : undefined;
 
     return () => {
+      if (ringTimeout !== undefined) window.clearTimeout(ringTimeout);
       socket.off("call_accept", handleCallAccept);
       socket.off("webrtc_answer", handleAnswerEvent);
       socket.off("ice_candidate", handleIceEvent);
       socket.off("call_end", handleCallEnd);
       socket.off("call_reject", handleCallReject);
+      socket.off("call_unavailable", handleUnavailable);
       // Detach the handler but keep the stash: it is the whole reason the
       // module-scope listener exists, and the stashed offer may belong to the
       // next call rather than this one.
       if (activeOfferHandler === handleOfferEvent) activeOfferHandler = null;
       cleanup();
     };
-  }, [isInCall, isCaller, callType, createOffer, handleOffer, handleAnswer, handleIceCandidate, cleanup, startLocalStream, failCall]);
+  }, [
+    isInCall,
+    isCaller,
+    callType,
+    createOffer,
+    handleOffer,
+    handleAnswer,
+    handleIceCandidate,
+    cleanup,
+    startLocalStream,
+    failCall,
+    setCallUnavailable,
+  ]);
 
   return { createOffer, callError, toggleScreenShare };
 }
