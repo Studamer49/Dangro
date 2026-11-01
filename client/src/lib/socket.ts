@@ -30,9 +30,32 @@ function isLocalHost(hostname: string): boolean {
 }
 
 /**
+ * The socket origin implied by an absolute `VITE_API_URL`.
+ *
+ * A split deployment (static frontend on Pages, API on another host) sets
+ * `VITE_API_URL` but often leaves `VITE_WS_URL` empty. Falling back to
+ * `window.location` there dials the static host, where no Socket.IO server
+ * exists, so the app loads and REST works while every realtime feature stays
+ * silently disconnected. The API origin is the correct default in that setup.
+ */
+function apiSocketUrl(): string | undefined {
+  const api = import.meta.env.VITE_API_URL?.trim();
+  if (!api || !/^https?:\/\//i.test(api)) return undefined;
+
+  try {
+    const { protocol, hostname, host } = new URL(api);
+    if (protocol !== "https:" || isLocalHost(hostname)) return undefined;
+    return `https://${host}`;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Resolution order:
  *   1. `VITE_WS_URL` when set to a usable URL (non-production dev against :3001)
- *   2. same origin — correct for the single-service Cloudflare deployment
+ *   2. the origin of an absolute `VITE_API_URL` — split frontend/API deployments
+ *   3. same origin — correct for the single-service Cloudflare deployment
  *
  * Never hardcode a hostname: a baked `localhost` breaks every production client.
  * In a production build a loopback or LAN address is discarded rather than
@@ -47,14 +70,14 @@ function resolveSocketUrl(): string | undefined {
       const { hostname, protocol } = new URL(configured);
       if (protocol === "https:" && !isLocalHost(hostname)) return configured;
     } catch {
-      // Unparseable value: fall through to same-origin.
+      // Unparseable value: fall through to the API origin.
     }
     console.warn(
       "[socket] Ignoring VITE_WS_URL in a production build: it must be an https:// URL on a public host."
     );
   }
   if (import.meta.env.DEV) return "http://localhost:3001";
-  return undefined; // undefined => socket.io connects to window.location
+  return apiSocketUrl(); // undefined => socket.io connects to window.location
 }
 
 let socket: Socket | null = null;
