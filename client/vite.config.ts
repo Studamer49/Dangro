@@ -72,9 +72,24 @@ function pagesSplitDeployment(apiUrl: string | undefined, wsUrl: string | undefi
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "VITE_");
+  const apiUrl = env.VITE_API_URL?.trim();
+
+  /**
+   * A scheme-less value (`api.example.com/api`) looks like a relative path to
+   * axios, so every request goes to the static host and Cloudflare Pages
+   * answers POSTs with 405. Nothing in the browser says why, and the CSP and
+   * `_redirects` generation below both silently skip the value. Fail the build
+   * instead of shipping a site that cannot talk to its API.
+   */
+  if (apiUrl && apiUrl !== "/api" && !/^https?:\/\//i.test(apiUrl)) {
+    throw new Error(
+      `VITE_API_URL must be an absolute URL such as "https://api.example.com/api" ` +
+        `(or "/api" for a same-origin deployment). Received "${apiUrl}".`
+    );
+  }
 
   return {
-    plugins: [react(), pagesSplitDeployment(env.VITE_API_URL, env.VITE_WS_URL)],
+    plugins: [react(), pagesSplitDeployment(apiUrl, env.VITE_WS_URL)],
     resolve: {
       alias: {
         "@": resolve(__dirname, "./src"),
