@@ -18,6 +18,7 @@ import { resendVerificationLimiter, verifyEmailLimiter } from "./lib/rateLimits.
 import { setupSocketHandlers } from "./socket/index.js";
 import { setIO } from "./socket/io.js";
 import { ensureIndexes, backfillServerLayout, backfillServerRoles } from "./db/mongoIndexes.js";
+import { redactMongoUri } from "./db/mongoUri.js";
 import { mongoClient } from "./prisma.js";
 
 import authRoutes from "./routes/auth.js";
@@ -328,7 +329,7 @@ async function main(): Promise<void> {
   try {
     await prisma.$connect();
     console.log(
-      `Connected to database (${config.usesMongo ? `MongoDB ${config.mongoDbName} @ ${config.mongoUri}` : "PostgreSQL via Prisma"})`
+      `Connected to database (${config.usesMongo ? `MongoDB ${config.mongoDbName} @ ${redactMongoUri(config.mongoUri)}` : "PostgreSQL via Prisma"})`
     );
 
     if (config.usesMongo && mongoClient) {
